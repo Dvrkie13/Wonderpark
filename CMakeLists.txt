@@ -40,6 +40,10 @@ if(WIN32)
     target_link_libraries(Wonderpark PRIVATE opengl32 gdi32 user32 winmm shell32 ole32 dwmapi)
 endif()
 
+option(WP_STORE_WATCH "Store watch in the recompiled code (debugging; WONDERPARK_WATCH=lo-hi)" OFF)
+if(WP_STORE_WATCH)
+    target_compile_definitions(wp_generated PRIVATE WPF_WATCH)
+endif()
 option(WP_DEBUG_INFO_GENERATED "Debug info for the recompiled code (slower to build; for profiling)" OFF)
 
 if(MSVC)

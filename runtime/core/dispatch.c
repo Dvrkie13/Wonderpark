@@ -135,6 +135,14 @@ void wp_run(CPUState* c, unsigned long long max_slices) {
                     c->lr, g_vi_retraces, (double)wp_host_time() / TB_HZ);
             if (prof) prof_print();
             if (wp_log_on("threads")) { wp_backtrace(c); wp_dump_threads(); }
+            {
+                /* WONDERPARK_PEEK=addr,len: dump guest memory (words) at the stop. */
+                const char* e = getenv("WONDERPARK_PEEK");
+                unsigned a, len, i;
+                if (e && sscanf(e, "%x,%x", &a, &len) == 2)
+                    for (i = 0; i < len; i += 4) fprintf(stderr, "%s%08X", i % 32 ? " " : (i ? "\n" : "peek "), LD32(a + i));
+                if (e) fputc('\n', stderr);
+            }
             return;
         }
     }

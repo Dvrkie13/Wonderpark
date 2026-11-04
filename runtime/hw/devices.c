@@ -11,6 +11,7 @@ void hw_ai_init(void);
 void hw_gx_init(void);
 void hw_dsp_init(void);
 void hw_dsp_tick(uint64_t now);
+void hw_ax_init(void);
 
 void wp_devices_init(void) {
     hw_pi_init();
@@ -21,6 +22,7 @@ void wp_devices_init(void) {
     hw_ai_init();
     hw_gx_init();
     hw_dsp_init();
+    hw_ax_init();
 }
 
 void wp_devices_tick(uint64_t now) {

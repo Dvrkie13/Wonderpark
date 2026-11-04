@@ -102,7 +102,6 @@ Function names come from `tools/analysis/sigmatch.py` (2,502 named,
 
 ## Known gaps
 
-- **No sound yet**: AX frames run, but voices aren't mixed (step 4).
 - Wii Remote: buttons and shake only; no pointer (WPADIsDpdEnabled /
   WPADGetDpdFormat aren't hooked yet), no motion mapping (Phase 3).
 - Vulkan renderer not built (needs the shader build step); OpenGL is used.
@@ -158,3 +157,37 @@ the save-select and main menus respond. What was wrong:
 
 `WONDERPARK_LOG=kpad` logs what `KPADRead` (`0x802EAB70`) hands the game,
 `WONDERPARK_LOG=wpadbtn` what `WPADRead` reports.
+
+
+# Phase 2, step 4: sound
+
+Sound plays: title music, menu sounds and effects, through the attract-mode
+cutscene, at 30 fps with no measurable cost.
+
+How (all hardware-level, no game addresses needed):
+- **AX command lists** (`runtime/hw/hw_ax.c`): each frame's list (mailed to
+  the DSP model) is run: `PROCESS` walks the voice list and mixes every
+  running voice (the reference runtime's decoder: DSP-ADPCM, PCM16, PCM8,
+  resampling, envelope, low-pass), `MIX_AUXA-C` hands the aux sends to the
+  game's effect callbacks and mixes their output back, `OUTPUT` writes the
+  stereo mix into the buffer AX gave.
+- **AI DMA** (`runtime/hw/hw_dsp.c`) "plays" the buffer the game points it at,
+  to the host: `waveOut` at 32 kHz (the reference runtime's backend).
+- CRI Atom runs unchanged on top: ADX streams are read from the disc and
+  decoded by CRI's own (recompiled) code, then copied into AX voices.
+
+Checked along the way (the menu's stream sounded like noise in an automatic
+test; it turned out to be noise-like by nature): the recompiled ADX decoder
+gives exactly what an independent decode gives, from the right file bytes,
+frame-aligned, and memcpy copies it exactly.
+
+Known gaps:
+- The command list's compressor (`0A`) is ignored: loud passages can clip
+  where the Wii would limit them.
+- Wii Remote speaker sound (`WM_OUTPUT`) is dropped.
+- Not yet listened to by a person; cutscene audio/video sync not checked.
+
+Debug switches: `WONDERPARK_AUDIO_DUMP=file.wav`, `WONDERPARK_AX_NOAUX=1`,
+`WONDERPARK_AX_SNAP=<frame>` (voice buffers to build/), `WONDERPARK_LOG=`
+`axvoice,axvoices,axlist,adxcheck,memcpywatch`; CMake `-DWP_STORE_WATCH=ON` with
+`WONDERPARK_WATCH=lo-hi` reports which guest code stores into a range.

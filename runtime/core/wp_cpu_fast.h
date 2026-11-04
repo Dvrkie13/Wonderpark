@@ -62,24 +62,38 @@ WPF_INLINE u64 wpf_read64(CPUState* c, u32 a) {
     memcpy(&v, h, 8);
     return WPF_BSWAP64(v);
 }
+#ifdef WPF_WATCH
+/* Debug builds (CMake WP_STORE_WATCH): stores into [wpf_watch_lo,
+ * wpf_watch_hi) (physical) are reported with the guest pc of their block. */
+extern u32 wpf_watch_lo, wpf_watch_hi;
+void wpf_watch_hit(CPUState* c, u32 a, u32 n, u32 v);
+#define WPF_CHECK(c, a, n, v) do { if (((a) & 0x3FFFFFFFu) - wpf_watch_lo < wpf_watch_hi - wpf_watch_lo) wpf_watch_hit(c, a, n, v); } while (0)
+#else
+#define WPF_CHECK(c, a, n, v) ((void)0)
+#endif
+
 WPF_INLINE void wpf_write32(CPUState* c, u32 a, u32 v) {
+    WPF_CHECK(c, a, 4, v);
     u8* h = wpf_ptr(c, a, 4);
     if (!h) { mem_write32(c, a, v); return; }
     v = WPF_BSWAP32(v);
     memcpy(h, &v, 4);
 }
 WPF_INLINE void wpf_write16(CPUState* c, u32 a, u16 v) {
+    WPF_CHECK(c, a, 2, v);
     u8* h = wpf_ptr(c, a, 2);
     if (!h) { mem_write16(c, a, v); return; }
     v = WPF_BSWAP16(v);
     memcpy(h, &v, 2);
 }
 WPF_INLINE void wpf_write8(CPUState* c, u32 a, u8 v) {
+    WPF_CHECK(c, a, 1, v);
     u8* h = wpf_ptr(c, a, 1);
     if (!h) { mem_write8(c, a, v); return; }
     *h = v;
 }
 WPF_INLINE void wpf_write64(CPUState* c, u32 a, u64 v) {
+    WPF_CHECK(c, a, 8, (u32)v);
     u8* h = wpf_ptr(c, a, 8);
     if (!h) { mem_write64(c, a, v); return; }
     v = WPF_BSWAP64(v);

@@ -30,7 +30,9 @@ void hle_nand_set_root(const char* root);
 void settings_load(void);
 void gx_init(void);
 void input_init(void);
+void audio_init(void);
 void wp_hostprof_start(void);
+void wp_watch_init(void);
 void wp_run(CPUState* c, unsigned long long max_slices);
 
 /* MEM1 and MEM2, with write watch on Windows (the GPU's texture cache uses
@@ -186,8 +188,10 @@ int main(int argc, char** argv) {
     settings_load();
     gx_init(); /* opens the window and the renderer (runtime/gpu) */
     input_init();
+    audio_init();
 
     wp_hostprof_start();
+    wp_watch_init();
     wp_run(&cpu, max_slices);
     return 2;
 }

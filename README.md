@@ -27,7 +27,8 @@ Early setup. Nothing is playable yet.
 | Repo, disc check and extraction | done |
 | CPU recompile (PowerPC to C, DolRecomp) | done |
 | Boot to title | reaches the title screen at full speed (30 fps) |
-| Audio, cutscenes, input, launcher | not started |
+| Sound (CRI Atom over AX) | plays (music, effects) |
+| Cutscenes, gameplay, launcher | not started |
 
 ## Extracting your disc (developers)
 
