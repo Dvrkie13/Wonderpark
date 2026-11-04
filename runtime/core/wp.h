@@ -17,21 +17,58 @@ int wp_log_on(const char* cat);
 #define WP_LOG(cat, ...) do { if (wp_log_on(cat)) { fprintf(stderr, "[" cat "] " __VA_ARGS__); fputc('\n', stderr); } } while (0)
 #define WP_WARN(...) do { fprintf(stderr, "warning: " __VA_ARGS__); fputc('\n', stderr); } while (0)
 void wp_fatal(const char* fmt, ...);
+/* Debug: symbol for an address (config/S2LE01/symbols.txt), guest backtrace. */
+const char* wp_sym(u32 addr, u32* offset);
+void wp_backtrace(CPUState* c);
+void wp_dump_threads(void);
 
-/* ---- guest memory helpers (any mapped address, big-endian). */
-static inline uint32_t LD32(uint32_t a) { return mem_read32(g_cpu, a); }
-static inline uint32_t LD16(uint32_t a) { return mem_read16(g_cpu, a); }
-static inline uint32_t LD8(uint32_t a) { return mem_read8(g_cpu, a); }
-static inline void ST32(uint32_t a, uint32_t v) { mem_write32(g_cpu, a, v); }
-static inline void ST16(uint32_t a, uint32_t v) { mem_write16(g_cpu, a, (u16)v); }
-static inline void ST8(uint32_t a, uint32_t v) { mem_write8(g_cpu, a, (u8)v); }
-/* Host pointer for [a, a+n) in MEM1 or MEM2 (physical, cached or uncached), or NULL. */
-uint8_t* wp_mem_ptr(uint32_t a, uint32_t n);
+/* ---- guest memory helpers, big-endian. Accept virtual (0x8/0x9/0xC/0xD)
+ * and physical (0x0/0x1) addresses alike, as hardware DMA and IOS do;
+ * anything that isn't RAM goes to the MMIO handlers. */
+static inline uint8_t* wp_ram(uint32_t a, uint32_t n) {
+    uint32_t p = a & 0x3FFFFFFFu;
+    if (p < g_cpu->ram_size) return n <= g_cpu->ram_size - p ? g_cpu->ram + p : NULL;
+    p -= 0x10000000u;
+    if (p < g_cpu->mem2_size) return n <= g_cpu->mem2_size - p ? g_cpu->mem2 + p : NULL;
+    return NULL;
+}
+static inline uint32_t wp_p2v(uint32_t a) { return (a & 0x3FFFFFFFu) | 0x80000000u; }
+static inline uint32_t LD32(uint32_t a) {
+    const uint8_t* p = wp_ram(a, 4);
+    return p ? (uint32_t)p[0] << 24 | (uint32_t)p[1] << 16 | (uint32_t)p[2] << 8 | p[3] : mem_read32(g_cpu, wp_p2v(a));
+}
+static inline uint32_t LD16(uint32_t a) {
+    const uint8_t* p = wp_ram(a, 2);
+    return p ? (uint32_t)p[0] << 8 | p[1] : mem_read16(g_cpu, wp_p2v(a));
+}
+static inline uint32_t LD8(uint32_t a) {
+    const uint8_t* p = wp_ram(a, 1);
+    return p ? *p : mem_read8(g_cpu, wp_p2v(a));
+}
+static inline void ST32(uint32_t a, uint32_t v) {
+    uint8_t* p = wp_ram(a, 4);
+    if (p) { p[0] = (uint8_t)(v >> 24); p[1] = (uint8_t)(v >> 16); p[2] = (uint8_t)(v >> 8); p[3] = (uint8_t)v; }
+    else mem_write32(g_cpu, wp_p2v(a), v);
+}
+static inline void ST16(uint32_t a, uint32_t v) {
+    uint8_t* p = wp_ram(a, 2);
+    if (p) { p[0] = (uint8_t)(v >> 8); p[1] = (uint8_t)v; }
+    else mem_write16(g_cpu, wp_p2v(a), (u16)v);
+}
+static inline void ST8(uint32_t a, uint32_t v) {
+    uint8_t* p = wp_ram(a, 1);
+    if (p) *p = (uint8_t)v;
+    else mem_write8(g_cpu, wp_p2v(a), (u8)v);
+}
+/* Host pointer for [a, a+n) in MEM1 or MEM2, or NULL. */
+static inline uint8_t* wp_mem_ptr(uint32_t a, uint32_t n) { return wp_ram(a, n); }
 
 /* ---- time base: 60.75 MHz, paced on host time. */
 #define TB_HZ 60750000ull
 uint64_t wp_timebase(void);
 void wp_timebase_set(uint64_t tb);
+/* Monotonic host time in the same units, for device timers (the game can't move it). */
+uint64_t wp_host_time(void);
 
 /* ---- CPU host services (cpu_host.c). */
 void wp_cpu_host_init(CPUState* c);
@@ -59,7 +96,7 @@ void hw_pi_init(void);
 void hw_pi_set(u32 cause, int on);
 int hw_pi_pending(void);
 
-/* ---- per-slice device tick (hw_*.c), called by the dispatcher. */
+/* ---- per-slice device tick (hw_*.c), called by the dispatcher with wp_host_time(). */
 void wp_devices_tick(uint64_t now);
 
 #ifdef __cplusplus

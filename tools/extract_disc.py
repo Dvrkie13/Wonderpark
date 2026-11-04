@@ -106,6 +106,15 @@ def extract_nkit(image: Path, out: Path, progress=print) -> None:
         data_off = be32(f.read(4), 0) << 2
         base = poff + data_off
 
+        # Partition ticket, TMD and certificates, as dtk writes them.
+        f.seek(poff)
+        phdr = f.read(0x2C0)
+        (out / "ticket.bin").write_bytes(phdr[:0x2A4])
+        for name, size_off, ptr_off in (("tmd.bin", 0x2A4, 0x2A8), ("cert.bin", 0x2AC, 0x2B0)):
+            size, ptr = be32(phdr, size_off), be32(phdr, ptr_off) << 2
+            f.seek(poff + ptr)
+            (out / name).write_bytes(f.read(size))
+
         def rd(o: int, n: int) -> bytes:
             f.seek(base + o)
             buf = f.read(n)

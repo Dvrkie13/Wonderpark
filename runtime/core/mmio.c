@@ -14,10 +14,11 @@ static struct {
 } s_ranges[MAX_RANGES];
 static int s_count;
 
-/* The uncached 0xCC/0xCD mappings and their physical forms all name the
- * same registers. */
+/* Every virtual alias of physical 0x0C000000-0x0DFFFFFF (0xCC/0xCD uncached,
+ * and the cached 0x8C/0x8D the SDK sometimes uses) names the same registers. */
 static u32 canon(u32 a) {
-    if ((a & 0xFE000000u) == 0xCC000000u) return a & 0x0DFFFFFFu;
+    u32 p = a & 0x3FFFFFFFu;
+    if (p - 0x0C000000u < 0x02000000u) return p;
     return a;
 }
 
@@ -49,7 +50,8 @@ log:
     WP_LOG("mmio", "unhandled %s%d %08X = %llX", what, size * 8, a, (unsigned long long)v);
 }
 
-/* Write-gather pipe: 32 bytes at 0xCC008000, every store appends to the GPU FIFO. */
+/* Write-gather pipe: 32 bytes at 0xCC008000, every store appends to the PI FIFO (hw_gx.c). */
+void hw_gx_wgpipe(u32 v, int size);
 void (*g_wgpipe_write)(u32 value, int size);
 
 static u64 ext_read(CPUState* c, u32 ea, u8 size) {
@@ -69,10 +71,8 @@ static void ext_write(CPUState* c, u32 ea, u64 v, u8 size) {
     int i;
     (void)c;
     if (a - 0x0C008000u < 32u) {
-        if (g_wgpipe_write) {
-            if (size == 8) { g_wgpipe_write((u32)(v >> 32), 4); g_wgpipe_write((u32)v, 4); }
-            else g_wgpipe_write((u32)v, size);
-        }
+        if (size == 8) { hw_gx_wgpipe((u32)(v >> 32), 4); hw_gx_wgpipe((u32)v, 4); }
+        else hw_gx_wgpipe((u32)v, size);
         return;
     }
     i = find(a);
@@ -87,12 +87,4 @@ static void ext_write(CPUState* c, u32 ea, u64 v, u8 size) {
 void wp_mmio_init(CPUState* c) {
     c->external_read = ext_read;
     c->external_write = ext_write;
-}
-
-uint8_t* wp_mem_ptr(uint32_t a, uint32_t n) {
-    u32 p = a & 0x3FFFFFFFu;
-    if (p < g_cpu->ram_size && n <= g_cpu->ram_size - p) return g_cpu->ram + p;
-    if (p >= 0x10000000u && p - 0x10000000u < g_cpu->mem2_size && n <= g_cpu->mem2_size - (p - 0x10000000u))
-        return g_cpu->mem2 + (p - 0x10000000u);
-    return NULL;
 }

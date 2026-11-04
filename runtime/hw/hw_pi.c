@@ -40,4 +40,7 @@ static void pi_write(u32 a, u32 v, int size) {
     }
 }
 
+u32 hw_pi_fifo(int which) { return s_fifo[which]; }
+void hw_pi_set_fifo_wp(u32 wp) { s_fifo[2] = wp; }
+
 void hw_pi_init(void) { wp_mmio_register(0x0C003000u, 0x1000u, pi_read, pi_write); }

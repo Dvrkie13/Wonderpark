@@ -69,11 +69,11 @@ def reviewed_flags() -> set[int]:
         return {int(e["address"]) for e in tomllib.load(f).get("flag", [])}
 
 
-HOOK_RE = re.compile(r"^\s*WP_HOOK\(\s*0x([0-9A-Fa-f]{8})\s*,\s*(\w+)\s*\)", re.M)
+HOOK_RE = re.compile(r"^\s*(?:\w+_)?HOOK\(\s*0x([0-9A-Fa-f]{8})\s*,\s*(\w+)\s*\)", re.M)
 
 
 def find_hooks() -> dict[int, str]:
-    """Every WP_HOOK(0xADDR, name) in the runtime sources."""
+    """Every WP_HOOK(0xADDR, name) (or another *_HOOK macro) in the runtime sources."""
     hooks: dict[int, str] = {}
     for src in sorted((REPO / "runtime").rglob("*.c")):
         for m in HOOK_RE.finditer(src.read_text(encoding="utf-8")):

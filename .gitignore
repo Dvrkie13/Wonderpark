@@ -33,3 +33,6 @@ __pycache__/
 *.user
 .DS_Store
 Thumbs.db
+
+# Emulated Wii NAND (saves, settings)
+/nand/

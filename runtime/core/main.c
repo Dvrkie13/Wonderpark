@@ -13,13 +13,40 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#endif
+
 #include "wp.h"
 
 #define GAME_ID "S2LE01"
 #define DEFAULT_DOL "game/sys/main.dol"
 
 void wp_devices_init(void);
+int hle_dvd_init(const char* root);
+void hle_dvd_boot_setup(void);
+void hle_nand_set_root(const char* root);
+void settings_load(void);
+void gx_init(void);
 void wp_run(CPUState* c, unsigned long long max_slices);
+
+/* MEM1 and MEM2, with write watch on Windows (the GPU's texture cache uses
+ * it to see which memory changed). Same layout cpu_init/cpu_alloc_mem2 give. */
+static int alloc_memory(CPUState* c) {
+    memset(c, 0, sizeof(*c));
+    c->ram_size = GC_MAIN_RAM_SIZE;
+    c->mem2_size = WII_MEM2_SIZE;
+#ifdef _WIN32
+    c->ram = (u8*)VirtualAlloc(NULL, c->ram_size, MEM_RESERVE | MEM_COMMIT | MEM_WRITE_WATCH, PAGE_READWRITE);
+    c->mem2 = (u8*)VirtualAlloc(NULL, c->mem2_size, MEM_RESERVE | MEM_COMMIT | MEM_WRITE_WATCH, PAGE_READWRITE);
+#else
+    c->ram = (u8*)calloc(1, c->ram_size);
+    c->mem2 = (u8*)calloc(1, c->mem2_size);
+#endif
+    if (!c->ram || !c->mem2) { fprintf(stderr, "wonderpark: out of memory\n"); return 0; }
+    return 1;
+}
 
 static uint32_t be32(const uint8_t* p) {
     return (uint32_t)p[0] << 24 | (uint32_t)p[1] << 16 | (uint32_t)p[2] << 8 | p[3];
@@ -38,6 +65,13 @@ static int load_dol(CPUState* c, const char* path, uint32_t* entry) {
     if (fread(d, 1, (size_t)len, f) != (size_t)len) { fclose(f); free(d); return 0; }
     fclose(f);
 
+    /* The BSS range covers the small-data sections too (.sdata/.sdata2 sit
+     * between .sbss pieces), so clear it before the sections are copied. */
+    {
+        uint32_t bss = be32(d + 0xD8), bss_size = be32(d + 0xDC);
+        uint8_t* dst = wp_mem_ptr(bss, bss_size);
+        if (dst) memset(dst, 0, bss_size);
+    }
     for (i = 0; i < 18; i++) {
         uint32_t off = be32(d + i * 4), addr = be32(d + 0x48 + i * 4), size = be32(d + 0x90 + i * 4);
         uint8_t* dst;
@@ -48,11 +82,6 @@ static int load_dol(CPUState* c, const char* path, uint32_t* entry) {
             return 0;
         }
         memcpy(dst, d + off, size);
-    }
-    {
-        uint32_t bss = be32(d + 0xD8), bss_size = be32(d + 0xDC);
-        uint8_t* dst = wp_mem_ptr(bss, bss_size);
-        if (dst) memset(dst, 0, bss_size);
     }
     *entry = be32(d + 0xE0);
     free(d);
@@ -105,7 +134,7 @@ int main(int argc, char** argv) {
 
     if ((env = getenv("WONDERPARK_MAX_SLICES")) != NULL) max_slices = strtoull(env, NULL, 10);
 
-    if (!cpu_init(&cpu) || !cpu_alloc_mem2(&cpu, WII_MEM2_SIZE)) return 1;
+    if (!alloc_memory(&cpu)) return 1;
     g_cpu = &cpu;
     wp_cpu_host_init(&cpu);
     wp_mmio_init(&cpu);
@@ -113,6 +142,19 @@ int main(int argc, char** argv) {
 
     if (!load_dol(&cpu, dol, &entry)) return 1;
     setup_low_memory();
+    {
+        /* The disc's files and the emulated NAND, next to the extracted
+         * main.dol: <game>/sys/main.dol -> <game>, and nand beside <game>. */
+        char root[512], nand[600];
+        char* p;
+        snprintf(root, sizeof(root), "%s", dol);
+        for (p = root; *p; p++) if (*p == '\\') *p = '/';
+        if ((p = strstr(root, "/sys/main.dol")) != NULL) *p = '\0';
+        if (hle_dvd_init(root) != 0) return 1;
+        hle_dvd_boot_setup();
+        snprintf(nand, sizeof(nand), "%s/../nand", root);
+        hle_nand_set_root(nand);
+    }
 
     cpu.pc = entry;
     cpu.msr = 0x00002032u;  /* FP, IR, DR, RI */
@@ -120,7 +162,9 @@ int main(int argc, char** argv) {
 
     fprintf(stderr, "wonderpark: %s loaded, entry %08X\n", dol, entry);
 
+    settings_load();
+    gx_init(); /* opens the window and the renderer (runtime/gpu) */
+
     wp_run(&cpu, max_slices);
-    cpu_free(&cpu);
     return 2;
 }

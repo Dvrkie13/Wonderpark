@@ -31,9 +31,13 @@ void wp_fatal(const char* fmt, ...) {
     va_start(ap, fmt);
     vfprintf(stderr, fmt, ap);
     va_end(ap);
-    if (g_cpu)
-        fprintf(stderr, "\n  pc %08X lr %08X r1 %08X r3 %08X srr0 %08X msr %08X\n",
-                g_cpu->pc, g_cpu->lr, g_cpu->gpr[1], g_cpu->gpr[3], g_cpu->srr0, g_cpu->msr);
+    if (g_cpu) {
+        int i;
+        fprintf(stderr, "\n  srr0 %08X msr %08X cr %08X ctr %08X\n", g_cpu->srr0, g_cpu->msr, g_cpu->cr, g_cpu->ctr);
+        for (i = 0; i < 32; i++)
+            fprintf(stderr, "  r%-2d %08X%s", i, g_cpu->gpr[i], (i & 3) == 3 ? "\n" : "");
+        wp_backtrace(g_cpu);
+    }
     fflush(stderr);
     exit(3);
 }
@@ -62,9 +66,18 @@ uint64_t wp_timebase(void) {
 
 void wp_timebase_set(uint64_t tb) { s_tb_offset += tb - wp_timebase(); }
 
+/* Monotonic host time in time-base ticks, unaffected by the game setting
+ * the time base (OSSetTime): for device timing. */
+uint64_t wp_host_time(void) {
+    uint64_t d = host_ticks() - s_host_start;
+    return (d / s_host_freq) * TB_HZ + (d % s_host_freq) * TB_HZ / s_host_freq;
+}
+
 /* ------------------------------------------------------------ SPRs */
 
-enum { SPR_DEC = 22, SPR_TBL_W = 284, SPR_TBU_W = 285, SPR_PVR = 287, SPR_WPAR = 921 };
+enum { SPR_DEC = 22, SPR_TBL_W = 284, SPR_TBU_W = 285, SPR_PVR = 287, SPR_WPAR = 921, SPR_DMAU = 922, SPR_DMAL = 923 };
+
+void hw_lc_dma(u32 dmau, u32 dmal);
 
 static u32 s_spr[1024];
 static uint64_t s_dec_deadline; /* time base at which DEC goes negative */
@@ -98,6 +111,11 @@ static void spr_write(CPUState* c, u16 spr, u32 v, u32 cia) {
         s_dec_deadline = wp_timebase() + (uint64_t)v + 1;
         s_dec_armed = !(v & 0x80000000u);
         WP_LOG("dec", "DEC = %08X", v);
+        break;
+    case SPR_DMAL:
+        /* Bit 1 (T) starts a locked-cache DMA; it completes at once. */
+        if (v & 2) hw_lc_dma(s_spr[SPR_DMAU], v);
+        s_spr[SPR_DMAL] = v & ~3u;
         break;
     case SPR_TBL_W: wp_timebase_set((wp_timebase() & 0xFFFFFFFF00000000ull) | v); break;
     case SPR_TBU_W: wp_timebase_set((wp_timebase() & 0xFFFFFFFFull) | ((uint64_t)v << 32)); break;

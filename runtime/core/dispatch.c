@@ -71,14 +71,54 @@ u32 wp_call_guest(CPUState* c, u32 addr, u32 r3, u32 r4, u32 r5, u32 r6) {
     return result;
 }
 
+/* WONDERPARK_LOG=prof: where slices end, by function, printed at exit. */
+#define PROF_SLOTS 4096
+static struct { u32 fn; unsigned long long n; } s_prof[PROF_SLOTS];
+
+static void prof_note(u32 pc) {
+    u32 off = 0, h;
+    const char* name = wp_sym(pc, &off);
+    u32 fn = name ? pc - off : pc & ~0xFFu;
+    h = (fn >> 2) % PROF_SLOTS;
+    while (s_prof[h].n && s_prof[h].fn != fn) h = (h + 1) % PROF_SLOTS;
+    s_prof[h].fn = fn;
+    s_prof[h].n++;
+}
+
+static void prof_print(void) {
+    int i, k;
+    unsigned long long total = 0;
+    for (i = 0; i < PROF_SLOTS; i++) total += s_prof[i].n;
+    if (!total) return;
+    fprintf(stderr, "profile (%llu samples):\n", total);
+    for (k = 0; k < 15; k++) {
+        int best = -1;
+        for (i = 0; i < PROF_SLOTS; i++)
+            if (s_prof[i].n && (best < 0 || s_prof[i].n > s_prof[best].n)) best = i;
+        if (best < 0) break;
+        {
+            const char* name = wp_sym(s_prof[best].fn, NULL);
+            fprintf(stderr, "  %5.1f%%  %08X %s\n", 100.0 * s_prof[best].n / total, s_prof[best].fn, name ? name : "?");
+        }
+        s_prof[best].n = 0;
+    }
+}
+
+extern u32 g_vi_retraces;
+
 void wp_run(CPUState* c, unsigned long long max_slices) {
     unsigned long long n = 0;
+    int prof = wp_log_on("prof");
     for (;;) {
         slice(c);
-        wp_devices_tick(wp_timebase());
+        if (prof) prof_note(c->pc);
+        wp_devices_tick(wp_host_time());
         wp_check_interrupts(c);
         if (max_slices && ++n >= max_slices) {
-            fprintf(stderr, "wonderpark: stopped after %llu slices at %08X (lr %08X)\n", n, c->pc, c->lr);
+            fprintf(stderr, "wonderpark: stopped after %llu slices at %08X (lr %08X), %u retraces, %.1f s\n", n, c->pc,
+                    c->lr, g_vi_retraces, (double)wp_host_time() / TB_HZ);
+            if (prof) prof_print();
+            if (wp_log_on("threads")) { wp_backtrace(c); wp_dump_threads(); }
             return;
         }
     }
