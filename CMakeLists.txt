@@ -27,7 +27,10 @@ add_library(wp_generated STATIC ${WP_CHUNKS})
 target_include_directories(wp_generated PUBLIC "${WP_GENERATED_DIR}")
 target_link_libraries(wp_generated PUBLIC wp_dolrecomp_cpu)
 
-add_executable(Wonderpark runtime/core/main.c)
+file(GLOB WP_RUNTIME_SOURCES CONFIGURE_DEPENDS
+    runtime/core/*.c runtime/hw/*.c runtime/hle/*.c "${WP_GENERATED_DIR}/wp_hooks.c")
+add_executable(Wonderpark ${WP_RUNTIME_SOURCES})
+target_include_directories(Wonderpark PRIVATE runtime/core)
 target_link_libraries(Wonderpark PRIVATE wp_generated)
 
 if(MSVC)
