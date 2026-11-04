@@ -1,0 +1,334 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Wonderpark launcher (mockup)</title>
+<!--
+  Wonderpark launcher — visual and behavioral reference.
+  Open in a browser. Everything is drawn in code: no game assets.
+  The disc check is real: it reads the first 6 bytes of the chosen ISO and
+  expects the game ID "S2LE01". The build is simulated with a timer.
+  The native launcher should match this look and flow.
+-->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Nunito:wght@600;700;800&display=swap">
+<style>
+:root{
+  --navy:#1b2440; --navy-deep:#121b3a; --bg:#1a2546;
+  --tile-a:#8597ba; --tile-b:#a9b7d0;
+  --gold:#c98f2a; --gold-hi:#f3cf6b; --cream:#ffe7a3;
+  --teal:#3fd0d8; --text:#f4efe1; --muted:#d0d8ea;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:#0d1430}
+body{display:flex;align-items:center;justify-content:center;font-family:'Nunito',system-ui,sans-serif;color:var(--text)}
+.scale-wrap{width:1280px;height:720px;transform-origin:center center}
+.wp-root{position:relative;width:1280px;height:720px;overflow:hidden;background:var(--bg)}
+.layer{position:absolute;inset:0;pointer-events:none}
+.floor{position:absolute;inset:0;background:
+  radial-gradient(circle at 50% 50%,rgba(255,246,220,.35) 0,rgba(255,246,220,0) 340px),
+  radial-gradient(ellipse at 50% 50%,rgba(16,24,52,0) 38%,rgba(16,24,52,.92) 100%),
+  repeating-linear-gradient(0deg,rgba(36,48,84,.3) 0 2px,transparent 2px 48px),
+  repeating-linear-gradient(90deg,rgba(36,48,84,.3) 0 2px,transparent 2px 48px),
+  repeating-conic-gradient(from 0deg at 50% 50%,var(--tile-a) 0deg 11.25deg,var(--tile-b) 11.25deg 22.5deg)}
+.rays{position:absolute;left:50%;top:50%;width:1500px;height:1500px;margin:-750px 0 0 -750px;pointer-events:none;
+  background:repeating-conic-gradient(from 0deg,rgba(255,244,214,.18) 0deg 4deg,rgba(255,244,214,0) 4deg 18deg);
+  -webkit-mask-image:radial-gradient(circle,#000 0,#000 16%,transparent 58%);mask-image:radial-gradient(circle,#000 0,#000 16%,transparent 58%);
+  animation:spin 90s linear infinite;transition:opacity 1s}
+.beam{position:absolute;left:50%;top:0;width:140px;height:360px;margin-left:-70px;pointer-events:none;filter:blur(8px);
+  background:linear-gradient(180deg,rgba(220,250,255,0) 0%,rgba(220,250,255,.32) 60%,rgba(255,250,230,.55) 100%);transition:opacity 1s}
+.is-menu .rays{opacity:.45}
+.is-menu .beam{opacity:.55}
+.pebble{position:absolute;border-radius:50%;box-shadow:0 2px 0 rgba(15,22,45,.45)}
+.spark{position:absolute;animation:twinkle 2.8s ease-in-out infinite}
+
+.stage{position:absolute;left:340px;top:60px;width:600px;height:600px}
+.emblem{position:absolute;inset:0;transition:transform 1.4s cubic-bezier(.2,.8,.2,1)}
+.is-title .emblem{transform:scale(.84)}
+.is-menu .emblem{transform:scale(1.75)}
+.pulse{position:absolute;inset:0}
+.is-title .pulse{animation:pulse 3.6s ease-in-out infinite}
+.is-menu .pulse{filter:drop-shadow(0 0 18px rgba(63,208,216,.45))}
+
+.gem{transition:fill 1s}
+.gem-n-l{fill:#f27aa5}.gem-n-d{fill:#c9346c}
+.gem-e-l{fill:#fbe27a}.gem-e-d{fill:#e3ad26}
+.gem-s-l{fill:#7ad68a}.gem-s-d{fill:#3f9e55}
+.gem-w-l{fill:#79a5f0}.gem-w-d{fill:#3d68c8}
+.is-menu .gem-l{fill:#a7b3ca}.is-menu .gem-d{fill:#7f8daa}
+.is-menu.on-n .gem-n-l{fill:#f27aa5}.is-menu.on-n .gem-n-d{fill:#c9346c}
+.is-menu.on-e .gem-e-l{fill:#fbe27a}.is-menu.on-e .gem-e-d{fill:#e3ad26}
+.is-menu.on-s .gem-s-l{fill:#7ad68a}.is-menu.on-s .gem-s-d{fill:#3f9e55}
+.is-menu.on-w .gem-w-l{fill:#79a5f0}.is-menu.on-w .gem-w-d{fill:#3d68c8}
+
+.disc-overlay{position:absolute;left:188px;top:188px;width:224px;height:224px}
+.disc-overlay svg{position:absolute;inset:0;width:224px;height:224px;overflow:visible;pointer-events:none}
+.title-copy{transition:opacity .5s;pointer-events:none}
+.is-menu .title-copy{opacity:0}
+.menu-copy{display:none;align-items:center;justify-content:center}
+.is-menu .menu-copy{display:flex;animation:popIn .7s cubic-bezier(.2,.8,.2,1) .8s both}
+
+.spark-big{position:absolute;left:398px;top:172px;width:30px;height:30px;opacity:0;transition:opacity .6s 1.2s}
+.spark-big svg{width:30px;height:30px;animation:twinkle 2.2s ease-in-out infinite}
+.is-menu .spark-big{opacity:1}
+
+.logo-btn{position:absolute;left:130px;top:130px;width:340px;height:340px;border-radius:50%;border:0;background:transparent;cursor:pointer}
+.is-menu .logo-btn{display:none}
+.logo-btn:focus-visible{outline:3px solid var(--teal);outline-offset:6px}
+
+.main-btn{position:relative;height:46px;min-width:128px;padding:0 24px;border-radius:999px;border:3px solid #fff1c2;
+  font-family:'Fredoka',sans-serif;font-weight:700;font-size:21px;
+  background:#f2c14e;color:var(--navy);box-shadow:0 4px 0 #a8741d,0 0 0 4px rgba(27,36,64,.6);cursor:pointer;transition:background .2s,transform .1s}
+.main-btn:not(:disabled):hover{background:#ffd877}
+.main-btn:not(:disabled):active{transform:translateY(2px)}
+.main-btn:focus-visible{outline:3px solid var(--teal);outline-offset:4px}
+.main-btn:disabled{cursor:default}
+.main-btn.is-busy{background:#24335f;color:var(--cream);box-shadow:0 4px 0 var(--navy-deep)}
+.main-btn.is-play{background:var(--teal);color:#10223a;box-shadow:0 4px 0 #1f8c93,0 0 24px rgba(63,208,216,.6)}
+.main-btn.is-play:hover{background:#7ae4ea}
+
+.stone{position:absolute;left:140px;top:104px;display:flex;align-items:center;gap:10px;min-height:50px;padding:0 22px;
+  border:3px solid #5d6a8a;border-radius:20px 13px 22px 11px / 13px 20px 11px 18px;color:var(--navy);
+  font-family:'Fredoka',sans-serif;font-weight:700;font-size:19px;text-shadow:0 1px 0 rgba(255,255,255,.55);cursor:pointer;
+  background:radial-gradient(circle at 18% 30%,rgba(255,255,255,.3) 0 2px,transparent 3px),radial-gradient(circle at 72% 62%,rgba(40,52,88,.28) 0 2px,transparent 3px),radial-gradient(circle at 46% 82%,rgba(255,255,255,.22) 0 1.5px,transparent 2.5px),radial-gradient(circle at 88% 24%,rgba(40,52,88,.22) 0 1.5px,transparent 2.5px),radial-gradient(circle at 30% 70%,rgba(40,52,88,.2) 0 1px,transparent 2px),linear-gradient(180deg,#b6c1d6,#8f9cb7);
+  box-shadow:inset 0 3px 0 rgba(255,255,255,.4),inset 0 -5px 0 rgba(40,52,88,.32),0 6px 0 #4a5677,0 10px 16px rgba(10,16,36,.5);
+  animation:blink 2.4s ease-in-out infinite;transition:opacity .5s,filter .2s,transform .1s}
+.stone:hover{filter:brightness(1.08)}
+.stone:active{transform:translateY(4px)}
+.stone:focus-visible{outline:3px solid var(--teal);outline-offset:5px}
+.is-menu .stone{opacity:0;pointer-events:none;animation:none}
+
+.status{position:absolute;left:40px;bottom:36px;width:340px;display:flex;flex-direction:column;gap:12px;font-size:14px;font-weight:700}
+.status .muted{color:#d6deef}
+.status .ok{display:flex;align-items:center;gap:8px;color:#a8f0d0}
+.status .warn{color:var(--cream)}
+.status .err{color:#ffb4b4}
+.progress-row{display:flex;justify-content:space-between;font-size:13px;color:#e6ebf5}
+.bar{height:14px;border-radius:999px;border:2px solid var(--gold-hi);background:var(--navy-deep);overflow:hidden}
+.bar > div{height:100%;width:0;background:var(--teal);border-radius:999px}
+[hidden]{display:none !important}
+
+.legal{position:absolute;right:40px;bottom:40px;max-width:420px;text-align:right;font-size:12px;font-weight:600;line-height:1.5;color:var(--muted)}
+.toast{position:absolute;left:50%;top:28px;transform:translateX(-50%);padding:10px 22px;border-radius:14px;border:2px solid var(--teal);
+  background:var(--navy-deep);color:#e8fbfc;font-family:'Fredoka',sans-serif;font-weight:600;font-size:18px;animation:toast .4s ease-out both}
+
+@keyframes pulse{0%,100%{transform:scale(1);filter:drop-shadow(0 0 16px rgba(255,226,140,.35))}50%{transform:scale(1.045);filter:drop-shadow(0 0 36px rgba(255,226,140,.75))}}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes twinkle{0%,100%{opacity:.15;transform:scale(.6)}50%{opacity:1;transform:scale(1)}}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.55}}
+@keyframes popIn{from{opacity:0;transform:scale(.88)}to{opacity:1;transform:scale(1)}}
+@keyframes toast{from{opacity:0;transform:translate(-50%,-12px)}to{opacity:1;transform:translate(-50%,0)}}
+@media (prefers-reduced-motion:reduce){*{animation:none !important;transition:none !important}}
+</style>
+</head>
+<body>
+<div class="scale-wrap" id="scaleWrap">
+<div class="wp-root is-title" id="root">
+
+  <div class="floor" aria-hidden="true"></div>
+  <div class="rays" aria-hidden="true"></div>
+  <div class="beam" aria-hidden="true"></div>
+  <div class="layer" id="pebbles" aria-hidden="true"></div>
+  <div class="layer" id="sparks" aria-hidden="true"></div>
+
+  <div class="stage">
+    <div class="emblem">
+      <div class="pulse">
+        <svg viewBox="0 0 600 600" aria-hidden="true" style="position:absolute;inset:0;width:600px;height:600px">
+          <defs>
+            <radialGradient id="wpDisc" cx="50%" cy="42%" r="60%">
+              <stop offset="0" stop-color="#2c3d70"/><stop offset="1" stop-color="#121b3a"/>
+            </radialGradient>
+          </defs>
+          <polygon points="300,8 380,220 592,300 380,380 300,592 220,380 8,300 220,220" fill="#c98f2a" stroke="#f3cf6b" stroke-width="6" stroke-linejoin="round"/>
+          <g stroke="#f3cf6b" stroke-width="2" stroke-linejoin="round">
+            <polygon class="gem gem-l gem-n-l" points="300,40 300,212 238,212"/>
+            <polygon class="gem gem-d gem-n-d" points="300,40 362,212 300,212"/>
+            <polygon class="gem gem-l gem-e-l" points="560,300 388,300 388,238"/>
+            <polygon class="gem gem-d gem-e-d" points="560,300 388,362 388,300"/>
+            <polygon class="gem gem-l gem-s-l" points="300,560 238,388 300,388"/>
+            <polygon class="gem gem-d gem-s-d" points="300,560 300,388 362,388"/>
+            <polygon class="gem gem-l gem-w-l" points="40,300 212,238 212,300"/>
+            <polygon class="gem gem-d gem-w-d" points="40,300 212,300 212,362"/>
+          </g>
+          <circle cx="300" cy="300" r="150" fill="#c98f2a" stroke="#f3cf6b" stroke-width="6"/>
+          <g id="wedges" stroke="#f3cf6b" stroke-width="3" stroke-linejoin="round"></g>
+          <circle cx="300" cy="300" r="112" fill="url(#wpDisc)" stroke="#f3cf6b" stroke-width="4"/>
+          <circle cx="300" cy="300" r="103" fill="none" stroke="rgba(243,207,107,.45)" stroke-width="1.5"/>
+        </svg>
+
+        <!-- Title wordmark -->
+        <div class="disc-overlay title-copy">
+          <svg viewBox="0 0 224 224" role="img" aria-label="Wonderpark, PokéPark 2 recomp">
+            <defs>
+              <linearGradient id="goldT" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0" stop-color="#fff7d6"/><stop offset=".5" stop-color="#f7d164"/><stop offset="1" stop-color="#d48f26"/>
+              </linearGradient>
+              <path id="arcT" d="M-48 256A160 160 0 0 1 272 256"/>
+            </defs>
+            <g font-family="Fredoka, sans-serif" font-weight="700" font-size="42">
+              <text fill="#6b4410" stroke="#6b4410" stroke-width="9" stroke-linejoin="round" transform="translate(0 4)"><textPath href="#arcT" startOffset="50%" text-anchor="middle">Wonder</textPath></text>
+              <text fill="#1b2440" stroke="#1b2440" stroke-width="9" stroke-linejoin="round"><textPath href="#arcT" startOffset="50%" text-anchor="middle">Wonder</textPath></text>
+              <text fill="url(#goldT)" stroke="#fff4cc" stroke-width="1.2"><textPath href="#arcT" startOffset="50%" text-anchor="middle">Wonder</textPath></text>
+            </g>
+            <g font-family="Fredoka, sans-serif" font-weight="700" font-size="50" text-anchor="middle">
+              <text x="112" y="150" fill="#6b4410" stroke="#6b4410" stroke-width="9" stroke-linejoin="round" transform="translate(0 4)">park</text>
+              <text x="112" y="150" fill="#1b2440" stroke="#1b2440" stroke-width="9" stroke-linejoin="round">park</text>
+              <text x="112" y="150" fill="url(#goldT)" stroke="#fff4cc" stroke-width="1.2">park</text>
+            </g>
+            <path d="M112 38L114 44L120 46L114 48L112 54L110 48L104 46L110 44Z" fill="#fff4cf"/>
+            <text x="112" y="184" font-family="Nunito, sans-serif" font-weight="800" font-size="10.5" letter-spacing="2.4" text-anchor="middle" fill="#cfdaf2">POKÉPARK 2 RECOMP</text>
+          </svg>
+        </div>
+
+        <!-- Menu: arched wordmark + the one main button -->
+        <div class="disc-overlay menu-copy">
+          <svg viewBox="0 0 224 224" role="img" aria-label="Wonderpark, unofficial recomp">
+            <defs>
+              <linearGradient id="goldM" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0" stop-color="#fff7d6"/><stop offset=".5" stop-color="#f7d164"/><stop offset="1" stop-color="#d48f26"/>
+              </linearGradient>
+              <path id="arcM" d="M30 116A82 82 0 0 1 194 116"/>
+              <path id="arcB" d="M30 112A82 82 0 0 0 194 112"/>
+            </defs>
+            <g font-family="Fredoka, sans-serif" font-weight="700" font-size="30">
+              <text fill="#6b4410" stroke="#6b4410" stroke-width="7" stroke-linejoin="round" transform="translate(0 3)"><textPath href="#arcM" startOffset="50%" text-anchor="middle">Wonderpark</textPath></text>
+              <text fill="#1b2440" stroke="#1b2440" stroke-width="7" stroke-linejoin="round"><textPath href="#arcM" startOffset="50%" text-anchor="middle">Wonderpark</textPath></text>
+              <text fill="url(#goldM)" stroke="#fff4cc" stroke-width=".9"><textPath href="#arcM" startOffset="50%" text-anchor="middle">Wonderpark</textPath></text>
+            </g>
+            <text font-family="Nunito, sans-serif" font-weight="800" font-size="10" letter-spacing="2.4" fill="#cfdaf2"><textPath href="#arcB" startOffset="50%" text-anchor="middle" dominant-baseline="hanging">UNOFFICIAL RECOMP</textPath></text>
+          </svg>
+          <button class="main-btn" id="mainBtn" type="button">Place ISO</button>
+        </div>
+      </div>
+
+      <div class="spark-big" aria-hidden="true">
+        <svg viewBox="0 0 20 20"><path d="M10 0L12.5 7.5L20 10L12.5 12.5L10 20L7.5 12.5L0 10L7.5 7.5Z" fill="#fff"/></svg>
+      </div>
+    </div>
+    <button class="logo-btn" id="logoBtn" type="button" aria-label="Open the Wonderpark launcher"></button>
+  </div>
+
+  <button class="stone" id="hintBtn" type="button">
+    <svg viewBox="0 0 24 24" aria-hidden="true" width="20" height="20"><path d="M12 2L14.6 9.4L22 12L14.6 14.6L12 22L9.4 14.6L2 12L9.4 9.4Z" fill="#c98f2a" stroke="#1b2440" stroke-width="1.4" stroke-linejoin="round"/></svg>
+    <span>Click the logo</span>
+  </button>
+
+  <div class="status" aria-live="polite">
+    <input id="fileInput" type="file" accept=".iso" hidden>
+    <div class="muted" id="stIdle">Place your own US disc as an .iso (S2LE01)</div>
+    <div class="warn" id="stVerifying" hidden></div>
+    <div class="err" id="stError" hidden></div>
+    <div class="ok" id="stOk" hidden>
+      <svg viewBox="0 0 24 24" aria-hidden="true" width="18" height="18"><path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="#a8f0d0" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <span id="okText"></span>
+    </div>
+    <div id="progress" hidden>
+      <div class="progress-row"><span id="stageText">Verifying disc</span><span id="pctText">0%</span></div>
+      <div class="bar" role="progressbar" aria-label="Build progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="bar"><div id="barFill"></div></div>
+    </div>
+  </div>
+
+  <div class="legal">Unofficial fan project. Not affiliated with Nintendo, The Pokémon Company or Creatures. Requires your own disc.</div>
+  <div class="toast" id="toast" role="status" hidden>Launching Wonderpark…</div>
+</div>
+</div>
+
+<script>
+(() => {
+  const EXPECTED_ID = 'S2LE01';
+  const $ = id => document.getElementById(id);
+  const root = $('root');
+
+  // ---- decorative layers ----
+  const pebbles = [[90,210,14,10,'#56668c'],[106,224,8,6,'#c3cee2'],[1150,160,12,9,'#56668c'],[1168,176,7,5,'#c3cee2'],
+    [1010,520,10,8,'#56668c'],[1026,534,14,10,'#c3cee2'],[252,470,9,7,'#56668c'],[234,458,6,5,'#c3cee2'],
+    [1180,450,12,9,'#56668c'],[820,70,8,6,'#c3cee2'],[832,80,11,8,'#56668c'],[980,250,7,5,'#c3cee2'],
+    [300,330,9,7,'#56668c'],[420,690,10,7,'#c3cee2']];
+  $('pebbles').innerHTML = pebbles.map(([x,y,w,h,c]) =>
+    `<div class="pebble" style="left:${x}px;top:${y}px;width:${w}px;height:${h}px;background:${c}"></div>`).join('');
+  const star = c => `<path d="M10 0L12.5 7.5L20 10L12.5 12.5L10 20L7.5 12.5L0 10L7.5 7.5Z" fill="${c}"/>`;
+  const sparks = [[180,90,18,0,'#fff4cf'],[1080,110,22,.8,'#fff4cf'],[1210,330,16,1.6,'#cdf6f8'],
+    [140,400,18,2.2,'#cdf6f8'],[1060,610,20,1.1,'#fff4cf'],[560,36,16,.4,'#fff4cf']];
+  $('sparks').innerHTML = sparks.map(([x,y,s,d,c]) =>
+    `<svg class="spark" viewBox="0 0 20 20" style="left:${x}px;top:${y}px;width:${s}px;height:${s}px;animation-delay:${d}s">${star(c)}</svg>`).join('');
+
+  // 12 stained-glass wedges between r=112 and r=140
+  const colors = ['#e2457f','#f39a2b','#f6d44a','#5bc26a','#4a7fe0','#8b5bd2'];
+  const pt = (r,a) => [300 + r*Math.cos(a), 300 + r*Math.sin(a)].map(n => n.toFixed(2)).join(' ');
+  let w = '';
+  for (let i = 0; i < 12; i++) {
+    const a0 = (-90 + 30*i) * Math.PI/180, a1 = (-60 + 30*i) * Math.PI/180;
+    w += `<path fill="${colors[i%6]}" d="M${pt(140,a0)}A140 140 0 0 1 ${pt(140,a1)}L${pt(112,a1)}A112 112 0 0 0 ${pt(112,a0)}Z"/>`;
+  }
+  $('wedges').innerHTML = w;
+
+  // fit 1280x720 stage to window
+  const fit = () => { const s = Math.min(innerWidth/1280, innerHeight/720, 1); $('scaleWrap').style.transform = `scale(${s})`; };
+  addEventListener('resize', fit); fit();
+
+  // ---- state machine: noIso -> verifying -> ready -> building -> done ----
+  const STAGES = [[15,'Verifying disc'],[35,'Extracting main.dol and files'],[85,'Recompiling PowerPC to C++'],[100,'Compiling Wonderpark.exe']];
+  let state = 'noIso', fileName = '', progress = 0, timer = null;
+
+  function render() {
+    const btn = $('mainBtn');
+    btn.className = 'main-btn' + (state === 'verifying' || state === 'building' ? ' is-busy' : state === 'done' ? ' is-play' : '');
+    btn.disabled = state === 'verifying' || state === 'building';
+    btn.textContent = { noIso:'Place ISO', verifying:'Verifying…', ready:'Build', building:Math.floor(progress)+'%', done:'Play' }[state];
+
+    $('stIdle').hidden = state !== 'noIso';
+    $('stVerifying').hidden = state !== 'verifying';
+    $('stVerifying').textContent = `Verifying ${fileName}…`;
+    $('stOk').hidden = !['ready','building','done'].includes(state);
+    $('okText').textContent = `${fileName} · disc verified (${EXPECTED_ID})`;
+    $('progress').hidden = !['building','done'].includes(state);
+
+    const lit = state === 'done' ? 4 : state === 'building' ? STAGES.filter(([t]) => progress >= t).length : 0;
+    ['on-n','on-e','on-s','on-w'].forEach((c,i) => root.classList.toggle(c, i < lit));
+    $('stageText').textContent = state === 'done' ? 'Build complete' : (STAGES.find(([t]) => progress < t) || STAGES[3])[1];
+    $('pctText').textContent = Math.floor(progress) + '%';
+    $('barFill').style.width = progress + '%';
+    $('bar').setAttribute('aria-valuenow', Math.floor(progress));
+  }
+
+  function openMenu() { root.classList.replace('is-title', 'is-menu'); }
+  $('logoBtn').addEventListener('click', openMenu);
+  $('hintBtn').addEventListener('click', openMenu);
+
+  $('mainBtn').addEventListener('click', () => {
+    if (state === 'noIso') { $('fileInput').value = ''; $('fileInput').click(); }
+    else if (state === 'ready') startBuild();
+    else if (state === 'done') { $('toast').hidden = false; setTimeout(() => $('toast').hidden = true, 2600); }
+  });
+
+  $('fileInput').addEventListener('change', async e => {
+    const f = e.target.files[0]; if (!f) return;
+    fileName = f.name; state = 'verifying'; $('stError').hidden = true; render();
+    // Wii disc header: bytes 0-5 hold the game ID.
+    const id = await f.slice(0, 6).text();
+    setTimeout(() => {
+      if (id === EXPECTED_ID) { state = 'ready'; }
+      else {
+        state = 'noIso';
+        $('stError').hidden = false;
+        $('stError').textContent = `That disc is ${id.replace(/[^\x20-\x7e]/g,'?') || 'unknown'}, not ${EXPECTED_ID}. Use the US PokéPark 2 disc.`;
+      }
+      render();
+    }, 1200);
+  });
+
+  function startBuild() {
+    state = 'building'; progress = 0; render();
+    timer = setInterval(() => {
+      progress = Math.min(100, progress + 1.25);
+      if (progress >= 100) { clearInterval(timer); state = 'done'; }
+      render();
+    }, 60);
+  }
+
+  render();
+})();
+</script>
+</body>
+</html>
