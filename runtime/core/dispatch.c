@@ -31,19 +31,27 @@ int wp_hook(CPUState* c, u32 addr) {
     return wp_hook_table[lo].fn(c); /* when handled, the hook has set pc (normally to lr) */
 }
 
-/* One slice of guest execution plus exception handling. */
+/* One slice: generated code runs block after block until the cycle budget
+ * is spent (or a magic pc needs the host), handling exceptions as they come. */
 static void slice(CPUState* c) {
-    u64 now = wp_timebase();
+    u64 now;
+    wp_clock_tick();
+    now = wp_timebase();
     c->timebase = now;
     c->downcount = SLICE_CYCLES;
-    if (c->pc == WP_MAGIC_IRQ_STEP || c->pc == WP_MAGIC_LOAD_CONTEXT) {
-        wp_irq_step(c);
-        return;
-    }
-    if (!dolrecomp_call(c, c->pc))
-        wp_fatal("no recompiled code at %08X", c->pc);
-    if (c->exception && !wp_dispatch_exception(c))
-        wp_fatal("exception at %08X (srr0 %08X) with no OS handler", c->pc, c->srr0);
+    do {
+        if (c->pc == WP_MAGIC_IRQ_STEP || c->pc == WP_MAGIC_LOAD_CONTEXT || c->pc == RETURN_MAGIC) {
+            if (c->pc != RETURN_MAGIC) wp_irq_step(c);
+            break;
+        }
+        if (!dolrecomp_call(c, c->pc))
+            wp_fatal("no recompiled code at %08X", c->pc);
+        if (c->exception) {
+            if (!wp_dispatch_exception(c))
+                wp_fatal("exception at %08X (srr0 %08X) with no OS handler", c->pc, c->srr0);
+            break; /* let interrupts and devices catch up after an exception */
+        }
+    } while (c->downcount > 0 && !wp_interrupt_due(c));
     if (c->timebase != now) wp_timebase_set(c->timebase); /* the game wrote TBL/TBU */
 }
 

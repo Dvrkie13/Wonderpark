@@ -102,12 +102,6 @@ Function names come from `tools/analysis/sigmatch.py` (2,502 named,
 
 ## Known gaps
 
-- **Speed: about 10 fps in 3D scenes** (60 fps on 2D screens). The CPU
-  side is the bottleneck: every memory access and floating-point op goes
-  through a DolRecomp helper call, and every instruction is a `switch` label.
-  First things to try: an inline fast path for RAM accesses (own CPU header
-  via `DOLRECOMP_CPU_HEADER`), inlined FP helpers, then DolRecomp's LLVM
-  backend.
 - **No sound yet**: AX frames run, but voices aren't mixed (step 4).
 - Wii Remote: buttons and shake only; no pointer (WPADIsDpdEnabled /
   WPADGetDpdFormat aren't hooked yet), no motion mapping (Phase 3).
@@ -120,3 +114,40 @@ Function names come from `tools/analysis/sigmatch.py` (2,502 named,
 Dev switches: `WONDERPARK_LOG=` (`exc,dec,ipc,ios,dsp,wpad,irq,hook,prof,threads,mmio`),
 `WONDERPARK_MAX_SLICES=N`, `WONDERPARK_PAD_SCRIPT="8:a 8.2: 12:2"`,
 `RECOMP_GX_LOG=1` (GPU decoder).
+
+
+# Speed pass
+
+Title screen (Wish Park plaza behind the logo, a Mobiclip video decoded by
+the game on the CPU), Radeon RX 9060 XT, OpenGL:
+
+| Change | Title fps |
+| --- | --- |
+| Start (MSVC, every access through cpu.c) | 12.3 |
+| Inline RAM fast path (`runtime/core/wp_cpu_fast.h`), one clock read per slice, slices of many dispatches | 12.9 |
+| Recompiled code built with clang-cl instead of MSVC | 26.6 |
+| SwapBuffers instead of the DXGI interop present on non-NVIDIA GPUs | **30.0** (the game's own rate) |
+| Idle loop sleeps until the next event | 30.0, CPU busy ~50-65% |
+
+2D screens run at 60. The title bar's "busy %" is now real headroom.
+
+Notes:
+- `tools/build_game.py` picks clang-cl (VS's own, `$WONDERPARK_CLANG_CL`,
+  PATH, or an llvm-mingw install with a `clang-cl.exe` hard link next to
+  `clang-23.exe`) and builds with Ninja; `--msvc` forces MSVC. clang takes
+  about 8 minutes for the recompiled code (MSVC: 1.5) but the result runs
+  twice as fast.
+- Slices now run block after block until the budget is spent; so that
+  interrupts aren't starved, `OSEnableInterrupts`/`OSRestoreInterrupts` are
+  hooks and a slice ends as soon as interrupts are on and one is due.
+  `__AI_SRC_INIT` is skipped (its timing loop can't pass at slice granularity;
+  the reference skips it too).
+- `WONDERPARK_LOG=hostprof` samples the host (needs
+  `tools/build_game.py --debug-info` for names in the recompiled code);
+  `tools/analysis/hostprof.py` maps samples back to guest functions.
+
+## Open: the title doesn't take the 2 button
+
+WPAD reports the presses (`WONDERPARK_LOG=wpadbtn` shows 2 = 0x0100 and A =
+0x0800 reaching `WPADRead` at 200 Hz), but the title screen doesn't react.
+The game's input path above WPAD (KPAD, or its own) needs checking next.

@@ -18,7 +18,7 @@
  *   RECOMP_GX_DUMP=<dir>       write presented frames as BMP files
  *   RECOMP_GX_DUMP_EVERY=n     ...every nth frame (default 30)
  *   RECOMP_GX_DUMP_FROM=n      ...from the nth on (default 0)
- *   RECOMP_GL_PRESENT=swapbuffers  present with SwapBuffers, not DXGI (see "Presenting")
+ *   RECOMP_GL_PRESENT=swapbuffers|dxgi  how frames are presented (default: DXGI on NVIDIA, SwapBuffers elsewhere; see "Presenting")
  *   RECOMP_GL_DEBUG=1          debug context, printing the driver's error messages */
 #include <math.h>
 #include <stdio.h>
@@ -1037,6 +1037,14 @@ static int gl_init(void) {
     if ((v = getenv("RECOMP_GL_DEBUG")) && *v && *v != '0') rc = debug_context(rc);
     load_gl();
     v = getenv("RECOMP_GL_PRESENT");
+    /* Wonderpark: the DXGI path works around an NVIDIA driver crash (above);
+     * elsewhere it costs more than it saves (on AMD, locking the shared
+     * texture waited about 10 ms a frame), so other GPUs use SwapBuffers.
+     * RECOMP_GL_PRESENT=dxgi or =swapbuffers chooses either way. */
+    if (!v || !*v) {
+        const char* vendor = (const char*)glGetString(GL_VENDOR);
+        v = vendor && strstr(vendor, "NVIDIA") ? "dxgi" : "swapbuffers";
+    }
     if (!(v && strcmp(v, "swapbuffers") == 0) && dx_init()) {
         fprintf(stderr, "gl: presenting through DXGI (flip model%s)\n", sTearing ? ", tearing allowed" : "");
     } else {

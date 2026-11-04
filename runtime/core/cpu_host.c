@@ -16,13 +16,21 @@ CPUState* g_cpu;
 
 /* ------------------------------------------------------------ logging */
 
+/* WONDERPARK_LOG is a comma-separated list of categories (or "all"). */
 int wp_log_on(const char* cat) {
     static const char* spec;
     static int init;
+    const char* p;
+    size_t n = strlen(cat);
     if (!init) { spec = getenv("WONDERPARK_LOG"); init = 1; }
     if (!spec) return 0;
-    if (strstr(spec, "all")) return 1;
-    return strstr(spec, cat) != NULL;
+    for (p = spec; *p;) {
+        size_t len = strcspn(p, ",");
+        if ((len == n && strncmp(p, cat, n) == 0) || (len == 3 && strncmp(p, "all", 3) == 0)) return 1;
+        p += len;
+        if (*p == ',') p++;
+    }
+    return 0;
 }
 
 void wp_fatal(const char* fmt, ...) {
@@ -58,20 +66,21 @@ static uint64_t host_ticks(void) {
 #endif
 }
 
-uint64_t wp_timebase(void) {
-    uint64_t d = host_ticks() - s_host_start;
-    /* d * TB_HZ / freq without overflow for long runs */
-    return s_tb_offset + (d / s_host_freq) * TB_HZ + (d % s_host_freq) * TB_HZ / s_host_freq;
-}
+/* The host clock is read once per slice (wp_clock_tick); the time base
+ * and device time are derived from that reading. */
+static uint64_t s_now; /* host time in time-base ticks, at the last wp_clock_tick */
+
+static uint64_t host_to_tb(uint64_t d) { return (d / s_host_freq) * TB_HZ + (d % s_host_freq) * TB_HZ / s_host_freq; }
+
+void wp_clock_tick(void) { s_now = host_to_tb(host_ticks() - s_host_start); }
+
+uint64_t wp_timebase(void) { return s_tb_offset + s_now; }
 
 void wp_timebase_set(uint64_t tb) { s_tb_offset += tb - wp_timebase(); }
 
 /* Monotonic host time in time-base ticks, unaffected by the game setting
  * the time base (OSSetTime): for device timing. */
-uint64_t wp_host_time(void) {
-    uint64_t d = host_ticks() - s_host_start;
-    return (d / s_host_freq) * TB_HZ + (d % s_host_freq) * TB_HZ / s_host_freq;
-}
+uint64_t wp_host_time(void) { return s_now; }
 
 /* ------------------------------------------------------------ SPRs */
 
@@ -229,6 +238,20 @@ int wp_dispatch_exception(CPUState* c) {
     if (n == 6 && wp_log_on("exc"))
         WP_LOG("exc", "program exception (%08X) at %08X", exc, c->srr0);
     return os_vector_stub(c, n);
+}
+
+int wp_irq_pending(void);
+
+/* Host time of the decrementer's next interrupt, or 0 if it isn't armed. */
+uint64_t wp_dec_next_host(void) {
+    if (!s_dec_armed) return 0;
+    return s_dec_deadline - s_tb_offset; /* time base = offset + host time */
+}
+
+/* Whether an interrupt would be taken now (the dispatcher ends a slice early for it). */
+int wp_interrupt_due(CPUState* c) {
+    if (!(c->msr & MSR_EE)) return 0;
+    return hw_pi_pending() || (s_dec_armed && (int64_t)(wp_timebase() - s_dec_deadline) >= 0) || wp_irq_pending();
 }
 
 int wp_check_interrupts(CPUState* c) {

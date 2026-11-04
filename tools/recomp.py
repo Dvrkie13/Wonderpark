@@ -104,7 +104,8 @@ def patch_hooks(out_dir: Path, hooks: dict[int, str]) -> None:
             label = f"label_{addr:08X}:\n"
             if label not in text:
                 raise RecompError(f"hook {hooks[addr]}: no instruction label at {addr:08X}")
-            text = text.replace(label, label + f"    if (wp_hook(ctx, 0x{addr:08X}u)) return; /* {hooks[addr]} */\n", 1)
+            # Every copy of the label: a loop head also appears in DolRecomp's loop helper.
+            text = text.replace(label, label + f"    if (wp_hook(ctx, 0x{addr:08X}u)) return; /* {hooks[addr]} */\n")
         # Declare wp_hook right after the generated header (which defines CPUState).
         include = text.index('#include "../')
         eol = text.index("\n", include) + 1

@@ -149,6 +149,14 @@ void wp_timer_start(int id, uint64_t period, void (*fire)(void)) {
 
 void wp_timer_stop(int id) { s_timers[id].on = 0; }
 
+uint64_t wp_timers_next(void) {
+    uint64_t best = 0;
+    int i;
+    for (i = 0; i < TIMERS; i++)
+        if (s_timers[i].on && (!best || (int64_t)(s_timers[i].next - best) < 0)) best = s_timers[i].next;
+    return best;
+}
+
 void wp_timers_tick(uint64_t now) {
     int i;
     for (i = 0; i < TIMERS; i++) {

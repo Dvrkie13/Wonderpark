@@ -25,6 +25,9 @@ target_include_directories(wp_dolrecomp_cpu PUBLIC "${WP_DOLRECOMP_DIR}/src")
 # The recompiled game code.
 add_library(wp_generated STATIC ${WP_CHUNKS})
 target_include_directories(wp_generated PUBLIC "${WP_GENERATED_DIR}")
+# Inline RAM fast paths on top of DolRecomp's CPU header.
+target_include_directories(wp_generated PRIVATE runtime/core)
+target_compile_definitions(wp_generated PRIVATE DOLRECOMP_CPU_HEADER="wp_cpu_fast.h")
 target_link_libraries(wp_generated PUBLIC wp_dolrecomp_cpu)
 
 file(GLOB WP_RUNTIME_SOURCES CONFIGURE_DEPENDS
@@ -37,9 +40,23 @@ if(WIN32)
     target_link_libraries(Wonderpark PRIVATE opengl32 gdi32 user32 winmm shell32 ole32 dwmapi)
 endif()
 
+option(WP_DEBUG_INFO_GENERATED "Debug info for the recompiled code (slower to build; for profiling)" OFF)
+
 if(MSVC)
-    # Generated code: no warnings, big switch tables, parallel compile.
-    target_compile_options(wp_generated PRIVATE /w /MP /bigobj)
+    # MSVC or clang-cl (tools/build_game.py prefers clang-cl: the recompiled
+    # code runs about twice as fast).
+    # Debug info in Release too (for crash reports and the host profiler).
+    target_compile_options(wp_dolrecomp_cpu PRIVATE /Z7)
+    target_compile_options(Wonderpark PRIVATE /Z7)
+    if(WP_DEBUG_INFO_GENERATED)
+        target_compile_options(wp_generated PRIVATE /Z7)
+    endif()
+    target_link_options(Wonderpark PRIVATE /DEBUG /OPT:REF /OPT:ICF)
+    # Generated code: no warnings, big switch tables.
+    target_compile_options(wp_generated PRIVATE /w)
+    if(CMAKE_C_COMPILER_ID STREQUAL "MSVC")
+        target_compile_options(wp_generated PRIVATE /MP /bigobj)
+    endif()
     target_compile_definitions(wp_dolrecomp_cpu PRIVATE _CRT_SECURE_NO_WARNINGS)
     target_compile_definitions(Wonderpark PRIVATE _CRT_SECURE_NO_WARNINGS)
 else()

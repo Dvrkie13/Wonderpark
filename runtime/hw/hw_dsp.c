@@ -149,6 +149,8 @@ static void ai_update(void) {
     }
 }
 
+uint64_t hw_dsp_next_event(void) { return s_ai_period ? s_ai_next : 0; }
+
 void hw_dsp_tick(uint64_t now) {
     if (s_ai_period && (int64_t)(now - s_ai_next) >= 0) {
         u32 addr = (u32)R(0x30) << 16 | R(0x32), bytes = (u32)(R(0x36) & 0x7FFF) * 32;

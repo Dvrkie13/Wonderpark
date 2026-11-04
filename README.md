@@ -26,7 +26,7 @@ Early setup. Nothing is playable yet.
 | --- | --- |
 | Repo, disc check and extraction | done |
 | CPU recompile (PowerPC to C, DolRecomp) | done |
-| Boot to title | reaches the title screen (slow: ~10 fps in 3D) |
+| Boot to title | reaches the title screen at full speed (30 fps) |
 | Audio, cutscenes, input, launcher | not started |
 
 ## Extracting your disc (developers)
@@ -43,7 +43,9 @@ NKit-processed `.iso` images are also accepted.
 
 ## Building (developers)
 
-Also needs CMake and Visual Studio Build Tools (C++). Fetch the submodule
+Also needs CMake, Ninja and Visual Studio Build Tools (C++). clang-cl is
+strongly recommended (the game runs about twice as fast built with it): the
+Build Tools' "C++ Clang tools" component, or an llvm-mingw install. Fetch the submodule
 first: `git submodule update --init --recursive`.
 
 ```

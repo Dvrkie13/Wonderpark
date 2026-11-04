@@ -8,7 +8,7 @@ Stages (the launcher shows one star point per stage):
   1. Verifying disc                  tools/extract_disc.py --verify-only
   2. Extracting main.dol and files   tools/extract_disc.py
   3. Recompiling PowerPC to C++      tools/recomp.py
-  4. Compiling Wonderpark.exe        cmake configure + build
+  4. Compiling Wonderpark.exe        tools/build_game.py (clang-cl when available)
 
 Machine-readable progress for the launcher, one line each:
     @stage <1-4> <name>
@@ -68,18 +68,9 @@ def main() -> int:
 
         run_stage(2, [PY, "tools/recomp.py"])
 
-        subprocess.run(["cmake", "-S", str(REPO), "-B", str(build)], check=True, capture_output=True)
-        # MSBuild prints one line per compiled source; there are ~260 chunks.
-        count = {"n": 0}
+        run_stage(3, [PY, "tools/build_game.py"])
 
-        def chunk_line(line: str):
-            if re.search(r"chunk_\d+_", line):
-                count["n"] += 1
-                return min(99, int(100 * count["n"] / 260))
-            return None
-        run_stage(3, ["cmake", "--build", str(build), "--config", "Release", "-j"], parse=chunk_line)
-
-        exe = next((p for p in (build / "Release" / "Wonderpark.exe", build / "Wonderpark.exe") if p.is_file()), None)
+        exe = next((p for p in (build / "Wonderpark.exe", build / "Release" / "Wonderpark.exe") if p.is_file()), None)
         if not exe:
             raise RuntimeError("build finished but Wonderpark.exe is missing")
         emit(f"@done {exe}")

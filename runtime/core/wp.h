@@ -69,12 +69,15 @@ uint64_t wp_timebase(void);
 void wp_timebase_set(uint64_t tb);
 /* Monotonic host time in the same units, for device timers (the game can't move it). */
 uint64_t wp_host_time(void);
+/* Reads the host clock; the dispatcher calls it once per slice. */
+void wp_clock_tick(void);
 
 /* ---- CPU host services (cpu_host.c). */
 void wp_cpu_host_init(CPUState* c);
 /* Called by the dispatcher between slices: delivers pending interrupts
  * (decrementer, external) when MSR[EE] is set. */
 int wp_check_interrupts(CPUState* c); /* 1 if one was taken */
+int wp_interrupt_due(CPUState* c);
 /* Turns an exception DolRecomp raised (ctx->exception, pc at the vector)
  * into a call of the OS's handler. 0 if there is none. */
 int wp_dispatch_exception(CPUState* c);

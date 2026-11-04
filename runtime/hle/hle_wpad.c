@@ -258,6 +258,7 @@ WP_HOOK(0x802D49E0, WPADRead) {
          * held sideways: +-2.5 g, about 17 times a second. */
         ay = (sReports / SWING_REPORTS) & 1 ? ACC_ONE_G * 5 / 2 : -ACC_ONE_G * 5 / 2;
     }
+    if (held && wp_log_on("wpadbtn")) WP_LOG("wpadbtn", "chan %d held %04X -> buttons %04X (lr %08X)", (int)chan, held, wpad_buttons(held), c->lr);
     memset(MA(st), 0, 0x2A);
     ST16(st + 0x00, wpad_buttons(held));
     ST16(st + 0x02, (uint16_t)ax);
@@ -298,8 +299,14 @@ WP_HOOK(0x802D6990, WPADControlDpd) {
     return 1;
 }
 
-/* BOOL WPADIsDpdEnabled(s32 chan) */
-/* (not hooked yet: PP1 8024A8A0; its S2LE01 counterpart is laid out differently) */
+/* BOOL WPADIsDpdEnabled(s32 chan). (Matched to PP1's by its loads and stores:
+ * it returns the channel block's +0x838 word.) */
+WP_HOOK(0x802D6900, WPADIsDpdEnabled) {
+    int32_t chan = (int32_t)c->gpr[3];
+    c->gpr[3] = chan >= 0 && chan < WPAD_MAX_CHANS && sChan[chan].dpdCommand != 0;
+    wp_return(c);
+    return 1;
+}
 
 /* u8 WPADGetDpdFormat(s32 chan) */
 /* (not hooked yet: PP1 8024A8F0; its S2LE01 counterpart is laid out differently) */
