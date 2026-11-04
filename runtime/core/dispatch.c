@@ -36,6 +36,10 @@ static void slice(CPUState* c) {
     u64 now = wp_timebase();
     c->timebase = now;
     c->downcount = SLICE_CYCLES;
+    if (c->pc == WP_MAGIC_IRQ_STEP || c->pc == WP_MAGIC_LOAD_CONTEXT) {
+        wp_irq_step(c);
+        return;
+    }
     if (!dolrecomp_call(c, c->pc))
         wp_fatal("no recompiled code at %08X", c->pc);
     if (c->exception && !wp_dispatch_exception(c))
@@ -112,8 +116,12 @@ void wp_run(CPUState* c, unsigned long long max_slices) {
     for (;;) {
         slice(c);
         if (prof) prof_note(c->pc);
-        wp_devices_tick(wp_host_time());
-        wp_check_interrupts(c);
+        {
+            u64 now = wp_host_time();
+            wp_devices_tick(now);
+            wp_timers_tick(now);
+        }
+        if (!wp_check_interrupts(c)) wp_irq_begin(c);
         if (max_slices && ++n >= max_slices) {
             fprintf(stderr, "wonderpark: stopped after %llu slices at %08X (lr %08X), %u retraces, %.1f s\n", n, c->pc,
                     c->lr, g_vi_retraces, (double)wp_host_time() / TB_HZ);

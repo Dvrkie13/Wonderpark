@@ -1028,9 +1028,9 @@ static int gl_init(void) {
     memset(&wc, 0, sizeof(wc));
     wc.hInstance = GetModuleHandleA(NULL);
     wc.lpfnWndProc = DefWindowProcA;
-    wc.lpszClassName = "PokeParkRecompGL";
+    wc.lpszClassName = "WonderparkGL";
     RegisterClassA(&wc);
-    sGlDC = GetDC(CreateWindowA("PokeParkRecompGL", "", WS_POPUP, 0, 0, 16, 16, NULL, NULL, wc.hInstance, NULL));
+    sGlDC = GetDC(CreateWindowA("WonderparkGL", "", WS_POPUP, 0, 0, 16, 16, NULL, NULL, wc.hInstance, NULL));
     SetPixelFormat(sGlDC, ChoosePixelFormat(sGlDC, &pfd), &pfd);
     rc = wglCreateContext(sGlDC);
     wglMakeCurrent(sGlDC, rc);

@@ -231,18 +231,20 @@ int wp_dispatch_exception(CPUState* c) {
     return os_vector_stub(c, n);
 }
 
-void wp_check_interrupts(CPUState* c) {
-    if (!(c->msr & MSR_EE)) return;
+int wp_check_interrupts(CPUState* c) {
+    if (!(c->msr & MSR_EE)) return 0;
     if (hw_pi_pending()) {
         hw_exception_entry(c, 0x500);
         if (!os_vector_stub(c, 4)) wp_fatal("external interrupt before the OS installed handlers");
-        return;
+        return 1;
     }
     if (s_dec_armed && (int64_t)(wp_timebase() - s_dec_deadline) >= 0) {
         s_dec_armed = 0;
         hw_exception_entry(c, 0x900);
         if (!os_vector_stub(c, 8)) wp_fatal("decrementer before the OS installed handlers");
+        return 1;
     }
+    return 0;
 }
 
 void wp_cpu_host_init(CPUState* c) {

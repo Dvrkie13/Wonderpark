@@ -192,7 +192,7 @@ void settings_save(void) {
     FILE* f = fopen(settings_path(), "w");
     int i;
     if (!f) return;
-    fprintf(f, "; PokePark recomp settings, also changed in Options in the pause menu.\n\n");
+    fprintf(f, "; Wonderpark settings. (Options menu: coming in a later phase.)\n\n");
     fprintf(f, "[display]\n");
 #ifndef __ANDROID__
     fprintf(f, "fullscreen = %d\n", g_settings.fullscreen);

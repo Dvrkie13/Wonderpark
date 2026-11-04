@@ -25,8 +25,8 @@ Early setup. Nothing is playable yet.
 | Step | State |
 | --- | --- |
 | Repo, disc check and extraction | done |
-| CPU recompile (PowerPC to C, DolRecomp) | compiles and links; runs early OS init |
-| Boot to title | not started |
+| CPU recompile (PowerPC to C, DolRecomp) | done |
+| Boot to title | reaches the title screen (slow: ~10 fps in 3D) |
 | Audio, cutscenes, input, launcher | not started |
 
 ## Extracting your disc (developers)
@@ -52,7 +52,7 @@ python builder/pipeline.py path\to\your\disc.iso
 
 This verifies and extracts the disc, recompiles `main.dol` with DolRecomp
 (`tools/recomp.py`), and compiles `build/game/Release/Wonderpark.exe`.
-It doesn't play yet.
+It reaches the title screen but isn't playable yet.
 
 ## Repository layout
 

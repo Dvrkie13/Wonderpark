@@ -1,4 +1,4 @@
-# Recompile status (Phase 2, step 2)
+# Recompile status
 
 DolRecomp `02e27ac`, C backend, Broadway profile, run on the S2LE01 `main.dol`.
 
@@ -69,3 +69,54 @@ first item for step 3 (boot to title), together with:
 - the time base paced on host time (currently it advances by guest cycles);
 - the trap-based hook mechanism, then the reference's HLE patches ported to
   `CPUState` with PokéPark 2 addresses (EXI, IOS, DVD, AX/AI, GX, WPAD).
+
+
+# Phase 2, step 3: boots to the title screen
+
+The recompiled game runs from `__start` through the OS, IOS, CRI Atom and
+GX setup, shows the wrist-strap screen, the logo and the title screen (Wish
+Park's fountain, "Please Press 2"), and takes Wii Remote input from the
+keyboard, mouse or an XInput controller.
+
+## How the runtime is put together
+
+| Part | Approach | Code |
+| --- | --- | --- |
+| CPU | DolRecomp C output, run from a dispatcher loop in slices | `runtime/core/dispatch.c` |
+| Hooks | `WP_HOOK(0xADDR, name)` in C; `tools/recomp.py` inserts a check at that address's label in the generated code and writes the table | `runtime/core/hle.h`, `tools/recomp.py` |
+| Exceptions | The OS's own handlers: the runtime does what the copied `__OSEVStart` stub would (it isn't recompiled), then continues in the handler | `runtime/core/cpu_host.c` |
+| Interrupts | Real exception entries between slices (PI external, decrementer); the OS's dispatcher and handlers run unchanged | `cpu_host.c`, `runtime/hw/hw_pi.c` |
+| Host callbacks | "Host interrupts": an external-interrupt entry, then the callbacks inside an OS-style scratch context, then `__OSReschedule` + `OSLoadContext`; no nested host calls, so thread switches work as on hardware | `runtime/core/hostirq.c` |
+| Threads | Nothing special: guest context switches are just state changes in the dispatcher model | |
+| Time | Time base on host time (game-settable); devices on a monotonic host clock | `cpu_host.c` |
+| IOS | IPC hardware registers; requests answered by IOS device code ported from the reference (`/dev/di` from the extracted files, `/dev/fs` NAND in `nand/`, `/dev/es`, `/dev/stm`) | `runtime/hw/hw_ipc.c`, `runtime/ios/` |
+| VI | Registers plus a 60 Hz retrace interrupt | `runtime/hw/hw_vi.c` |
+| DSP / AX | Mailboxes, the boot-ROM handshake and the AX ucode's mail protocol at a high level; AI DMA timer drives AX frames | `runtime/hw/hw_dsp.c`, `hw_ai.c` |
+| GPU | Write-gather pipe into the PI FIFO; CP/PE registers and token/finish interrupts; the reference's FIFO decoder and OpenGL renderer | `runtime/hw/hw_gx.c`, `runtime/gpu/` |
+| Wii Remote | The reference's WPAD layer, re-addressed for S2LE01, on host interrupts and timers; keyboard/XInput from the reference's input layer | `runtime/hle/hle_wpad.c`, `runtime/host/input_win32.c` |
+| Locked cache | 16 KB scratch with its DMA | `runtime/hw/hw_lc.c` |
+
+28 hooks so far (Bluetooth, WPAD, cache maintenance, `__OSInitAudioSystem`).
+Function names come from `tools/analysis/sigmatch.py` (2,502 named,
+`config/S2LE01/symbols.txt`).
+
+## Known gaps
+
+- **Speed: about 10 fps in 3D scenes** (60 fps on 2D screens). The CPU
+  side is the bottleneck: every memory access and floating-point op goes
+  through a DolRecomp helper call, and every instruction is a `switch` label.
+  First things to try: an inline fast path for RAM accesses (own CPU header
+  via `DOLRECOMP_CPU_HEADER`), inlined FP helpers, then DolRecomp's LLVM
+  backend.
+- **No sound yet**: AX frames run, but voices aren't mixed (step 4).
+- Wii Remote: buttons and shake only; no pointer (WPADIsDpdEnabled /
+  WPADGetDpdFormat aren't hooked yet), no motion mapping (Phase 3).
+- Vulkan renderer not built (needs the shader build step); OpenGL is used.
+- The reference's Options menu, update check and PokePark 1 gameplay sliders
+  are stubbed (`runtime/host/host_stubs.c`); `settings.ini` still has
+  PokePark 1 fields.
+- The movie player (Mobiclip) hasn't been reached yet.
+
+Dev switches: `WONDERPARK_LOG=` (`exc,dec,ipc,ios,dsp,wpad,irq,hook,prof,threads,mmio`),
+`WONDERPARK_MAX_SLICES=N`, `WONDERPARK_PAD_SCRIPT="8:a 8.2: 12:2"`,
+`RECOMP_GX_LOG=1` (GPU decoder).

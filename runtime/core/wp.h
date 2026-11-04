@@ -74,7 +74,7 @@ uint64_t wp_host_time(void);
 void wp_cpu_host_init(CPUState* c);
 /* Called by the dispatcher between slices: delivers pending interrupts
  * (decrementer, external) when MSR[EE] is set. */
-void wp_check_interrupts(CPUState* c);
+int wp_check_interrupts(CPUState* c); /* 1 if one was taken */
 /* Turns an exception DolRecomp raised (ctx->exception, pc at the vector)
  * into a call of the OS's handler. 0 if there is none. */
 int wp_dispatch_exception(CPUState* c);

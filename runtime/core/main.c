@@ -29,6 +29,7 @@ void hle_dvd_boot_setup(void);
 void hle_nand_set_root(const char* root);
 void settings_load(void);
 void gx_init(void);
+void input_init(void);
 void wp_run(CPUState* c, unsigned long long max_slices);
 
 /* MEM1 and MEM2, with write watch on Windows (the GPU's texture cache uses
@@ -47,6 +48,22 @@ static int alloc_memory(CPUState* c) {
     if (!c->ram || !c->mem2) { fprintf(stderr, "wonderpark: out of memory\n"); return 0; }
     return 1;
 }
+
+#ifdef _WIN32
+/* A host crash (an access violation in generated or runtime code): say
+ * where the guest was before Windows ends the process. */
+static LONG WINAPI crash_filter(EXCEPTION_POINTERS* e) {
+    fprintf(stderr, "wonderpark: host exception %08lX at %p (address %p)\n", e->ExceptionRecord->ExceptionCode,
+            e->ExceptionRecord->ExceptionAddress,
+            e->ExceptionRecord->NumberParameters > 1 ? (void*)e->ExceptionRecord->ExceptionInformation[1] : NULL);
+    if (g_cpu) {
+        fprintf(stderr, "  guest pc %08X lr %08X r1 %08X\n", g_cpu->pc, g_cpu->lr, g_cpu->gpr[1]);
+        wp_backtrace(g_cpu);
+    }
+    fflush(stderr);
+    return EXCEPTION_EXECUTE_HANDLER;
+}
+#endif
 
 static uint32_t be32(const uint8_t* p) {
     return (uint32_t)p[0] << 24 | (uint32_t)p[1] << 16 | (uint32_t)p[2] << 8 | p[3];
@@ -134,6 +151,9 @@ int main(int argc, char** argv) {
 
     if ((env = getenv("WONDERPARK_MAX_SLICES")) != NULL) max_slices = strtoull(env, NULL, 10);
 
+#ifdef _WIN32
+    SetUnhandledExceptionFilter(crash_filter);
+#endif
     if (!alloc_memory(&cpu)) return 1;
     g_cpu = &cpu;
     wp_cpu_host_init(&cpu);
@@ -164,6 +184,7 @@ int main(int argc, char** argv) {
 
     settings_load();
     gx_init(); /* opens the window and the renderer (runtime/gpu) */
+    input_init();
 
     wp_run(&cpu, max_slices);
     return 2;

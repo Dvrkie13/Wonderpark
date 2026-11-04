@@ -50,11 +50,11 @@ void win_create(void) {
     memset(&wc, 0, sizeof(wc));
     wc.lpfnWndProc = wnd_proc;
     wc.hInstance = GetModuleHandleA(NULL);
-    wc.lpszClassName = "PokeParkRecomp";
+    wc.lpszClassName = "Wonderpark";
     wc.hCursor = LoadCursor(NULL, IDC_ARROW);
     RegisterClassA(&wc);
     AdjustWindowRect(&r, WS_OVERLAPPEDWINDOW, FALSE);
-    sWnd = CreateWindowA("PokeParkRecomp", "PokePark (recompiled)", WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT,
+    sWnd = CreateWindowA("Wonderpark", "Wonderpark", WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT,
                          r.right - r.left, r.bottom - r.top, NULL, NULL, wc.hInstance, NULL);
     v = getenv("RECOMP_GX_HIDDEN");
     sHidden = v && *v && *v != '0';
