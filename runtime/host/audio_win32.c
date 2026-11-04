@@ -17,13 +17,17 @@
 #include <mmsystem.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <math.h>
 #include <string.h>
 
 #include "host_audio.h"
 
 #pragma comment(lib, "winmm.lib")
 
-#define BLOCK_FRAMES 384 /* 12 ms */
+/* Wonderpark: the device runs at 48 kHz; AX's 32 kHz mix is upsampled here
+ * with a windowed-sinc filter (below) rather than left to Windows. */
+#define OUT_RATE 48000
+#define BLOCK_FRAMES 576 /* 12 ms at 48 kHz */
 #define BLOCKS 10 /* at most 120 ms queued */
 #define PRIME_BLOCKS 7 /* 84 ms */
 
@@ -33,6 +37,9 @@ static int16_t sData[BLOCKS][BLOCK_FRAMES * 2];
 static int sFill;   /* block being filled */
 static int sFrames; /* frames in it */
 static int sPriming = 1;
+/* Wonderpark: dropped blocks (queue full) and underruns (queue ran dry),
+ * printed every 5 s with WONDERPARK_LOG=audiostats. */
+static unsigned sDrops, sUnderruns, sPushed;
 
 static int busy(const WAVEHDR* h) { return (h->dwFlags & WHDR_INQUEUE) && !(h->dwFlags & WHDR_DONE); }
 
@@ -42,16 +49,29 @@ static int queued(void) {
     return n;
 }
 
-static void push(const int16_t* lr, int frames) {
+static int log_on(void) {
+    static int on = -1;
+    if (on < 0) { const char* e = getenv("WONDERPARK_LOG"); on = e && strstr(e, "audiostats") != NULL; }
+    return on;
+}
+
+static void push_out(const int16_t* lr, int frames) {
+    sPushed += (unsigned)frames;
+    if (log_on() && sPushed >= (unsigned)OUT_RATE * 5) {
+        fprintf(stderr, "[audiostats] 5 s: %u blocks dropped, %u underruns, %d queued\n", sDrops, sUnderruns, queued());
+        sPushed = 0;
+        sDrops = sUnderruns = 0;
+    }
     while (frames > 0) {
         WAVEHDR* h = &sHdr[sFill];
         int n;
         if (sFrames == 0) {
-            if (busy(h)) return; /* queue full: drop */
+            if (busy(h)) { sDrops++; return; } /* queue full: drop */
             if (!sPriming && queued() == 0) {
                 /* Ran dry: hold the device until the queue is primed. */
                 waveOutPause(sOut);
                 sPriming = 1;
+                sUnderruns++;
             }
         }
         n = BLOCK_FRAMES - sFrames;
@@ -73,6 +93,62 @@ static void push(const int16_t* lr, int frames) {
     }
 }
 
+/* 32 -> 48 kHz: upsample by 3 (zero stuffing) to 96 kHz, low-pass at 15 kHz
+ * with a 72-tap Kaiser-windowed sinc, take every second sample. Each output
+ * sample needs 24 input samples per channel. */
+#define TAPS 72
+static double sFir[TAPS];
+static double sHist[2][64];
+static unsigned long long sIn, sOutN; /* input samples seen, output samples made */
+
+static double bessel_i0(double x) {
+    double sum = 1, term = 1;
+    int k;
+    for (k = 1; k < 30; k++) { term *= (x / (2 * k)) * (x / (2 * k)); sum += term; }
+    return sum;
+}
+
+static void fir_init(void) {
+    const double fc = 15000.0 / 96000.0, beta = 8.0, pi = 3.14159265358979323846;
+    double sum = 0;
+    int k;
+    for (k = 0; k < TAPS; k++) {
+        double m = k - (TAPS - 1) / 2.0, r = 2.0 * k / (TAPS - 1) - 1.0;
+        double sinc = m == 0 ? 2 * fc : sin(2 * pi * fc * m) / (pi * m);
+        sFir[k] = sinc * bessel_i0(beta * sqrt(1 - r * r)) / bessel_i0(beta);
+        sum += sFir[k];
+    }
+    for (k = 0; k < TAPS; k++) sFir[k] *= 3.0 / sum; /* unity gain after zero stuffing */
+}
+
+static void push(const int16_t* lr, int frames) {
+    static int16_t out[2048 * 2];
+    int i, n = 0;
+    for (i = 0; i < frames; i++) {
+        sHist[0][sIn & 63] = lr[2 * i];
+        sHist[1][sIn & 63] = lr[2 * i + 1];
+        sIn++;
+        /* outputs whose 96 kHz position 2*sOutN is covered by the inputs so far */
+        while (2 * sOutN <= 3 * (sIn - 1) && n < 2048) {
+            long long pos = (long long)(2 * sOutN), m;
+            double y[2] = {0, 0};
+            long long m0 = pos / 3, m1 = (pos - (TAPS - 1) + 2) / 3;
+            if (m1 < 0) m1 = 0;
+            for (m = m0; m >= m1 && m >= (long long)sIn - 64; m--) {
+                long long k = pos - 3 * m;
+                if (k < 0 || k >= TAPS) continue;
+                y[0] += sFir[k] * sHist[0][m & 63];
+                y[1] += sFir[k] * sHist[1][m & 63];
+            }
+            out[2 * n] = (int16_t)(y[0] > 32767 ? 32767 : y[0] < -32768 ? -32768 : y[0]);
+            out[2 * n + 1] = (int16_t)(y[1] > 32767 ? 32767 : y[1] < -32768 ? -32768 : y[1]);
+            n++;
+            sOutN++;
+        }
+    }
+    push_out(out, n);
+}
+
 void audio_init(void) {
     WAVEFORMATEX fmt;
     const char* e = getenv("RECOMP_AUDIO");
@@ -81,10 +157,11 @@ void audio_init(void) {
     memset(&fmt, 0, sizeof(fmt));
     fmt.wFormatTag = WAVE_FORMAT_PCM;
     fmt.nChannels = 2;
-    fmt.nSamplesPerSec = HOST_AUDIO_RATE;
+    fmt.nSamplesPerSec = OUT_RATE;
     fmt.wBitsPerSample = 16;
     fmt.nBlockAlign = 4;
-    fmt.nAvgBytesPerSec = HOST_AUDIO_RATE * 4;
+    fmt.nAvgBytesPerSec = OUT_RATE * 4;
+    fir_init();
     if (waveOutOpen(&sOut, WAVE_MAPPER, &fmt, 0, 0, CALLBACK_NULL) != MMSYSERR_NOERROR) {
         fprintf(stderr, "audio: no output device; running without sound\n");
         return;

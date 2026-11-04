@@ -138,26 +138,66 @@ static void mix_voice(u32 pb, int32_t* outL, int32_t* outR) {
     lpfY = (int16_t)LD16(pb + PB_LPF_YN1);
     lpfA = (int32_t)LD16(pb + PB_LPF_A0);
     lpfB = (int32_t)LD16(pb + PB_LPF_B0);
-    for (i = 0; i < FRAME; i++) {
-        int32_t s = last0 + (int32_t)(((int64_t)(last1 - last0) * (int32_t)frac) >> 16);
-        s = (s * ve) >> 15;
-        if (lpfOn) s = lpfY = clamp16((lpfA * s + lpfB * lpfY) >> 15);
-        outL[i] += (s * volL) >> 15;
-        outR[i] += (s * volR) >> 15;
-        for (b = 0; sends && b < AUX_BUSES; b++) {
-            s_aux[b][0][i] += (s * auxv[b][0]) >> 15;
-            s_aux[b][1][i] += (s * auxv[b][1]) >> 15;
-            s_aux[b][2][i] += (s * auxv[b][2]) >> 15;
+    {
+        /* Wonderpark: 4-tap cubic (Catmull-Rom) interpolation over the PB's
+         * four-sample history, as AX's own 4-tap polyphase filter works on,
+         * instead of linear; and the volume ramps (each volume's delta,
+         * applied per sample and written back, as the DSP does), so volume
+         * changes don't step every 3 ms. */
+        int32_t h[4];
+        int32_t mL = (int32_t)LD16(pb + PB_MIX_L), dL = (int16_t)LD16(pb + PB_MIX_L + 2);
+        int32_t mR = (int32_t)LD16(pb + PB_MIX_R), dR = (int16_t)LD16(pb + PB_MIX_R + 2);
+        int32_t mS = (int32_t)LD16(pb + PB_MIX_S), dS = (int16_t)LD16(pb + PB_MIX_S + 2);
+        int32_t dve = (int16_t)LD16(pb + PB_VE_VOLUME + 2);
+        int k;
+        for (k = 0; k < 4; k++) h[k] = (int16_t)LD16(pb + PB_SRC_LAST + 2 * k);
+        if (wp_log_on("axramp")) {
+            extern u32 g_ax_frame_no;
+            if (g_ax_frame_no % 333 == 0)
+                WP_LOG("axramp", "pb %08X L %04X d %d  R %04X d %d  S %04X d %d  ve %04X d %d  last %d %d %d %d", pb, mL, dL, mR, dR, mS, dS,
+                       ve, dve, h[0], h[1], h[2], h[3]);
         }
-        for (frac += ratio; frac >= 0x10000; frac -= 0x10000) {
-            last0 = last1;
-            last1 = read_sample(&v);
+        (void)last0; (void)last1; (void)volL; (void)volR;
+        for (i = 0; i < FRAME; i++) {
+            int32_t t = (int32_t)(frac >> 1); /* 0..32767 */
+            int64_t a0 = -h[0] + 3 * h[1] - 3 * h[2] + h[3];
+            int64_t a1 = 2 * h[0] - 5 * h[1] + 4 * h[2] - h[3];
+            int64_t a2 = -h[0] + h[2];
+            int64_t y = ((((a0 * t >> 15) + a1) * t >> 15) + a2) * t >> 15;
+            int32_t s = clamp16((int32_t)(h[1] + (y >> 1)));
+            int32_t vl = mL + mS / 2, vr = mR + mS / 2;
+            s = (int32_t)(((int64_t)s * ve) >> 15);
+            if (lpfOn) s = lpfY = clamp16((lpfA * s + lpfB * lpfY) >> 15);
+            outL[i] += (s * vl) >> 15;
+            outR[i] += (s * vr) >> 15;
+            for (b = 0; sends && b < AUX_BUSES; b++) {
+                s_aux[b][0][i] += (s * auxv[b][0]) >> 15;
+                s_aux[b][1][i] += (s * auxv[b][1]) >> 15;
+                s_aux[b][2][i] += (s * auxv[b][2]) >> 15;
+            }
+            mL += dL; mR += dR; mS += dS; ve += dve;
+            if (mL < 0) mL = 0; if (mR < 0) mR = 0; if (mS < 0) mS = 0; if (ve < 0) ve = 0;
+            if (mL > 0xFFFF) mL = 0xFFFF; if (mR > 0xFFFF) mR = 0xFFFF; if (mS > 0xFFFF) mS = 0xFFFF; if (ve > 0xFFFF) ve = 0xFFFF;
+            for (frac += ratio; frac >= 0x10000; frac -= 0x10000) {
+                h[0] = h[1]; h[1] = h[2]; h[2] = h[3];
+                h[3] = read_sample(&v);
+            }
+        }
+        {
+            static int wb = -1;
+            if (wb < 0) { const char* e = getenv("WONDERPARK_AX_WB"); wb = e ? atoi(e) : 3; }
+            if (wb & 1) { /* ramped volumes */
+                if (dL) ST16(pb + PB_MIX_L, (u16)mL);
+                if (dR) ST16(pb + PB_MIX_R, (u16)mR);
+                if (dS) ST16(pb + PB_MIX_S, (u16)mS);
+                if (dve) ST16(pb + PB_VE_VOLUME, (u16)ve);
+            }
+            if (wb & 2) for (k = 0; k < 4; k++) ST16(pb + PB_SRC_LAST + 2 * k, (u16)h[k]);
+            else { ST16(pb + PB_SRC_LAST, (u16)h[1]); ST16(pb + PB_SRC_LAST + 2, (u16)h[2]); }
         }
     }
     st32_pair(pb + PB_CUR_ADDR, v.cur);
     ST16(pb + PB_SRC_FRAC, frac & 0xFFFF);
-    ST16(pb + PB_SRC_LAST, (u16)last0);
-    ST16(pb + PB_SRC_LAST + 2, (u16)last1);
     ST16(pb + PB_ADPCM_PS, (u16)v.ps);
     ST16(pb + PB_ADPCM_YN1, (u16)v.yn1);
     ST16(pb + PB_ADPCM_YN2, (u16)v.yn2);
@@ -227,12 +267,30 @@ static void process(u32 pb) {
     }
 }
 
+/* OUTPUT, with a limiter standing in for AX's compressor (command 0A, not
+ * emulated): when a frame would clip, the gain drops to fit it at once and
+ * recovers over about 50 ms, ramped across each frame, instead of the mix
+ * hard-clipping. */
 static void output(u32 volume, u32 lr) {
+    static double gain = 1.0;
+    double peak = 0, target, g0 = gain, step;
     int i;
     for (i = 0; i < FRAME; i++) {
-        ST16(lr + 4 * i, (u16)clamp16((int32_t)(((int64_t)s_l[i] * volume) >> 15)));
-        ST16(lr + 4 * i + 2, (u16)clamp16((int32_t)(((int64_t)s_r[i] * volume) >> 15)));
+        double l = (double)s_l[i] * volume / 32768.0, r = (double)s_r[i] * volume / 32768.0;
+        if (l < 0) l = -l;
+        if (r < 0) r = -r;
+        if (l > peak) peak = l;
+        if (r > peak) peak = r;
     }
+    target = peak * gain > 32000.0 ? 32000.0 / peak : gain + (1.0 - gain) * 0.06; /* ~50 ms release */
+    if (target > 1.0) target = 1.0;
+    step = (target - g0) / FRAME;
+    for (i = 0; i < FRAME; i++) {
+        double g = g0 + step * (i + 1);
+        ST16(lr + 4 * i, (u16)clamp16((int32_t)((double)s_l[i] * volume / 32768.0 * g)));
+        ST16(lr + 4 * i + 2, (u16)clamp16((int32_t)((double)s_r[i] * volume / 32768.0 * g)));
+    }
+    gain = target;
 }
 
 static void ax_frame(u32 list, u32 size) {

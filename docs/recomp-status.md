@@ -181,9 +181,18 @@ test; it turned out to be noise-like by nature): the recompiled ADX decoder
 gives exactly what an independent decode gives, from the right file bytes,
 frame-aligned, and memcpy copies it exactly.
 
+Quality (after "sounds a bit grainy"):
+- Voices are resampled with 4-tap cubic interpolation over the PB's sample
+  history (was linear), and their volume ramps are applied per sample
+  (written back only while ramping: writing unchanged volumes back silenced
+  voices).
+- A limiter stands in for AX's compressor, so loud passages don't clip.
+- The device runs at 48 kHz; the 32 kHz mix is upsampled by a 72-tap
+  windowed-sinc filter (flat to 8 kHz, -2 dB at 14 kHz, artifacts ~90 dB down).
+- Output had no dropouts or underruns (`WONDERPARK_LOG=audiostats`).
+
 Known gaps:
-- The command list's compressor (`0A`) is ignored: loud passages can clip
-  where the Wii would limit them.
+- AX's compressor (`0A`) itself isn't emulated (the limiter replaces it).
 - Wii Remote speaker sound (`WM_OUTPUT`) is dropped.
 - Not yet listened to by a person; cutscene audio/video sync not checked.
 
