@@ -1,0 +1,294 @@
+# DolRecomp self-modifying-code flags for S2LE01 main.dol, reviewed by hand.
+# kind: store-false-positive = ordinary store through a pointer argument; DolRecomp's
+#   constant tracker carried a stale base register across a blr into the next function.
+# kind: cache-maintenance = icbi in SDK cache flush/invalidate code; changes no code.
+# patch = what Wonderpark does about it. tools/recomp.py fails on any flag not listed here.
+
+[[flag]]
+address = 0x800043AC
+instruction = "icbi 0, r5"
+kind = "cache-maintenance"
+patch = "none"
+
+[[flag]]
+address = 0x8000494C
+instruction = "icbi 0, r2"
+kind = "cache-maintenance"
+patch = "none"
+
+[[flag]]
+address = 0x8002DB74
+instruction = "stw r0, 0(r3)"
+kind = "store-false-positive"
+patch = "none"
+
+[[flag]]
+address = 0x80031F58
+instruction = "sth r0, 0(r4)"
+kind = "store-false-positive"
+patch = "none"
+
+[[flag]]
+address = 0x80031F60
+instruction = "sth r0, 2(r4)"
+kind = "store-false-positive"
+patch = "none"
+
+[[flag]]
+address = 0x80031F78
+instruction = "sth r0, 0(r4)"
+kind = "store-false-positive"
+patch = "none"
+
+[[flag]]
+address = 0x80031F80
+instruction = "sth r0, 2(r4)"
+kind = "store-false-positive"
+patch = "none"
+
+[[flag]]
+address = 0x80031F98
+instruction = "sth r0, 0(r4)"
+kind = "store-false-positive"
+patch = "none"
+
+[[flag]]
+address = 0x80031FA0
+instruction = "sth r0, 2(r4)"
+kind = "store-false-positive"
+patch = "none"
+
+[[flag]]
+address = 0x80031FBC
+instruction = "sth r0, 0(r4)"
+kind = "store-false-positive"
+patch = "none"
+
+[[flag]]
+address = 0x80031FC4
+instruction = "sth r0, 2(r4)"
+kind = "store-false-positive"
+patch = "none"
+
+[[flag]]
+address = 0x80147480
+instruction = "stw r5, 4(r3)"
+kind = "store-false-positive"
+patch = "none"
+
+[[flag]]
+address = 0x8023D400
+instruction = "stfs f2, 4(r3)"
+kind = "store-false-positive"
+patch = "none"
+
+[[flag]]
+address = 0x8023D40C
+instruction = "stfs f3, 0(r3)"
+kind = "store-false-positive"
+patch = "none"
+
+[[flag]]
+address = 0x8023D4BC
+instruction = "psq_st f1, 0(r3), 0, 0"
+kind = "store-false-positive"
+patch = "none"
+
+[[flag]]
+address = 0x8023D4D0
+instruction = "psq_st f1, 8(r3), 1, 0"
+kind = "store-false-positive"
+patch = "none"
+
+[[flag]]
+address = 0x8023D554
+instruction = "stfs f0, 0(r3)"
+kind = "store-false-positive"
+patch = "none"
+
+[[flag]]
+address = 0x8023D55C
+instruction = "stfs f0, 4(r3)"
+kind = "store-false-positive"
+patch = "none"
+
+[[flag]]
+address = 0x8023D564
+instruction = "stfs f0, 8(r3)"
+kind = "store-false-positive"
+patch = "none"
+
+[[flag]]
+address = 0x8023D5D0
+instruction = "psq_st f0, 0(r3), 0, 0"
+kind = "store-false-positive"
+patch = "none"
+
+[[flag]]
+address = 0x8023D5E0
+instruction = "psq_st f0, 8(r3), 1, 0"
+kind = "store-false-positive"
+patch = "none"
+
+[[flag]]
+address = 0x8023D5F4
+instruction = "psq_st f0, 0(r3), 0, 0"
+kind = "store-false-positive"
+patch = "none"
+
+[[flag]]
+address = 0x8023D604
+instruction = "psq_st f0, 8(r3), 1, 0"
+kind = "store-false-positive"
+patch = "none"
+
+[[flag]]
+address = 0x8023FD2C
+instruction = "stfs f2, 0(r3)"
+kind = "store-false-positive"
+patch = "none"
+
+[[flag]]
+address = 0x802440F4
+instruction = "psq_st f0, 0(r3), 0, 0"
+kind = "store-false-positive"
+patch = "none"
+
+[[flag]]
+address = 0x80244104
+instruction = "psq_st f0, 8(r3), 1, 0"
+kind = "store-false-positive"
+patch = "none"
+
+[[flag]]
+address = 0x80244118
+instruction = "psq_st f0, 0(r3), 0, 0"
+kind = "store-false-positive"
+patch = "none"
+
+[[flag]]
+address = 0x80244128
+instruction = "psq_st f0, 8(r3), 1, 0"
+kind = "store-false-positive"
+patch = "none"
+
+[[flag]]
+address = 0x802491A4
+instruction = "psq_st f0, 0(r3), 0, 0"
+kind = "store-false-positive"
+patch = "none"
+
+[[flag]]
+address = 0x802491B4
+instruction = "psq_st f0, 8(r3), 1, 0"
+kind = "store-false-positive"
+patch = "none"
+
+[[flag]]
+address = 0x802491C8
+instruction = "psq_st f0, 0(r3), 0, 0"
+kind = "store-false-positive"
+patch = "none"
+
+[[flag]]
+address = 0x802491D8
+instruction = "psq_st f0, 8(r3), 1, 0"
+kind = "store-false-positive"
+patch = "none"
+
+[[flag]]
+address = 0x8028CA3C
+instruction = "stw r0, 0(r30)"
+kind = "store-false-positive"
+patch = "none"
+
+[[flag]]
+address = 0x8028CA58
+instruction = "stw r25, 0(r4)"
+kind = "store-false-positive"
+patch = "none"
+
+[[flag]]
+address = 0x8028CA90
+instruction = "stw r25, 0(r4)"
+kind = "store-false-positive"
+patch = "none"
+
+[[flag]]
+address = 0x8028CB6C
+instruction = "stw r29, 0(r30)"
+kind = "store-false-positive"
+patch = "none"
+
+[[flag]]
+address = 0x8028E13C
+instruction = "icbi 0, r3"
+kind = "cache-maintenance"
+patch = "none"
+
+[[flag]]
+address = 0x802AFE78
+instruction = "stw r9, 8(r3)"
+kind = "store-false-positive"
+patch = "none"
+
+[[flag]]
+address = 0x8037D424
+instruction = "stb r7, 0(r5)"
+kind = "store-false-positive"
+patch = "none"
+
+[[flag]]
+address = 0x8037D450
+instruction = "stb r7, -1(r5)"
+kind = "store-false-positive"
+patch = "none"
+
+[[flag]]
+address = 0x8037D47C
+instruction = "stb r7, -2(r5)"
+kind = "store-false-positive"
+patch = "none"
+
+[[flag]]
+address = 0x8037D4A4
+instruction = "stb r6, 6(r4)"
+kind = "store-false-positive"
+patch = "none"
+
+[[flag]]
+address = 0x803EF780
+instruction = "stw r0, 0(r4)"
+kind = "store-false-positive"
+patch = "none"
+
+[[flag]]
+address = 0x803EF788
+instruction = "stw r0, 4(r4)"
+kind = "store-false-positive"
+patch = "none"
+
+[[flag]]
+address = 0x803EF790
+instruction = "stw r0, 8(r4)"
+kind = "store-false-positive"
+patch = "none"
+
+[[flag]]
+address = 0x803EF79C
+instruction = "stw r0, 12(r4)"
+kind = "store-false-positive"
+patch = "none"
+
+[[flag]]
+address = 0x803FB64C
+instruction = "stw r0, 0(r4)"
+kind = "store-false-positive"
+patch = "none"
+
+[[flag]]
+address = 0x8040D5A0
+instruction = "icbi 0, r5"
+kind = "cache-maintenance"
+patch = "none"
+
