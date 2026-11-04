@@ -1,0 +1,76 @@
+# Wonderpark: an unofficial PokéPark 2 recomp
+
+Wonderpark is an unofficial, work-in-progress static recompilation of
+*PokéPark 2: Wonders Beyond* (Wii, US disc, game ID `S2LE01`) into a native
+Windows PC program.
+
+> **Wonderpark is not affiliated with, endorsed by or sponsored by Nintendo,
+> The Pokémon Company, Creatures Inc. or Game Freak.** It is a fan project.
+> It is also unrelated to the 2019 film *Wonder Park*.
+> The project uses no official logos or game art.
+
+## Bring your own disc
+
+This repository contains **no game code, game assets or recompiled output**,
+and it never will. To use Wonderpark you need your own legally obtained US
+disc image (`S2LE01`). Everything game-derived (extracting the disc,
+recompiling the executable and compiling the PC program) happens on your own
+PC, and all of it stays out of git. Please don't open issues or PRs that
+contain game files, and don't ask for disc images.
+
+## Status
+
+Early setup. Nothing is playable yet.
+
+| Step | State |
+| --- | --- |
+| Repo, disc check and extraction | in progress |
+| CPU recompile (PowerPC to C/C++) | not started |
+| Boot to title | not started |
+| Audio, cutscenes, input, launcher | not started |
+
+## Extracting your disc (developers)
+
+Requires Python 3 and [decomp-toolkit](https://github.com/encounter/decomp-toolkit) (`dtk`).
+
+```
+python tools/extract_disc.py path\to\your\disc.iso
+```
+
+The script checks that the disc's game ID is `S2LE01`, then extracts
+`main.dol`, any `.rel` modules and the file tree into `game/` (git-ignored).
+NKit-processed `.iso` images are also accepted.
+
+## Repository layout
+
+| Folder | Holds | In git |
+| --- | --- | --- |
+| `builder/` | Launcher and one-time builder | yes |
+| `tools/` | Disc check, extraction, recompile scripts | yes |
+| `config/` | Recompiler config, function names, patches | yes |
+| `runtime/` | Graphics, audio, input, file I/O | yes |
+| `docs/` | Design notes, launcher mockup | yes |
+| `game/` | Your extracted disc | no |
+| `generated/` | Recompiled code | no |
+| `build/` | Compiled program | no |
+
+## Credits
+
+- **MildRain479, [PokePark-Wiicompiled](https://github.com/MildRain479/PokePark-Wiicompiled)**
+  (a recomp of PokéPark Wii: Pikachu's Adventure, CC0 1.0). Wonderpark's
+  runtime is based on its `recomp/` runtime code. None of that project's
+  decompiled game sources are used here.
+- **encounter, [decomp-toolkit](https://github.com/encounter/decomp-toolkit)**
+  for disc extraction.
+- Fonts: [Fredoka](https://fonts.google.com/specimen/Fredoka) and
+  [Nunito](https://fonts.google.com/specimen/Nunito) (SIL Open Font License).
+
+## License
+
+Wonderpark's own code is released under CC0 1.0 Universal (see `LICENSE`),
+matching the upstream runtime. This may change if a recompiler under a
+different license ends up compiled into the program.
+
+*PokéPark* and *Pokémon* are trademarks of Nintendo, The Pokémon Company,
+Creatures Inc. and Game Freak. They are used here only to say which game
+this project works with.

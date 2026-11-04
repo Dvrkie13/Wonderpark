@@ -1,0 +1,35 @@
+# ---- Game data: never commit anything derived from the disc ----
+*.iso
+*.nkit.iso
+*.gcm
+*.rvz
+*.wia
+*.wbfs
+*.ciso
+*.gcz
+*.dol
+*.rel
+*.elf
+*.map
+
+# Extracted disc, recompiled output, builds
+/game/
+/generated/
+/build/
+/out/
+
+# Local tool binaries fetched by scripts (dtk, DolRecomp builds, ...)
+/tools/bin/
+
+# Runtime user files
+settings.ini
+*.sav
+
+# Python / editors / OS
+__pycache__/
+*.pyc
+.vs/
+.vscode/
+*.user
+.DS_Store
+Thumbs.db
