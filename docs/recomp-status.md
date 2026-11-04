@@ -146,8 +146,15 @@ Notes:
   `tools/build_game.py --debug-info` for names in the recompiled code);
   `tools/analysis/hostprof.py` maps samples back to guest functions.
 
-## Open: the title doesn't take the 2 button
+## Input
 
-WPAD reports the presses (`WONDERPARK_LOG=wpadbtn` shows 2 = 0x0100 and A =
-0x0800 reaching `WPADRead` at 200 Hz), but the title screen doesn't react.
-The game's input path above WPAD (KPAD, or its own) needs checking next.
+Works: the title takes 2 (controller A, keyboard Space or X by default) and
+the save-select and main menus respond. What was wrong:
+
+- `WPADIsDpdEnabled` wasn't hooked, so KPAD asked for the IR camera on every
+  sample (now hooked, `0x802D6900`).
+- The test script's presses landed during the logo intro or the attract-mode
+  cutscene; script times now count from program start.
+
+`WONDERPARK_LOG=kpad` logs what `KPADRead` (`0x802EAB70`) hands the game,
+`WONDERPARK_LOG=wpadbtn` what `WPADRead` reports.

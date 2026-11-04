@@ -71,7 +71,7 @@ static int connected(int32_t chan) { return chan == 0 && sConnected; }
  * for unattended runs. "<seconds>:<buttons> ...", buttons joined by "+"
  * (up down left right a b 1 2 plus minus home shake; on-screen
  * directions), each held from its time until the next entry, timed from
- * the remote's first report. "4:2 4.2: 9:a 9.2:" presses 2 at 4 s and A at 9 s. */
+ * program start. "4:2 4.2: 9:a 9.2:" presses 2 at 4 s and A at 9 s. */
 static struct ScriptEntry { double t; uint32_t held; } *sScript;
 static int sScriptLen = -1;
 
@@ -123,8 +123,10 @@ static uint32_t script_held(void) {
     int i;
     if (sScriptLen < 0) load_script();
     if (!sScriptLen) return 0;
-    if (!start) start = ppc_timebase();
-    now = (double)(ppc_timebase() - start) / PPC_TB_HZ;
+    /* Wonderpark: timed from program start (monotonic host time), so scripts
+     * line up with screenshots and logs. */
+    (void)start;
+    now = (double)wp_host_time() / PPC_TB_HZ;
     for (i = 0; i < sScriptLen && sScript[i].t <= now; i++) held = sScript[i].held;
     return held;
 }
