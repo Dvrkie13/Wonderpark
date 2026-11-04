@@ -1,0 +1,3 @@
+[submodule "tools/dolrecomp"]
+	path = tools/dolrecomp
+	url = https://github.com/ExpansionPak/DolRecomp.git
