@@ -24,8 +24,8 @@ Early setup. Nothing is playable yet.
 
 | Step | State |
 | --- | --- |
-| Repo, disc check and extraction | in progress |
-| CPU recompile (PowerPC to C/C++) | not started |
+| Repo, disc check and extraction | done |
+| CPU recompile (PowerPC to C, DolRecomp) | compiles and links; runs early OS init |
 | Boot to title | not started |
 | Audio, cutscenes, input, launcher | not started |
 
@@ -40,6 +40,19 @@ python tools/extract_disc.py path\to\your\disc.iso
 The script checks that the disc's game ID is `S2LE01`, then extracts
 `main.dol`, any `.rel` modules and the file tree into `game/` (git-ignored).
 NKit-processed `.iso` images are also accepted.
+
+## Building (developers)
+
+Also needs CMake and Visual Studio Build Tools (C++). Fetch the submodule
+first: `git submodule update --init --recursive`.
+
+```
+python builder/pipeline.py path\to\your\disc.iso
+```
+
+This verifies and extracts the disc, recompiles `main.dol` with DolRecomp
+(`tools/recomp.py`), and compiles `build/game/Release/Wonderpark.exe`.
+It doesn't play yet.
 
 ## Repository layout
 
@@ -60,6 +73,10 @@ NKit-processed `.iso` images are also accepted.
   (a recomp of PokéPark Wii: Pikachu's Adventure, CC0 1.0). Wonderpark's
   runtime is based on its `recomp/` runtime code. None of that project's
   decompiled game sources are used here.
+- **ExpansionPak, [DolRecomp](https://github.com/ExpansionPak/DolRecomp)**
+  (GPL-3.0-or-later), the PowerPC-to-C recompiler, used as a git submodule.
+  A `Wonderpark.exe` you build contains GPL-3.0 code from DolRecomp (its CPU
+  helpers and the code it generates).
 - **encounter, [decomp-toolkit](https://github.com/encounter/decomp-toolkit)**
   for disc extraction.
 - Fonts: [Fredoka](https://fonts.google.com/specimen/Fredoka) and
