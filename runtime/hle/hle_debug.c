@@ -107,3 +107,28 @@ WP_HOOK(0x803BCB4C, adx_decode_check) {
     }
     return 1;
 }
+
+/* WONDERPARK_LOG=mqwatch with WONDERPARK_MQ=<queue>: who posts to that
+ * message queue, and when (frame pacing investigations). */
+static int mq_on(u32* q) {
+    static int on = -1;
+    static unsigned mq;
+    if (on < 0) {
+        const char* e = getenv("WONDERPARK_MQ");
+        on = wp_log_on("mqwatch") && e && sscanf(e, "%x", &mq) == 1;
+    }
+    *q = mq;
+    return on;
+}
+static void mq_note(CPUState* c, const char* what) {
+    u32 q;
+    if (mq_on(&q) && c->gpr[3] == q) {
+        static uint64_t last;
+        uint64_t now = wp_host_time();
+        WP_LOG("mqwatch", "%s(%08X, msg %08X) from %08X lr-chain %08X, %.1f ms since the last", what, q, c->gpr[4], c->lr,
+               LD32(LD32(c->gpr[1]) + 4), (double)(now - last) * 1000.0 / TB_HZ);
+        last = now;
+    }
+}
+WP_HOOK(0x80293660, OSSendMessage_watch) { mq_note(c, "OSSendMessage"); return 0; }
+WP_HOOK(0x80293810, OSJamMessage_watch) { mq_note(c, "OSJamMessage"); return 0; }

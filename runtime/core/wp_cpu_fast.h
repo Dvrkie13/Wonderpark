@@ -108,3 +108,7 @@ WPF_INLINE void wpf_write64(CPUState* c, u32 a, u64 v) {
 #define mem_write16 wpf_write16
 #define mem_write8 wpf_write8
 #define mem_write64 wpf_write64
+
+#ifdef WPF_FAST_FP
+#include "wp_fast_fp.h"
+#endif
