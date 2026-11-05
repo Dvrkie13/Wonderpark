@@ -7,7 +7,9 @@
 
 #define LC_SIZE 0x4000u
 
-static uint8_t s_lc[LC_SIZE];
+/* Also read and written directly by the recompiled code (wp_cpu_fast.h). */
+uint8_t g_wp_lc[LC_SIZE];
+#define s_lc g_wp_lc
 
 uint8_t* hw_lc_ptr(u32 a, u32 n) {
     u32 off = a & 0x0FFFFFFFu;

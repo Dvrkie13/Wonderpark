@@ -28,12 +28,17 @@
 
 /* Host pointer for an n-byte access at virtual address a, or NULL. Cached
  * (0x8/0x9) and uncached (0xC/0xD) views of MEM1 (24 MB) and MEM2 (64 MB). */
+/* The locked cache (runtime/hw/hw_lc.c): 16 KB at 0xE0000000, stored
+ * big-endian like RAM. The game's matrix and GX code use it constantly. */
+extern u8 g_wp_lc[0x4000];
+
 WPF_INLINE u8* wpf_ptr(CPUState* c, u32 a, u32 n) {
     u32 p = a & 0x3FFFFFFFu;
     if (!(a & 0x80000000u)) return NULL;
     if (p <= GC_MAIN_RAM_SIZE - n) return c->ram + p;
     p -= 0x10000000u;
     if (p <= WII_MEM2_SIZE - n) return c->mem2 + p;
+    if (a - 0xE0000000u <= 0x4000u - n) return g_wp_lc + (a - 0xE0000000u);
     return NULL;
 }
 
@@ -62,6 +67,12 @@ WPF_INLINE u64 wpf_read64(CPUState* c, u32 a) {
     memcpy(&v, h, 8);
     return WPF_BSWAP64(v);
 }
+/* Stores to the GPU's write-gather pipe (0xCC008000, 32 bytes) go straight
+ * to the runtime's pipe handler (runtime/hw/hw_gx.c): the game sends every
+ * GX command and vertex this way, tens of thousands a frame. */
+void hw_gx_wgpipe(u32 v, int size);
+#define WPF_PIPE(a) ((((a) & 0x3FFFFFFFu) ^ 0x0C008000u) < 32u)
+
 #ifdef WPF_WATCH
 /* Debug builds (CMake WP_STORE_WATCH): stores into [wpf_watch_lo,
  * wpf_watch_hi) (physical) are reported with the guest pc of their block. */
@@ -75,27 +86,43 @@ void wpf_watch_hit(CPUState* c, u32 a, u32 n, u32 v);
 WPF_INLINE void wpf_write32(CPUState* c, u32 a, u32 v) {
     WPF_CHECK(c, a, 4, v);
     u8* h = wpf_ptr(c, a, 4);
-    if (!h) { mem_write32(c, a, v); return; }
+    if (!h) {
+        if (WPF_PIPE(a)) hw_gx_wgpipe(v, 4);
+        else mem_write32(c, a, v);
+        return;
+    }
     v = WPF_BSWAP32(v);
     memcpy(h, &v, 4);
 }
 WPF_INLINE void wpf_write16(CPUState* c, u32 a, u16 v) {
     WPF_CHECK(c, a, 2, v);
     u8* h = wpf_ptr(c, a, 2);
-    if (!h) { mem_write16(c, a, v); return; }
+    if (!h) {
+        if (WPF_PIPE(a)) hw_gx_wgpipe(v, 2);
+        else mem_write16(c, a, v);
+        return;
+    }
     v = WPF_BSWAP16(v);
     memcpy(h, &v, 2);
 }
 WPF_INLINE void wpf_write8(CPUState* c, u32 a, u8 v) {
     WPF_CHECK(c, a, 1, v);
     u8* h = wpf_ptr(c, a, 1);
-    if (!h) { mem_write8(c, a, v); return; }
+    if (!h) {
+        if (WPF_PIPE(a)) hw_gx_wgpipe(v, 1);
+        else mem_write8(c, a, v);
+        return;
+    }
     *h = v;
 }
 WPF_INLINE void wpf_write64(CPUState* c, u32 a, u64 v) {
     WPF_CHECK(c, a, 8, (u32)v);
     u8* h = wpf_ptr(c, a, 8);
-    if (!h) { mem_write64(c, a, v); return; }
+    if (!h) {
+        if (WPF_PIPE(a)) { hw_gx_wgpipe((u32)(v >> 32), 4); hw_gx_wgpipe((u32)v, 4); }
+        else mem_write64(c, a, v);
+        return;
+    }
     v = WPF_BSWAP64(v);
     memcpy(h, &v, 8);
 }

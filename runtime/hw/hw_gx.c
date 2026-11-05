@@ -29,14 +29,27 @@ static int linked(void) {
     return (CP(CP_CR) & 0x11) == 0x11 && (cp32(CP_BASE) & 0x03FFFFE0u) == (hw_pi_fifo(0) & 0x03FFFFE0u);
 }
 
+/* Every GX command, vertex and matrix the game sends comes through here, tens
+ * of thousands of times a frame, so the common case (no wrap at the FIFO's
+ * end) is one store to host memory. */
 void hw_gx_wgpipe(u32 v, int size) {
-    u32 wp = hw_pi_fifo(2), base = hw_pi_fifo(0) & 0x03FFFFFFu, end = hw_pi_fifo(1) & 0x03FFFFFFu;
+    u32 wp = hw_pi_fifo(2), end = hw_pi_fifo(1) & 0x03FFFFFFu;
     u32 addr = wp & 0x03FFFFFFu;
-    int i;
-    for (i = size - 1; i >= 0; i--) {
-        ST8(addr, (v >> (8 * i)) & 0xFF);
-        addr++;
-        if (end && addr > end) { addr = base; wp ^= 0x20000000u; } /* wrap past the end; flag */
+    u8* p = (!end || addr + (u32)size - 1 <= end) ? wp_ram(addr, (u32)size) : NULL;
+    if (p) {
+        if (size == 4) { u32 be = (v >> 24) | ((v >> 8) & 0xFF00u) | ((v << 8) & 0xFF0000u) | (v << 24); memcpy(p, &be, 4); }
+        else if (size == 2) { p[0] = (u8)(v >> 8); p[1] = (u8)v; }
+        else p[0] = (u8)v;
+        addr += (u32)size;
+        if (end && addr > end) { addr = hw_pi_fifo(0) & 0x03FFFFFFu; wp ^= 0x20000000u; }
+    } else {
+        u32 base = hw_pi_fifo(0) & 0x03FFFFFFu;
+        int i;
+        for (i = size - 1; i >= 0; i--) {
+            ST8(addr, (v >> (8 * i)) & 0xFF);
+            addr++;
+            if (end && addr > end) { addr = base; wp ^= 0x20000000u; } /* wrap past the end; flag */
+        }
     }
     hw_pi_set_fifo_wp((wp & 0x20000000u) | addr);
     if (linked() && g_wgpipe_write) g_wgpipe_write(v, size);
@@ -118,6 +131,18 @@ static void pe_write(u32 a, u32 v, int size) {
  * each interrupt reports its own token (the decoder's before() isn't needed). */
 void hle_raise_interrupt_ex(int n, void (*before)(uint32_t data), uint32_t data) {
     (void)before;
+    if (wp_log_on("gxirq")) {
+        static unsigned tok, fin;
+        static u64 since;
+        u64 now = wp_host_time();
+        tok += n == 18;
+        fin += n == 19;
+        if (now - since >= TB_HZ) {
+            WP_LOG("gxirq", "last second: %u PE token, %u PE finish interrupts", tok, fin);
+            tok = fin = 0;
+            since = now;
+        }
+    }
     if (n == 18) {
         if (s_tt - s_th < TOKEN_QUEUE) s_tokens[s_tt++ % TOKEN_QUEUE] = (u16)data;
     } else if (n == 19) {
