@@ -240,10 +240,60 @@ finished typing.
 Over the session: mean 26.6 fps; 54% of seconds at a full 30 fps, 16% at
 24-29, 13% at 18-24, 15% below 18 (mostly exactly 15).
 
-The 15 fps cluster is pacing, not raw speed. The game waits for its 30 Hz
-alarm, so a frame that misses by a little costs a whole extra 33 ms. It shows
-up where the CPU is far from busy: the PokéPark Pad runs at 15 fps with the
-host only ~40% busy, and the Timburr battle swings between 15 and 29 at
-46-70% busy. So something other than CPU time is stretching those frames,
-likely a GPU sync (draw-done or PE token wait, or an EFB copy round trip),
-and finding it is the top speed item.
+The 15 fps cluster was pacing, not raw speed; fixed below.
+
+# Speed: the 15 fps drops
+
+**Cause.** The main loop (`0x8002D224`) waits for a 30 Hz alarm, then runs
+the frame function (`0x8002CCE0`). That function asks `0x800333A0` how many
+fixed 60 Hz logic steps have elapsed. If more ran than two, it sets a flag
+that skips drawing on the next tick, to catch up. A drawing tick does its
+rendering *before* asking for the step count, while a skipping tick asks at
+once. So after one long frame, the gap from the skip tick to the next drawing
+tick is 33 ms plus the drawing tick's pre-step work. If that work is over
+about 15 ms, the gap is three steps again, and the game stays locked at half
+rate. In the PokePark Pad (about 9,600 draws a frame) and in battles, the
+pre-step work was 15-20 ms. About half of that was our GPU decoding and
+drawing on the game thread, which on a Wii runs in parallel and costs the
+CPU nothing.
+
+**Fix.** Time spent emulating hardware that runs in parallel on a Wii (GX
+decoding and GL work, AX mixing) is hidden from the guest's clock
+(`wp_parallel_time_hide`, `runtime/core/cpu_host.c`). The time base pauses
+while that work runs, and the idle hook gives the time back the next time the
+guest waits, so alarms and retraces still land on real time. At most 50 ms
+is owed. `WONDERPARK_NO_HIDE=1` turns this off, for comparisons.
+
+Same route (title, cave, Pad, close-up dialogue, Timburr battle), before and
+after:
+
+| Scene | Before | After |
+| --- | --- | --- |
+| PokePark Pad | 16.4 fps (15 most seconds) | 30.0 fps |
+| Dialogue close-up | 26.9 fps (4 s under 24) | 30.0 fps |
+| Timburr battle | 20.7 fps (30 s under 24) | 29.9 fps (none under 24) |
+
+Over the whole run: mean 32.4 fps (the boot screens run at 60), 92% of
+seconds at 29+. What's left under 24 is loading (half-second frames while
+an area streams in), not pacing.
+
+Also in this pass:
+- GX write-gather pipe stores and locked-cache accesses
+  (`0xE0000000`, ~28,000 a frame) now take the fast path in
+  `wp_cpu_fast.h`, instead of the MMIO dispatcher. They were measurable but
+  not the cause.
+- NAND writes are no longer flushed after every write, only on close.
+- An apparent boot slowdown seen while testing came from launching with
+  PowerShell `Start-Process` redirection (blocking stderr writes), not the
+  game; launched normally, boot runs at 60 then 30 fps.
+
+Known, separate: the audio queue drops a few blocks (too much audio queued,
+up to ~7 per second) around loading stalls and in battles, with an
+occasional underrun. That happens the same with the fix turned off.
+
+Debug switches added: `WONDERPARK_LOG=` `steps` (logic steps per tick),
+`waits` (where threads block: OSReceiveMessage, OSSleepThread,
+VIWaitForRetrace, GXDrawDone, VISetNextFrameBuffer), `idle` (idle sleeps
+over 1 ms), `efbcopy` (every EFB copy), `gxirq` (PE interrupts per second),
+`mmiostat` (slow-path memory accesses by region), `nandio` (NAND reads and
+writes). `mqwatch` lines now carry timestamps.

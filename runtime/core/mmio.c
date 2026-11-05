@@ -54,10 +54,37 @@ log:
 void hw_gx_wgpipe(u32 v, int size);
 void (*g_wgpipe_write)(u32 value, int size);
 
+/* WONDERPARK_LOG=mmiostat: accesses per second that missed the RAM fast
+ * path, by 64 KB region (debugging speed). */
+static void mmio_stat(u32 a) {
+    static int on = -1;
+    static u32 reg[16];
+    static unsigned cnt[16], other;
+    static u64 since;
+    int k;
+    if (on < 0) on = wp_log_on("mmiostat");
+    if (!on) return;
+    for (k = 0; k < 16 && reg[k] && reg[k] != (a >> 16); k++) {}
+    if (k < 16) { reg[k] = a >> 16; cnt[k]++; } else other++;
+    if (wp_host_time() - since >= TB_HZ) {
+        char line[512];
+        int n = 0;
+        for (k = 0; k < 16 && reg[k]; k++) {
+            n += snprintf(line + n, sizeof(line) - (size_t)n, " %04X:%u", reg[k], cnt[k]);
+            reg[k] = 0;
+            cnt[k] = 0;
+        }
+        WP_LOG("mmiostat", "last second:%s other %u", line, other);
+        other = 0;
+        since = wp_host_time();
+    }
+}
+
 static u64 ext_read(CPUState* c, u32 ea, u8 size) {
     u32 a = canon(ea);
     int i = find(a);
     (void)c;
+    mmio_stat(a);
     if (i >= 0 && s_ranges[i].rd) {
         if (size == 8) return (u64)s_ranges[i].rd(a, 4) << 32 | s_ranges[i].rd(a + 4, 4);
         return s_ranges[i].rd(a, size);
@@ -70,6 +97,7 @@ static void ext_write(CPUState* c, u32 ea, u64 v, u8 size) {
     u32 a = canon(ea);
     int i;
     (void)c;
+    mmio_stat(a);
     if (a - 0x0C008000u < 32u) {
         if (size == 8) { hw_gx_wgpipe((u32)(v >> 32), 4); hw_gx_wgpipe((u32)v, 4); }
         else hw_gx_wgpipe((u32)v, size);

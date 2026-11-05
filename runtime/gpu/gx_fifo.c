@@ -26,6 +26,32 @@
 #include <windows.h>
 #endif
 
+/* Wonderpark runtime: log switches and host time (runtime/core/wp.h). */
+int wp_log_on(const char* cat);
+uint64_t wp_host_time(void);
+void wp_parallel_time_hide(uint64_t ticks);
+
+/* GPU work is timed with the TSC (cheap enough per command) and hidden from
+ * the guest's clock (runtime/core/cpu_host.c says why). The TSC's rate is
+ * measured against the performance counter once 50 ms have passed; until
+ * then nothing is hidden. */
+#include <intrin.h>
+static double sTscToTb; /* time-base ticks per TSC tick */
+static uint64_t gpu_ticks_to_tb(uint64_t tsc) {
+    static uint64_t tsc0;
+    static LARGE_INTEGER qpc0;
+    if (sTscToTb == 0) {
+        LARGE_INTEGER q, f;
+        QueryPerformanceCounter(&q);
+        if (!tsc0) { tsc0 = __rdtsc(); qpc0 = q; return 0; }
+        QueryPerformanceFrequency(&f);
+        if ((q.QuadPart - qpc0.QuadPart) * 20 < f.QuadPart) return 0;
+        sTscToTb = (double)(q.QuadPart - qpc0.QuadPart) / (double)f.QuadPart * 60750000.0 / (double)(__rdtsc() - tsc0);
+    }
+    return (uint64_t)((double)tsc * sTscToTb);
+}
+
+
 #define LOG(...) do { if (sLog) { fprintf(stderr, "gx: " __VA_ARGS__); fputc('\n', stderr); } } while (0)
 
 /* Pixel-engine interrupts, raised when the commands that request them are
@@ -105,7 +131,11 @@ static void fifo_append(uint32_t value, int size) {
     /* Decode each command as soon as it is complete, as the GPU would:
      * indexed matrix loads, vertex arrays and textures are read from
      * memory the game reuses soon after. */
-    if (sFifoLen >= sNeed) gx_flush();
+    if (sFifoLen >= sNeed) {
+        uint64_t t0 = __rdtsc();
+        gx_flush();
+        wp_parallel_time_hide(gpu_ticks_to_tb(__rdtsc() - t0));
+    }
 }
 
 /* Big-endian reads, as one load and a byte swap (ppc.h). */
@@ -1546,6 +1576,10 @@ static void efb_copy(uint32_t exec) {
         fputc(10, stderr);
     }
     flush_batch();
+    if (wp_log_on("efbcopy"))
+        fprintf(stderr, "[efbcopy] %.2f frame %llu: %dx%d at (%d,%d) to %s %08X, clear %d, %u draws\n",
+                (double)wp_host_time() / 60750.0, (unsigned long long)sFrame, w, h, x, y,
+                to_xfb ? "XFB" : "texture", dst, clear, sDrawCount);
     if (to_xfb) {
         LOG("frame %llu: copy to XFB %dx%d at (%d,%d), %u draws, %u vertices", (unsigned long long)sFrame, w, h, x, y,
             sDrawCount, sVertexCount);

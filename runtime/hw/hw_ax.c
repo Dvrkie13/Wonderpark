@@ -381,7 +381,19 @@ static void ai_buffer(u32 addr, u32 bytes) {
     }
 }
 
+/* On a Wii the DSP mixes in parallel with the CPU; here it runs on the game
+ * thread, so its time is hidden from the guest's clock like the GPU's
+ * (cpu_host.c). */
+static void ax_frame_parallel(u32 list, u32 size) {
+    u64 t0;
+    wp_clock_tick();
+    t0 = wp_host_time();
+    ax_frame(list, size);
+    wp_clock_tick();
+    wp_parallel_time_hide(wp_host_time() - t0);
+}
+
 void hw_ax_init(void) {
-    g_dsp_ax_frame = ax_frame;
+    g_dsp_ax_frame = ax_frame_parallel;
     g_dsp_ai_buffer = ai_buffer;
 }

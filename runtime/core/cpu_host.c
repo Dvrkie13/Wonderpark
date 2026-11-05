@@ -78,6 +78,34 @@ uint64_t wp_timebase(void) { return s_tb_offset + s_now; }
 
 void wp_timebase_set(uint64_t tb) { s_tb_offset += tb - wp_timebase(); }
 
+/* Time spent emulating hardware that runs in parallel with the CPU on a
+ * Wii (the GPU decoding and drawing, the DSP mixing) is hidden from the
+ * guest's clock: here that work runs on the game thread. PokePark 2
+ * measures how long each frame takes and, when one runs long, skips drawing
+ * the next; once tripped, that rule held the PokePark Pad and battles at
+ * 15 fps. So that time pauses the guest's time base, and the idle hook gives
+ * it back when the guest next waits. On average the guest clock keeps real
+ * time, and alarms and retraces land where they would. At most HIDE_MAX is
+ * owed, so a guest that never waits can't fall behind for long. */
+#define HIDE_MAX (TB_HZ / 20) /* 50 ms */
+static uint64_t s_hidden;
+
+void wp_parallel_time_hide(uint64_t ticks) {
+    static int off = -1;
+    if (off < 0) off = getenv("WONDERPARK_NO_HIDE") != NULL; /* for comparisons */
+    if (off) return;
+    if (s_hidden + ticks > HIDE_MAX) ticks = HIDE_MAX - s_hidden;
+    s_hidden += ticks;
+    s_tb_offset -= ticks;
+}
+
+int wp_parallel_time_pending(void) { return s_hidden != 0; }
+
+void wp_parallel_time_restore(void) {
+    s_tb_offset += s_hidden;
+    s_hidden = 0;
+}
+
 /* Monotonic host time in time-base ticks, unaffected by the game setting
  * the time base (OSSetTime): for device timing. */
 uint64_t wp_host_time(void) { return s_now; }

@@ -125,10 +125,39 @@ static void mq_note(CPUState* c, const char* what) {
     if (mq_on(&q) && c->gpr[3] == q) {
         static uint64_t last;
         uint64_t now = wp_host_time();
-        WP_LOG("mqwatch", "%s(%08X, msg %08X) from %08X lr-chain %08X, %.1f ms since the last", what, q, c->gpr[4], c->lr,
+        WP_LOG("mqwatch", "%9.2f %s(%08X, msg %08X) from %08X lr-chain %08X, %.1f ms since the last",
+               (double)now * 1000.0 / TB_HZ, what, q, c->gpr[4], c->lr,
                LD32(LD32(c->gpr[1]) + 4), (double)(now - last) * 1000.0 / TB_HZ);
         last = now;
     }
 }
 WP_HOOK(0x80293660, OSSendMessage_watch) { mq_note(c, "OSSendMessage"); return 0; }
 WP_HOOK(0x80293810, OSJamMessage_watch) { mq_note(c, "OSJamMessage"); return 0; }
+
+/* WONDERPARK_LOG=waits: where threads block, with host time in ms, to see
+ * what stretches a frame (frame pacing investigations). */
+static void wait_note(CPUState* c, const char* what) {
+    if (!wp_log_on("waits")) return;
+    WP_LOG("waits", "%9.2f %-20s thread %08X lr %08X/%08X r3 %08X r4 %08X r5 %08X",
+           (double)wp_host_time() * 1000.0 / TB_HZ, what, LD32(0x800000E4), c->lr, LD32(LD32(c->gpr[1]) + 4),
+           c->gpr[3], c->gpr[4], c->gpr[5]);
+}
+WP_HOOK(0x80293730, OSReceiveMessage_wait) { wait_note(c, "OSReceiveMessage"); return 0; }
+WP_HOOK(0x80296C90, OSSleepThread_wait) { wait_note(c, "OSSleepThread"); return 0; }
+WP_HOOK(0x8029E200, VIWaitForRetrace_wait) { wait_note(c, "VIWaitForRetrace"); return 0; }
+WP_HOOK(0x802A6310, GXDrawDone_wait) { wait_note(c, "GXDrawDone"); return 0; }
+WP_HOOK(0x8029F2E0, VISetNextFrameBuffer_wait) { wait_note(c, "VISetNextFrameBuffer"); return 0; }
+
+/* WONDERPARK_LOG=steps: the main loop's logic steps per tick (S2LE01
+ * 0x800333A0 returns how many fixed steps to run to catch up with time). */
+WP_HOOK(0x800333A0, steps_watch) {
+    static uint64_t last;
+    uint64_t now;
+    if (!wp_log_on("steps")) return 0;
+    wp_call_original(c, 0x800333A0u);
+    now = wp_host_time();
+    WP_LOG("steps", "%9.2f steps %u (%.1f ms since the last tick)", (double)now * 1000.0 / TB_HZ, c->gpr[3],
+           (double)(now - last) * 1000.0 / TB_HZ);
+    last = now;
+    return 1;
+}

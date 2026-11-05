@@ -206,8 +206,12 @@ int32_t ios_handle(uint32_t req) {
             sFiles[fd] = NULL;
             sFds[fd][0] = '\0';
             return IPC_OK;
-        case REQ_READ: return hle_nand_read(f, LD32(req + 0x0C), LD32(req + 0x10));
-        case REQ_WRITE: return hle_nand_write(f, LD32(req + 0x0C), LD32(req + 0x10));
+        case REQ_READ:
+            WP_LOG("nandio", "%.1f read %u", (double)wp_host_time() * 1000.0 / TB_HZ, LD32(req + 0x10));
+            return hle_nand_read(f, LD32(req + 0x0C), LD32(req + 0x10));
+        case REQ_WRITE:
+            WP_LOG("nandio", "%.1f write %u", (double)wp_host_time() * 1000.0 / TB_HZ, LD32(req + 0x10));
+            return hle_nand_write(f, LD32(req + 0x0C), LD32(req + 0x10));
         case REQ_SEEK: return hle_nand_seek(f, (int32_t)LD32(req + 0x0C), (int32_t)LD32(req + 0x10));
         case REQ_IOCTL:
             if (LD32(req + 0x0C) == 11) return hle_nand_file_stats(f, LD32(req + 0x18)); /* GetFileStats */

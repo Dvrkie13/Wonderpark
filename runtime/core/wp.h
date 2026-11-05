@@ -69,6 +69,10 @@ uint64_t wp_timebase(void);
 void wp_timebase_set(uint64_t tb);
 /* Monotonic host time in the same units, for device timers (the game can't move it). */
 uint64_t wp_host_time(void);
+/* GPU time hidden from the guest clock until it next idles (cpu_host.c). */
+void wp_parallel_time_hide(uint64_t ticks);
+void wp_parallel_time_restore(void);
+int wp_parallel_time_pending(void);
 /* Reads the host clock; the dispatcher calls it once per slice. */
 void wp_clock_tick(void);
 

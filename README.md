@@ -28,7 +28,7 @@ Early development. The opening area plays from start to save.
 | CPU recompile (PowerPC to C, DolRecomp) | done |
 | Boot to title | reaches the title screen at full speed (30 fps) |
 | Sound (CRI Atom over AX) | plays (music, effects) |
-| First area (walk, mini-game, battle, save/load) | plays, ~27 fps average (dips to 15 in menus and battles) |
+| First area (walk, mini-game, battle, save/load) | plays at 30 fps (dips only while loading) |
 | Full playthrough, launcher | not started |
 
 ## Extracting your disc (developers)

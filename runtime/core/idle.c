@@ -55,12 +55,24 @@ WP_HOOK(0x80296090, SelectThread_idle) {
     static int off = -1;
     uint64_t start;
     if (off < 0) off = getenv("WONDERPARK_NO_IDLE_SLEEP") != NULL;
-    if (off || LD32(c->gpr[13] - 11648) != 0 || wp_irq_pending()) return 0; /* something to run: go on */
+    if (LD32(c->gpr[13] - 11648) != 0 || wp_irq_pending()) return 0; /* something to run: go on */
+    if (wp_parallel_time_pending()) {
+        /* The guest's clock was paused while the GPU or DSP worked: give the
+         * time back now, while nothing runs, and let any alarm now due fire. */
+        wp_parallel_time_restore();
+        c->timebase = wp_timebase();
+        c->downcount = -100000;
+        return 0;
+    }
+    if (off) return 0;
     wp_clock_tick();
     start = wp_host_time();
     sleep_until(next_event(start));
     wp_clock_tick();
     g_wait_ticks += wp_host_time() - start;
+    if (wp_host_time() - start > TB_HZ / 1000)
+        WP_LOG("idle", "%9.2f idle %.1f ms", (double)start * 1000.0 / TB_HZ,
+               (double)(wp_host_time() - start) * 1000.0 / TB_HZ);
     c->timebase = wp_timebase();
     c->downcount = -100000; /* end the slice at the loop's branch: devices tick, interrupts are taken */
     return 0;
