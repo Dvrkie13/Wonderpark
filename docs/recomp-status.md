@@ -282,7 +282,8 @@ Also in this pass:
   (`0xE0000000`, ~28,000 a frame) now take the fast path in
   `wp_cpu_fast.h`, instead of the MMIO dispatcher. They were measurable but
   not the cause.
-- NAND writes are no longer flushed after every write, only on close.
+- (Briefly NAND writes were flushed only on close; that lost saves, so it
+  was reverted. Each write is flushed again.)
 - An apparent boot slowdown seen while testing came from launching with
   PowerShell `Start-Process` redirection (blocking stderr writes), not the
   game; launched normally, boot runs at 60 then 30 fps.

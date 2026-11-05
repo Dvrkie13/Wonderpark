@@ -115,10 +115,12 @@ int32_t hle_nand_read(FILE* f, uint32_t dst, uint32_t len) {
 }
 
 int32_t hle_nand_write(FILE* f, uint32_t src, uint32_t len) {
-    /* No flush per write: the game writes its NAND cache (tens of MB at
-     * boot) in small pieces, and a syscall each made the boot crawl. The
-     * stream is flushed when the game closes the file. */
-    return (int32_t)fwrite(MA(src), 1, len, f);
+    /* Flushed after every write. Without it a save (open, write 5312 + 32
+     * bytes) never reached the disk, not even at a normal exit, while the
+     * game reported success. */
+    int32_t n = (int32_t)fwrite(MA(src), 1, len, f);
+    fflush(f);
+    return n;
 }
 
 int32_t hle_nand_seek(FILE* f, int32_t offset, int32_t whence) {
