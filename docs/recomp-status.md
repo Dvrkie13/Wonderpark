@@ -192,6 +192,10 @@ Quality (after "sounds a bit grainy"):
 - Output had no dropouts or underruns (`WONDERPARK_LOG=audiostats`).
 
 Known gaps:
+- Short beeps in the first cutscene when the game lags (reported by ear).
+  Likely cause: when AX's frame comes late, the AI DMA model plays the same
+  3 ms buffer again, which repeats as a ~333 Hz tone. Fix: play silence (or
+  fade) when no new frame has been mixed since the last DMA tick.
 - AX's compressor (`0A`) itself isn't emulated (the limiter replaces it).
 - Wii Remote speaker sound (`WM_OUTPUT`) is dropped.
 - Not yet listened to by a person; cutscene audio/video sync not checked.
