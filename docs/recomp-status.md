@@ -204,3 +204,46 @@ Debug switches: `WONDERPARK_AUDIO_DUMP=file.wav`, `WONDERPARK_AX_NOAUX=1`,
 `WONDERPARK_AX_SNAP=<frame>` (voice buffers to build/), `WONDERPARK_LOG=`
 `axvoice,axvoices,axlist,adxcheck,memcpywatch`; CMake `-DWP_STORE_WATCH=ON` with
 `WONDERPARK_WATCH=lo-hi` reports which guest code stores into a range.
+
+# Phase 2, step 5: first area
+
+Played from save slot 1 through the opening cave, about 25 minutes of play,
+with no crashes or emulation errors (the log holds only the startup MMIO
+warnings for unused EXI/SI registers).
+
+Covered:
+- **Walking, camera, jumping**: the jump tutorial (ledges) and the cave path,
+  with the minimap tracking progress.
+- **Objects and items**: breaking the "?" box with ① gives a Berry.
+- **A mini-game, start to finish**: Piplup's tag game (timer, ① dash, tagging
+  him), won; the reward Berries and the friend entry are credited.
+- **A battle**: the Timburr tutorial (Thunderbolt by holding ①, HP gauges,
+  3-minute timer, effects). My scripted input lost the fight on skill (no
+  dodging), and play returned to the field as it should.
+- **Menus**: the PokéPark Pad (Pals, Friend List, Important Items, Collection,
+  Photos, Save).
+- **Save and load**: Pad > Save wrote `GD0`/`GD0M` in the emulated NAND. Then
+  "quit the game" went back to the title screen (a soft reset in-game).
+  Slot 1 then showed the new play time (0:16) and loaded back into the cave:
+  no intro replay, 11 Berries, 1 Friend, the same objective ("Go to Seasong
+  Beach with Piplup"), and the explored minimap kept.
+
+Not reached yet: the hub's **attractions** (Wish Park). They come later in
+the story than the cave, past Seasong Beach.
+
+Controls notes: in menus, ② (Space/X) confirms (A/Enter does not), and the
+d-pad (arrow keys) moves. Dialogue only takes a press once the text has
+finished typing.
+
+## Speed in 3D areas
+
+Over the session: mean 26.6 fps; 54% of seconds at a full 30 fps, 16% at
+24-29, 13% at 18-24, 15% below 18 (mostly exactly 15).
+
+The 15 fps cluster is pacing, not raw speed. The game waits for its 30 Hz
+alarm, so a frame that misses by a little costs a whole extra 33 ms. It shows
+up where the CPU is far from busy: the PokéPark Pad runs at 15 fps with the
+host only ~40% busy, and the Timburr battle swings between 15 and 29 at
+46-70% busy. So something other than CPU time is stretching those frames,
+likely a GPU sync (draw-done or PE token wait, or an EFB copy round trip),
+and finding it is the top speed item.

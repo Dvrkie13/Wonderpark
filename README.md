@@ -20,7 +20,7 @@ contain game files, and don't ask for disc images.
 
 ## Status
 
-Early setup. Nothing is playable yet.
+Early development. The opening area plays from start to save.
 
 | Step | State |
 | --- | --- |
@@ -28,7 +28,8 @@ Early setup. Nothing is playable yet.
 | CPU recompile (PowerPC to C, DolRecomp) | done |
 | Boot to title | reaches the title screen at full speed (30 fps) |
 | Sound (CRI Atom over AX) | plays (music, effects) |
-| Cutscenes, gameplay, launcher | not started |
+| First area (walk, mini-game, battle, save/load) | plays, ~27 fps average (dips to 15 in menus and battles) |
+| Full playthrough, launcher | not started |
 
 ## Extracting your disc (developers)
 
