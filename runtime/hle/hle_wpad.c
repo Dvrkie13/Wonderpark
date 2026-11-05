@@ -19,17 +19,15 @@
 #include "host_input.h"
 
 /* Ported from MildRain479/PokePark-Wiicompiled recomp/patches/hle_wpad.c (CC0),
- * with S2LE01 addresses. Motion for minigames (hle_motion) and the button
- * prompts (hle_prompts) come with Phase 3; until then the remote reports
- * buttons, a shake as a swing, and no pointer. */
+ * with S2LE01 addresses. Per-minigame motion and the button prompts
+ * (hle_prompts) come with Phase 3; for now the remote reports buttons, a
+ * shake as a swing, and the pointer (mouse) while the game has the IR camera
+ * on (hle_motion, below). */
 #define ppc_timebase wp_timebase
 #define PPC_TB_HZ TB_HZ
 #define MA(a) wp_mem_ptr((uint32_t)(a), 1)
 #define HLE_LOG(...) WP_LOG("wpad", __VA_ARGS__)
-static int hle_motion(uint32_t held, uint32_t reports, int16_t acc[3], int16_t dots[4][2]) {
-    (void)held; (void)reports; (void)acc; (void)dots;
-    return 0;
-}
+static int hle_motion(uint32_t held, uint32_t reports, int16_t acc[3], int16_t dots[4][2]);
 static void hle_prompts_update(void) {}
 
 int (*g_host_pad_read)(int chan, uint32_t* held);
@@ -60,6 +58,43 @@ static struct {
     uint32_t dpdCommand;
     int speakerOn;
 } sChan[WPAD_MAX_CHANS];
+
+/* The pointer, while the game has the IR camera on (WPADControlDpd): the
+ * mouse moves it (the screen is -1 to 1 across), and the remote reports the
+ * sensor bar's two dots where the IR camera would see them. The constants
+ * are the reference runtime's (recomp/patches/hle_motion.c, CC0), measured
+ * against KPAD's pointer: x moves 1/225 of the 1024x768 view per unit, y
+ * 1/226, and with the sensor bar below the screen the middle sits lower.
+ * The dots move the other way to the pointer. Bit 2 of the result: dots
+ * given; acc is the remote at rest. */
+#define POINTER_PER_PIXEL (1.0f / 600.0f)
+#define POINTER_X_LIMIT 1.6f
+#define DOT_SPREAD 100
+static int hle_motion(uint32_t held, uint32_t reports, int16_t acc[3], int16_t dots[4][2]) {
+    static float px, py;
+    float dx = 0, dy = 0;
+    int mx, my;
+    (void)held; (void)reports;
+    if (!sChan[0].dpdCommand) return 0;
+    if (g_host_pointer_read) g_host_pointer_read(&dx, &dy);
+    px += dx * POINTER_PER_PIXEL;
+    py += -dy * POINTER_PER_PIXEL;
+    px = px > POINTER_X_LIMIT ? POINTER_X_LIMIT : px < -POINTER_X_LIMIT ? -POINTER_X_LIMIT : px;
+    py = py > 1 ? 1 : py < -1 ? -1 : py;
+    mx = (int)(512 - px * 225);
+    my = (int)(486 + py * 226);
+    dots[0][0] = (int16_t)(mx - DOT_SPREAD);
+    dots[0][1] = (int16_t)my;
+    dots[1][0] = (int16_t)(mx + DOT_SPREAD);
+    dots[1][1] = (int16_t)my;
+    if (wp_log_on("pointer") && (reports % 30 == 0 || dx != 0 || dy != 0))
+        WP_LOG("pointer", "dpd %u, mouse %+.0f %+.0f -> pointer %.2f %.2f, dots at %d,%d", sChan[0].dpdCommand, dx, dy,
+               px, py, mx, my);
+    acc[0] = 0;
+    acc[1] = 0;
+    acc[2] = ACC_ONE_G;
+    return 2;
+}
 
 static uint32_t sReports;
 int (*g_host_script_input)(uint32_t held);

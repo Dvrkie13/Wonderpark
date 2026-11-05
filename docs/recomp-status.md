@@ -228,8 +228,26 @@ Covered:
   no intro replay, 11 Berries, 1 Friend, the same objective ("Go to Seasong
   Beach with Piplup"), and the explored minimap kept.
 
-Not reached yet: the hub's **attractions** (Wish Park). They come later in
-the story than the cave, past Seasong Beach.
+**First attraction, finished** (after the 15 fps fix, below): from the
+cave, won the Timburr battle, reached **Seasong Beach** (Mobiclip cutscene,
+the Oshawott and Krookodile events), entered **Wish Park** through the
+poster-wall doors, and played **Cofagrigus's Attraction, Cake Contraption**,
+to the end: a 60-second pointer shooting game, scored 1,100. The story
+continues afterwards (cutscene, then a scripted battle). Saves at Seasong
+Beach, Wish Park and the attraction door each loaded back correctly.
+
+The attraction needs the Wii Remote pointer, so this step adds a minimal one
+(`hle_motion` in `runtime/hle/hle_wpad.c`, constants from the reference
+runtime). While the game has the IR camera on (`WPADControlDpd`), the mouse
+moves the pointer and the remote reports the sensor bar's dots. The game's
+cursor follows it, about 2.65 screen pixels per mouse pixel, and its
+calibration ("aim at the circle") and shooting work. Per-minigame motion
+(tilt, swings) is still Phase 3. `WONDERPARK_LOG=pointer` logs it.
+
+Wish Park notes, for next time: loading a save puts you at the park's
+entrance. The swirling blue frame next to it is a warp to the attraction
+stage when walked into. Pressing ② at it instead asks whether to leave the
+park.
 
 Controls notes: in menus, ② (Space/X) confirms (A/Enter does not), and the
 d-pad (arrow keys) moves. Dialogue only takes a press once the text has
@@ -287,6 +305,12 @@ Also in this pass:
 - An apparent boot slowdown seen while testing came from launching with
   PowerShell `Start-Process` redirection (blocking stderr writes), not the
   game; launched normally, boot runs at 60 then 30 fps.
+
+Not fully gone: at Seasong Beach (a heavier scene, ~97% busy) the Pad once
+locked at 15 fps again, while another time it held 30. The pre-step work
+there is close to the threshold even with GPU and DSP time hidden; the next
+step would be to make the game's own code cheaper (or a GPU thread for real
+parallelism).
 
 Known, separate: the audio queue drops a few blocks (too much audio queued,
 up to ~7 per second) around loading stalls and in battles, with an

@@ -29,6 +29,7 @@ Early development. The opening area plays from start to save.
 | Boot to title | reaches the title screen at full speed (30 fps) |
 | Sound (CRI Atom over AX) | plays (music, effects) |
 | First area (walk, mini-game, battle, save/load) | plays at 30 fps (dips only while loading) |
+| First attraction (Wish Park, pointer) | Cake Contraption plays to the end (mouse as pointer) |
 | Full playthrough, launcher | not started |
 
 ## Extracting your disc (developers)
