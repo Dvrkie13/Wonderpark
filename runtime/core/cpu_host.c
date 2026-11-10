@@ -72,7 +72,26 @@ static uint64_t s_now; /* host time in time-base ticks, at the last wp_clock_tic
 
 static uint64_t host_to_tb(uint64_t d) { return (d / s_host_freq) * TB_HZ + (d % s_host_freq) * TB_HZ / s_host_freq; }
 
-void wp_clock_tick(void) { s_now = host_to_tb(host_ticks() - s_host_start); }
+/* Game speed (F7 in the debug overlay): the emulated clock runs this many
+ * times as fast as real time. Host ticks are scaled and summed, then
+ * converted as a whole, so nothing drifts. */
+static int s_speed = 1;
+static uint64_t s_last_raw, s_scaled_raw;
+
+void wp_clock_tick(void) {
+    uint64_t raw = host_ticks();
+    s_scaled_raw += (raw - s_last_raw) * (uint64_t)s_speed;
+    s_last_raw = raw;
+    s_now = host_to_tb(s_scaled_raw);
+}
+
+void wp_set_game_speed(int times) {
+    wp_clock_tick();
+    s_speed = times < 1 ? 1 : times;
+    fprintf(stderr, "wonderpark: game speed x%d\n", s_speed);
+}
+
+int wp_game_speed(void) { return s_speed; }
 
 uint64_t wp_timebase(void) { return s_tb_offset + s_now; }
 
@@ -314,6 +333,7 @@ void wp_cpu_host_init(CPUState* c) {
     s_host_freq = 1000000000ull;
 #endif
     s_host_start = host_ticks();
+    s_last_raw = s_host_start;
     c->instruction_fallback = system_instruction;
     c->spr_read = spr_read;
     c->spr_write = spr_write;

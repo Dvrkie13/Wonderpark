@@ -30,6 +30,9 @@
 int wp_log_on(const char* cat);
 uint64_t wp_host_time(void);
 void wp_parallel_time_hide(uint64_t ticks);
+/* Debug overlay counters (gx_frames.c). */
+extern unsigned g_cnt_vertices, g_cnt_gx_draws, g_cnt_efb_copies, g_cnt_efb_copies_tex;
+extern uint64_t g_gpu_tb; /* time-base ticks spent decoding GX (and drawing) */
 
 /* GPU work is timed with the TSC (cheap enough per command) and hidden from
  * the guest's clock (runtime/core/cpu_host.c says why). The TSC's rate is
@@ -133,8 +136,11 @@ static void fifo_append(uint32_t value, int size) {
      * memory the game reuses soon after. */
     if (sFifoLen >= sNeed) {
         uint64_t t0 = __rdtsc();
+        uint64_t tb;
         gx_flush();
-        wp_parallel_time_hide(gpu_ticks_to_tb(__rdtsc() - t0));
+        tb = gpu_ticks_to_tb(__rdtsc() - t0);
+        g_gpu_tb += tb;
+        wp_parallel_time_hide(tb);
     }
 }
 
@@ -1576,6 +1582,8 @@ static void efb_copy(uint32_t exec) {
         fputc(10, stderr);
     }
     flush_batch();
+    g_cnt_efb_copies++;
+    if (!to_xfb) g_cnt_efb_copies_tex++;
     if (wp_log_on("efbcopy"))
         fprintf(stderr, "[efbcopy] %.2f frame %llu: %dx%d at (%d,%d) to %s %08X, clear %d, %u draws\n",
                 (double)wp_host_time() / 60750.0, (unsigned long long)sFrame, w, h, x, y,
@@ -1698,6 +1706,8 @@ static size_t run(const uint8_t* p, size_t len, int depth, size_t* need) {
             count = rd16(c + 1);
             if (left < 3 + (size_t)count * f->size) { *need = 3 + (size_t)count * f->size; break; }
             sVertexCount += (unsigned)count;
+            g_cnt_vertices += (unsigned)count;
+            g_cnt_gx_draws++;
             draw(op & 0xF8, c + 3, f, count, op & 7);
             pos += 3 + (size_t)count * f->size;
         } else {

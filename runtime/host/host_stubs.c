@@ -21,11 +21,7 @@ void hle_set_text_speed(int speed) { (void)speed; }
 void hle_set_fov(int percent) { (void)percent; }
 void hle_set_frame_rate(int fps) { (void)fps; }
 void update_check(void) {}
-void menu_draw(void) {}
-int menu_window_message(void* hwnd, unsigned msg, uintptr_t wp, intptr_t lp) {
-    (void)hwnd; (void)msg; (void)wp; (void)lp;
-    return 0;
-}
+/* menu_draw and menu_window_message: the debug overlay (overlay_win32.c). */
 
 static int vk_unavailable(void) { return 0; }
 const GXDevice g_vk_device = {"Vulkan (not built yet)", vk_unavailable};

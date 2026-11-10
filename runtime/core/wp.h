@@ -71,6 +71,9 @@ void wp_timebase_set(uint64_t tb);
 uint64_t wp_host_time(void);
 /* Real seconds since start, read now (cpu_host.c). */
 double wp_wall_seconds(void);
+/* Game speed, the debug overlay's F7: 1 (normal), 2, 4 or 10 (cpu_host.c). */
+int wp_game_speed(void);
+void wp_set_game_speed(int times);
 /* --headless: no visible window, no sound device, no input. --exit-after:
  * stop after that many real seconds with a summary line (main.c). */
 extern int g_wp_headless;

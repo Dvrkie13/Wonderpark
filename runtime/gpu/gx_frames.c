@@ -91,6 +91,11 @@ static int sRecording;            /* frames between the game's are drawn */
 static unsigned sGameFrames;      /* the game's frames, for the fps report */
 static unsigned sPresentsDropped; /* frames left out as the display wasn't ready, for the fps report */
 
+/* Debug overlay counters, reset each second in report() (wp_stats.h). */
+#include "wp_stats.h"
+unsigned g_cnt_shader_compiles, g_cnt_readbacks, g_cnt_vertices, g_cnt_gx_draws, g_cnt_efb_copies, g_cnt_efb_copies_tex;
+uint64_t g_gpu_tb;
+
 /* The game's frames so far (--exit-after's summary, the debug overlay). */
 unsigned gxb_game_frames(void) { return sGameFrames; }
 
@@ -132,9 +137,46 @@ static void report(void) {
         if (e && *e == '1')
             fprintf(stderr, "fps: %.2f, slowest frame %.1f ms, busy %.0f%%, game %u, left out %u\n", fps, worst, busy,
                     sGameFrames - lastGameFrames, sPresentsDropped - lastDropped);
+        {
+            /* The debug overlay's numbers (overlay_win32.c). */
+            extern uint64_t g_wait_ticks;
+            static uint64_t lastGpu, lastWaitO;
+            static unsigned compilesTotal;
+            double tbms = (double)PPC_TB_HZ / 1000.0, frames = sGameFrames - lastGameFrames;
+            double waitms = (double)(g_wait_ticks - lastWaitO) / tbms, gpums = (double)(g_gpu_tb - lastGpu) / tbms;
+            double busyms = secs * 1000.0 - waitms;
+            compilesTotal += g_cnt_shader_compiles;
+            g_wp_stats.fps = fps;
+            g_wp_stats.slowest_ms = worst;
+            g_wp_stats.frames = frames;
+            g_wp_stats.wait_ms = waitms;
+            g_wp_stats.gpu_ms = gpums;
+            g_wp_stats.cpu_ms = busyms > gpums ? busyms - gpums : 0;
+            g_wp_stats.hidden_ms = gpums;
+            g_wp_stats.shader_compiles = g_cnt_shader_compiles;
+            g_wp_stats.shader_compiles_total = compilesTotal;
+            g_wp_stats.texture_uploads = sGlCalls[GLK_TEXTURE] + sGlCalls[GLK_TEXTURE_UPDATE];
+            {
+                LARGE_INTEGER qf;
+                QueryPerformanceFrequency(&qf);
+                g_wp_stats.texture_ms = (sGlTicks[GLK_TEXTURE] + sGlTicks[GLK_TEXTURE_UPDATE]) * 1000.0 / qf.QuadPart;
+            }
+            g_wp_stats.readbacks = g_cnt_readbacks;
+            g_wp_stats.vertices = g_cnt_vertices;
+            g_wp_stats.batches = sGlCalls[GLK_DRAW];
+            g_wp_stats.gx_draws = g_cnt_gx_draws;
+            g_wp_stats.efb_copies = g_cnt_efb_copies;
+            g_wp_stats.efb_copies_tex = g_cnt_efb_copies_tex;
+            g_wp_stats.serial++;
+            g_cnt_shader_compiles = g_cnt_readbacks = g_cnt_vertices = g_cnt_gx_draws = 0;
+            g_cnt_efb_copies = g_cnt_efb_copies_tex = 0;
+            lastGpu = g_gpu_tb;
+            lastWaitO = g_wait_ticks;
+        }
         lastGameFrames = sGameFrames;
         lastDropped = sPresentsDropped;
         if (e && *e == '1') print_gl_stats();
+        else memset(sGlTicks, 0, sizeof(sGlTicks)), memset(sGlCalls, 0, sizeof(sGlCalls)); /* per second */
         since = now;
         frames = 0;
         worst = 0;

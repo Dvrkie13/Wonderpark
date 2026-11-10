@@ -121,9 +121,12 @@ static void fir_init(void) {
     for (k = 0; k < TAPS; k++) sFir[k] *= 3.0 / sum; /* unity gain after zero stuffing */
 }
 
+int wp_game_speed(void); /* cpu_host.c */
+
 static void push(const int16_t* lr, int frames) {
     static int16_t out[2048 * 2];
     int i, n = 0;
+    if (wp_game_speed() != 1) return; /* sped up (debug overlay, F7): silent rather than garbled */
     for (i = 0; i < frames; i++) {
         sHist[0][sIn & 63] = lr[2 * i];
         sHist[1][sIn & 63] = lr[2 * i + 1];

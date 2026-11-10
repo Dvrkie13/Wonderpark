@@ -40,7 +40,8 @@ static void sleep_until(uint64_t deadline) {
     if (left <= (int64_t)(TB_HZ / 4000)) return; /* under 0.25 ms: not worth it */
     if (timer) {
         LARGE_INTEGER due;
-        due.QuadPart = -(left * 10000000 / (int64_t)TB_HZ);
+        /* The clock may run faster than real time (game speed, cpu_host.c). */
+        due.QuadPart = -(left * 10000000 / (int64_t)TB_HZ / wp_game_speed());
         if (SetWaitableTimer(timer, &due, 0, NULL, NULL, FALSE)) WaitForSingleObject(timer, INFINITE);
     } else {
         Sleep(1);

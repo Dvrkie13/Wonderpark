@@ -441,6 +441,8 @@ static GLint uNumStages, uCin, uAin, uCop, uAop, uMap, uSel, uReg, uKonst, uSwap
 static GLint uInd, uIndCmd, uIndStage, uIndMtx, uTcSize, uFogRange;
 
 static GLuint compile(GLenum type, const char* src) {
+    extern unsigned g_cnt_shader_compiles; /* debug overlay */
+    g_cnt_shader_compiles++;
     GLuint s = p_glCreateShader(type);
     GLint ok;
     p_glShaderSource(s, 1, &src, NULL);
@@ -1546,6 +1548,8 @@ static uint32_t gl_copy_texture(int target) { return sTargets[target].tex; }
 
 /* The copy's texture read back (gx_frames.c's write backs). */
 static uint8_t* gl_copy_read(int target, int* w, int* h) {
+    extern unsigned g_cnt_readbacks; /* debug overlay */
+    g_cnt_readbacks++;
     CopyTarget* t = &sTargets[target];
     uint8_t* out;
     gl_forget();
