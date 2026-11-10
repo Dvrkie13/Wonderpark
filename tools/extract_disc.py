@@ -7,7 +7,12 @@ Usage:
 Output layout (same as `dtk disc extract`):
     <out>/sys/main.dol, boot.bin, bi2.bin, apploader.img, fst.bin
     <out>/files/...            the disc file tree
-    <out>/manifest.json        game ID, sizes, .rel list (for later pipeline stages)
+    <out>/manifest.json        game ID, revision, image hashes, sizes, .rel list
+
+The disc must be S2LE01 and a revision Wonderpark has been tested with
+(TESTED_REVISIONS; --allow-untested-revision overrides). The whole image is
+hashed and compared with GameTDB's clean dump; a mismatch is only a warning,
+since NKit, WBFS and RVZ images hash differently from a plain ISO.
 
 Extraction normally uses decomp-toolkit (dtk). NKit-processed .iso images
 (hashes stripped, partition stored decrypted) are not readable by dtk, so for
@@ -16,6 +21,7 @@ those a small built-in reader is used instead.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import shutil
@@ -25,6 +31,11 @@ import sys
 from pathlib import Path
 
 EXPECTED_ID = b"S2LE01"
+# Disc revisions (header byte 7) Wonderpark has been tested with.
+TESTED_REVISIONS = {0}
+# The clean US v1.00 ISO, per GameTDB.
+CLEAN_SHA1 = "e429a232431ea7075ae959b030a7675846357c19"
+CLEAN_MD5 = "4b087f066230fa72db05362186532899"
 REPO = Path(__file__).resolve().parent.parent
 
 WII_MAGIC = 0x5D1C9EA3
@@ -38,28 +49,56 @@ class DiscError(Exception):
 
 # --------------------------------------------------------------------------- ID check
 
-def read_game_id(path: Path) -> tuple[bytes, str]:
-    """Return (game ID, container kind). Plain/NKit ISOs carry the ID in the first 6 bytes."""
+def read_header(path: Path) -> tuple[bytes, int, str]:
+    """Return (game ID, revision, container kind). The disc header holds the
+    6-byte ID at 0 and the revision at 7; WBFS and WIA/RVZ embed it."""
     with path.open("rb") as f:
         head = f.read(0x220)
     if len(head) < 0x20:
         raise DiscError("file is too small to be a disc image")
     if head[:4] == b"WBFS":
-        return head[0x200:0x206], "wbfs"
-    if head[:4] in (b"RVZ\x01", b"WIA\x01"):
+        return head[0x200:0x206], head[0x207], "wbfs"
+    if head[:4] in (b"RVZ", b"WIA"):
         # The disc header is stored inside the WIA/RVZ header (disc_header at 0x58).
-        return head[0x58:0x5E], "rvz"
+        return head[0x58:0x5E], head[0x5F], "rvz"
     kind = "nkit" if head[NKIT_MAGIC_OFFSET:NKIT_MAGIC_OFFSET + 4] == b"NKIT" else "iso"
-    return head[:6], kind
+    return head[:6], head[7], kind
 
 
-def verify(path: Path) -> str:
-    gid, kind = read_game_id(path)
+def image_hashes(path: Path) -> tuple[str, str]:
+    """SHA-1 and MD5 of the whole image file."""
+    sha1, md5 = hashlib.sha1(), hashlib.md5()
+    with path.open("rb") as f:
+        while chunk := f.read(CHUNK * 8):
+            sha1.update(chunk)
+            md5.update(chunk)
+    return sha1.hexdigest(), md5.hexdigest()
+
+
+def verify(path: Path, allow_untested: bool = False) -> tuple[str, int]:
+    """Check the game ID and revision; return (container kind, revision)."""
+    gid, rev, kind = read_header(path)
     if gid != EXPECTED_ID:
         shown = gid.decode("ascii", "replace")
         hint = {"S2LJ01": " (that's the Japanese disc)", "S2LP01": " (that's the European disc)"}.get(shown, "")
         raise DiscError(f"wrong disc: game ID is {shown!r}{hint}; Wonderpark needs the US disc {EXPECTED_ID.decode()}")
-    return kind
+    if rev not in TESTED_REVISIONS and not allow_untested:
+        raise DiscError(f"disc revision {rev} hasn't been tested with Wonderpark (tested: "
+                        f"{sorted(TESTED_REVISIONS)}); use --allow-untested-revision to try it anyway")
+    return kind, rev
+
+
+def check_hashes(path: Path, kind: str) -> dict:
+    """Hash the image and compare with the clean dump. Returns the manifest entry."""
+    sha1, md5 = image_hashes(path)
+    clean = sha1 == CLEAN_SHA1 and md5 == CLEAN_MD5
+    if clean:
+        print("  image hash matches the clean US v1.00 dump (GameTDB)")
+    else:
+        why = {"nkit": "NKit images", "wbfs": "WBFS images", "rvz": "RVZ/WIA images"}.get(kind)
+        print(f"  warning: image hash doesn't match the clean dump"
+              + (f" ({why} always hash differently)" if why else " (the disc may be modified or a bad dump)"))
+    return {"sha1": sha1, "md5": md5, "matches_clean_dump": clean}
 
 
 # --------------------------------------------------------------------------- dtk path
@@ -191,14 +230,16 @@ def dol_sections(dol: bytes) -> list[dict]:
     return secs
 
 
-def write_manifest(out: Path, image: Path, kind: str, method: str) -> dict:
+def write_manifest(out: Path, image: Path, kind: str, method: str, rev: int, hashes: dict) -> dict:
     dol = (out / "sys" / "main.dol").read_bytes()
     files = out / "files"
     rels = sorted(str(p.relative_to(out)).replace("\\", "/") for p in out.rglob("*") if p.suffix.lower() in (".rel", ".rso", ".sel"))
     top = sorted(p.name + ("/" if p.is_dir() else "") for p in files.iterdir())
     man = {
         "game_id": EXPECTED_ID.decode(),
+        "revision": rev,
         "source_image": image.name,
+        "image_hash": hashes,
         "image_kind": kind,
         "extracted_with": method,
         "main_dol": {"size": len(dol), "entry": be32(dol, 0xE0),
@@ -221,6 +262,7 @@ def main() -> int:
     ap.add_argument("--dtk", help="path to dtk (else $WONDERPARK_DTK, tools/bin/, PATH)")
     ap.add_argument("--verify-only", action="store_true")
     ap.add_argument("--force", action="store_true", help="overwrite an existing output folder")
+    ap.add_argument("--allow-untested-revision", action="store_true", help="accept a disc revision not yet tested")
     a = ap.parse_args()
     sys.stdout.reconfigure(line_buffering=True)  # keep progress and errors in order
 
@@ -228,8 +270,9 @@ def main() -> int:
         if not a.image.is_file():
             raise DiscError(f"not found: {a.image}")
         print("[1/2] Verifying disc")
-        kind = verify(a.image)
-        print(f"  game ID {EXPECTED_ID.decode()} OK ({kind})")
+        kind, rev = verify(a.image, a.allow_untested_revision)
+        print(f"  game ID {EXPECTED_ID.decode()}, revision {rev} OK ({kind})")
+        hashes = check_hashes(a.image, kind)
         if a.verify_only:
             return 0
 
@@ -260,7 +303,7 @@ def main() -> int:
                 extract_nkit(a.image, a.out)
                 method = "builtin-nkit"
 
-        man = write_manifest(a.out, a.image, kind, method)
+        man = write_manifest(a.out, a.image, kind, method, rev, hashes)
         print(f"  main.dol {man['main_dol']['size']:,} bytes, {man['file_count']} files, "
               f"{len(man['modules'])} code modules -> {a.out}")
         return 0
