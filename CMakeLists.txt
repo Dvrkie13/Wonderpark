@@ -32,7 +32,7 @@ target_link_libraries(wp_generated PUBLIC wp_dolrecomp_cpu)
 
 file(GLOB WP_RUNTIME_SOURCES CONFIGURE_DEPENDS
     runtime/core/*.c runtime/hw/*.c runtime/hle/*.c runtime/ios/*.c
-    runtime/gpu/*.c runtime/host/*.c "${WP_GENERATED_DIR}/wp_hooks.c")
+    runtime/gpu/*.c runtime/host/*.c config/patches/*.c "${WP_GENERATED_DIR}/wp_hooks.c")
 add_executable(Wonderpark ${WP_RUNTIME_SOURCES})
 target_include_directories(Wonderpark PRIVATE runtime/core runtime/gpu runtime/host)
 target_link_libraries(Wonderpark PRIVATE wp_generated)
