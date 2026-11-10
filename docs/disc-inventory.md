@@ -15,6 +15,46 @@ NKit-processed images (hashes stripped, partition stored decrypted) can't be
 read by dtk 1.8.4 (it fails reading the apploader). `tools/extract_disc.py`
 falls back to a built-in reader for those, and uses dtk for normal ISOs.
 
+## Image check (Phase 1 script)
+
+`tools/extract_disc.py` reads the game ID (bytes 0–5) and revision (byte 7),
+accepts only revisions Wonderpark has been tested with (`TESTED_REVISIONS`,
+currently revision 0 = v1.00), hashes the whole image and compares it with
+GameTDB's clean US dump (SHA-1 `e429a232…`, MD5 `4b087f06…`; a mismatch is a
+warning). The owner's image is an NKit-processed ISO, revision 0; its hash
+(SHA-1 `a4328fc9…`) differs from the clean dump, as NKit images always do.
+No other US revision is known.
+
+## Sound banks
+
+365 files, 345 MB, in `Sound/`: 310 `.acb` cue banks (small ones carry their
+waves inside), 53 `_streamfiles.awb` stream archives, `nile_sound.acf` (CRI
+global config) and `SoundCommonData.rlb`. No language-tagged files: the US
+disc has **one (English) voice set**.
+
+| Group | Files | Size | Contents |
+| --- | --- | --- | --- |
+| Pokémon voices | 16 | 23 MB | see below |
+| Music (`S_BGM_FdXXXX`, `S_Fd_BGM_*`, `S_Field_BGM`, `S_AT_*_BGM`) | 49 | 225 MB | streamed |
+| Field sound effects (`S_FdXXXX`, one per area) | 40 | ~90 MB | |
+| Other `S_` (`S_DEMO_COMMON`, `S_RICH_COMMON`, `S_STAFF_ROLL`, `S_AT_SE_BGM_COMMON`) | 6 | | |
+| `M_` banks: per-Pokémon effects (`M_<NAME>`, e.g. attack sounds), gimmicks (`M_GMC*`, 34), attractions (`M_AT_*`), field (`M_Field*`) | 252 | 21 MB | |
+
+Voice banks (cue names are `SND_ID_...`):
+
+| Bank | Size (acb + awb) | Cues | Holds |
+| --- | --- | --- | --- |
+| `S_POKE_VOICE` | 0.28 + 20.0 MB | 1,985 | cries of the other Pokémon: 199 Pokémon by the game's internal ID (`SND_ID_004A`…`216`, with letter variants) |
+| `S_PIKA_VOICE` | 0.02 + 0.43 MB | 100 | Pikachu (`SND_ID_VOICE_PIKA_000`…) |
+| `S_MIJU_VOICE` | 0.03 + 0.43 MB | 100 | Oshawott (Mijumaru) |
+| `S_POKA_VOICE` | 0.03 + 0.56 MB | 100 | Tepig (Pokabu) |
+| `S_TUTA_VOICE` | 0.02 + 0.32 MB | 100 | Snivy (Tsutarja) |
+| `S_AT_02_POKE_VOICE` | 0.02 + ~0 MB | 91 | attraction 02 voices |
+| `M_PIKA/MIJU/POKA/TUTA_AT_VOICE` | 0.18–0.37 MB | 26 each | attraction voices of the four playable Pokémon |
+
+Cue names are systematic and language-neutral, so a Japanese disc's banks
+would most likely use the same names (voice-switch method 1 or 2).
+
 ## main.dol
 
 4,915,616 bytes. Entry `0x80004050`. BSS `0x804B0400`, size `0xFFCD0`.
