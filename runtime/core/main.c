@@ -148,12 +148,26 @@ static void setup_low_memory(void) {
 
 int main(int argc, char** argv) {
     static CPUState cpu;
-    const char* dol = argc > 1 ? argv[1] : DEFAULT_DOL;
+    const char* dol = DEFAULT_DOL;
     unsigned long long max_slices = 0;
     uint32_t entry = 0;
     const char* env;
+    int i;
 
+    /* Wonderpark [main.dol] [--headless] [--exit-after <seconds>] */
+    for (i = 1; i < argc; i++) {
+        if (!strcmp(argv[i], "--headless")) g_wp_headless = 1;
+        else if (!strcmp(argv[i], "--exit-after") && i + 1 < argc) g_wp_exit_after = atof(argv[++i]);
+        else if (!strcmp(argv[i], "--help") || !strcmp(argv[i], "-h")) {
+            printf("Wonderpark [path/to/sys/main.dol] [--headless] [--exit-after <seconds>]\n"
+                   "  --headless          no visible window, no sound device, no input (automated runs)\n"
+                   "  --exit-after N      stop after N seconds and print a summary\n"
+                   "Settings: settings.ini in %%APPDATA%%\\Wonderpark; WONDERPARK_<KEY> overrides any of them.\n");
+            return 0;
+        } else if (argv[i][0] != '-') dol = argv[i];
+    }
     if ((env = getenv("WONDERPARK_MAX_SLICES")) != NULL) max_slices = strtoull(env, NULL, 10);
+    if (g_wp_headless) fprintf(stderr, "wonderpark: headless\n");
 
 #ifdef _WIN32
     SetUnhandledExceptionFilter(crash_filter);
@@ -194,7 +208,7 @@ int main(int argc, char** argv) {
     settings_load();
     gx_init(); /* opens the window and the renderer (runtime/gpu) */
     input_init();
-    audio_init();
+    if (!g_wp_headless) audio_init();
 
     wp_hostprof_start();
     wp_watch_init();

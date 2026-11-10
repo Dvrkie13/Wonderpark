@@ -110,6 +110,13 @@ void wp_parallel_time_restore(void) {
  * the time base (OSSetTime): for device timing. */
 uint64_t wp_host_time(void) { return s_now; }
 
+/* Real seconds since start, read now (not the cached clock, and not sped up). */
+double wp_wall_seconds(void) { return (double)(host_ticks() - s_host_start) / (double)s_host_freq; }
+
+/* Command line (main.c): --headless, --exit-after <seconds>. */
+int g_wp_headless;
+double g_wp_exit_after;
+
 /* ------------------------------------------------------------ SPRs */
 
 enum { SPR_DEC = 22, SPR_TBL_W = 284, SPR_TBU_W = 285, SPR_PVR = 287, SPR_WPAR = 921, SPR_DMAU = 922, SPR_DMAL = 923 };

@@ -130,7 +130,16 @@ void wp_run(CPUState* c, unsigned long long max_slices) {
             wp_timers_tick(now);
         }
         if (!wp_check_interrupts(c)) wp_irq_begin(c);
-        if (max_slices && ++n >= max_slices) {
+        if (g_wp_exit_after > 0 && (n & 1023) == 0 && wp_wall_seconds() >= g_wp_exit_after) {
+            extern unsigned gxb_game_frames(void); /* gx_frames.c */
+            double s = wp_wall_seconds();
+            fprintf(stderr, "wonderpark: exit after %.1f s: %u frames (%.1f fps average), %u retraces, pc %08X\n", s,
+                    gxb_game_frames(), gxb_game_frames() / s, g_vi_retraces, c->pc);
+            fflush(stderr);
+            exit(0);
+        }
+        n++;
+        if (max_slices && n >= max_slices) {
             fprintf(stderr, "wonderpark: stopped after %llu slices at %08X (lr %08X), %u retraces, %.1f s\n", n, c->pc,
                     c->lr, g_vi_retraces, (double)wp_host_time() / TB_HZ);
             if (prof) prof_print();

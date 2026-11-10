@@ -57,7 +57,10 @@ void win_create(void) {
     sWnd = CreateWindowA("Wonderpark", "Wonderpark", WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT,
                          r.right - r.left, r.bottom - r.top, NULL, NULL, wc.hInstance, NULL);
     v = getenv("RECOMP_GX_HIDDEN");
-    sHidden = v && *v && *v != '0';
+    {
+        extern int g_wp_headless; /* --headless (main.c) */
+        sHidden = (v && *v && *v != '0') || g_wp_headless;
+    }
     if (!sHidden) ShowWindow(sWnd, SW_SHOW);
 }
 

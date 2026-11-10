@@ -91,6 +91,9 @@ static int sRecording;            /* frames between the game's are drawn */
 static unsigned sGameFrames;      /* the game's frames, for the fps report */
 static unsigned sPresentsDropped; /* frames left out as the display wasn't ready, for the fps report */
 
+/* The game's frames so far (--exit-after's summary, the debug overlay). */
+unsigned gxb_game_frames(void) { return sGameFrames; }
+
 /* ------------------------------------------------------------------------ */
 /* Showing a frame */
 
