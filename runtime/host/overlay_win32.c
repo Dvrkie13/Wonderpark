@@ -81,6 +81,11 @@ static void draw_panel(int w, int h) {
     snprintf(lines[n++], 96, "EFB copies %.1f / frame  (to textures %.1f)", s->efb_copies / frames,
              s->efb_copies_tex / frames);
     snprintf(lines[n++], 96, "GPU time hidden from the game clock %.1f ms / s", s->hidden_ms);
+    {
+        extern const char* wp_movie_playing(void); /* dvd.c */
+        const char* m = wp_movie_playing();
+        if (m) snprintf(lines[n++], 96, "movie: %s", m);
+    }
 
     ph = PAD * 2 + n * LINE;
     if (ph > h) ph = h;

@@ -322,3 +322,34 @@ VIWaitForRetrace, GXDrawDone, VISetNextFrameBuffer), `idle` (idle sleeps
 over 1 ms), `efbcopy` (every EFB copy), `gxirq` (PE interrupts per second),
 `mmiostat` (slow-path memory accesses by region), `nandio` (NAND reads and
 writes). `mqwatch` lines now carry timestamps.
+
+# Phase 2 additions from the full prompt (runtime basics and dev tools)
+
+- **Saves and settings** in `%APPDATA%\Wonderpark` (`settings.ini`,
+  `bindings.ini`, `nand\`); the NAND's `/tmp` (the ~41 MB the game copies at
+  each start) in `cache\` beside the program, emptied at start.
+- **`WONDERPARK_<KEY>`** overrides every setting (never saved to the file).
+- **`--headless`**, **`--exit-after N`**: automated runs with a summary.
+- **Debug overlay** (backtick) and **game speed** (F7: x1/x2/x4/x10).
+- **`config/patches/`** for game-behaviour fixes, **`docs/DEVELOPMENT.md`**,
+  a README per runtime module.
+
+## Skip movies: not working yet
+
+What's known:
+- The runtime now sees when a movie plays: the disc layer notes reads of
+  `Movie/*.mo` (`WONDERPARK_LOG=movie`, and a line in the overlay).
+- Test case: idling at the title starts the attract video
+  `DmCh0000_01.mo` after about 166 s (about 42 s with
+  `WONDERPARK_GAME_SPEED=4`), so it can be tested headless.
+- The game's own buttons don't skip story cutscenes in the one tried
+  (+, ②, Ⓐ, ①, Ⓑ during the intro were in-engine scenes, not a movie, so
+  this is still open for real movies).
+- Serving the movie's data past its header as zeros (so the decoder runs out
+  of frames) **crashes** the game (a jump into data at `0x804B99A0`): the
+  decoder doesn't fail gracefully. Reverted.
+
+Next: find the movie player's end-of-movie path (the player around
+`0x80185800–0x80188C00`, built from Mobiclip's sample code, and the MO
+library's `MORun`) and trigger it, or test whether a button skips a real
+movie.

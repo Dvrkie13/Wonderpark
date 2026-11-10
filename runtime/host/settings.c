@@ -302,7 +302,7 @@ void settings_save(void) {
             g_settings.renderer == RENDERER_VULKAN ? "vulkan" : "opengl");
 #endif
     tprintf(&s, "[gameplay]\n");
-    tprintf(&s, "skip_movies = %d ; 1: skip the story's video cutscenes\n", g_settings.skip_movies);
+    tprintf(&s, "skip_movies = %d ; 1: skip the story's video cutscenes (not working yet)\n", g_settings.skip_movies);
     tprintf(&s, "text_speed = %d ; dialogue: 1 (the game's), 2, 3 times as fast, or 0: a page at once\n",
             g_settings.text_speed);
     tprintf(&s, "berries = %d ; berries collected, percent of the game's: 50, 100, 150, 200 or 300\n", g_settings.berries);

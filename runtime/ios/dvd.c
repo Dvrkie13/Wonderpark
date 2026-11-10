@@ -153,6 +153,28 @@ void hle_dvd_boot_setup(void) {
     ST32(0x80003110, fst_addr); /* MEM1 arena end */
 }
 
+/* Movies (Movie/*.mo) are streamed from disc while they play: the last one
+ * read, and when (host time), tell whether one is playing. For the debug
+ * overlay (and skip-movies, not built yet); WONDERPARK_LOG=movie logs each one's start. */
+static char sMovie[64];
+static uint64_t sMovieAt;
+
+static void note_movie(const char* path) {
+    const char* m = strstr(path, "/Movie/");
+    if (!m) return;
+    m += 7;
+    if (strcmp(sMovie, m) != 0 || wp_host_time() - sMovieAt > 5 * TB_HZ) {
+        snprintf(sMovie, sizeof(sMovie), "%s", m);
+        WP_LOG("movie", "%.1f s: %s starts", (double)wp_host_time() / TB_HZ, sMovie);
+    }
+    sMovieAt = wp_host_time();
+}
+
+/* The movie being played (read in the last 5 s; it streams in bursts), or NULL. */
+const char* wp_movie_playing(void) {
+    return sMovie[0] && wp_host_time() - sMovieAt < 5 * TB_HZ ? sMovie : NULL;
+}
+
 /* Copies len bytes at a data-partition offset to guest memory. */
 int hle_dvd_read(uint64_t offset, uint32_t len, uint32_t dst) {
     uint64_t end = offset + len;
@@ -177,6 +199,7 @@ int hle_dvd_read(uint64_t offset, uint32_t len, uint32_t dst) {
             ok = 0;
             continue;
         }
+        note_movie(r->path);
         _fseeki64(f, (int64_t)(lo - r->offset), SEEK_SET);
         if (fread(MA(dst + (uint32_t)(lo - offset)), 1, (size_t)(hi - lo), f) != hi - lo) ok = 0;
         fclose(f);

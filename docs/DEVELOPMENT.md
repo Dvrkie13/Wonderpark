@@ -63,7 +63,7 @@ the file).
 | `[display] renderer` | `WONDERPARK_RENDERER` | opengl, vulkan | only OpenGL is built |
 | `[display] frame_rate` | `WONDERPARK_FRAME_RATE` | 30, 60, 120-240 | not hooked up yet (plan section 12) |
 | `[display] fov` | `WONDERPARK_FOV` | 80-150 | not hooked up yet |
-| `[gameplay] skip_movies` | `WONDERPARK_SKIP_MOVIES` | 0, 1 | see "Skip movies" in `docs/recomp-status.md` |
+| `[gameplay] skip_movies` | `WONDERPARK_SKIP_MOVIES` | 0, 1 | not working yet (see "Skip movies" in `docs/recomp-status.md`) |
 | `[gameplay] text_speed`, `berries`, `prices`, `damage_dealt`, `damage_taken`, `chase_speed` | `WONDERPARK_<KEY>` | percent | from the PokéPark 1 runtime; not hooked up for PokéPark 2 yet |
 | `[updates] check` | `WONDERPARK_CHECK_UPDATES` | 0, 1 | no update check built yet |
 | `[mouse] sensitivity` | `WONDERPARK_SENSITIVITY` | 0.1-3 | camera and pointer speed |
