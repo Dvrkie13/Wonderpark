@@ -1,0 +1,331 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Wonderpark F1 settings (mockup)</title>
+<!--
+  Wonderpark in-game settings tab (opened with F1 during gameplay): visual and behavioral reference.
+  Open in a browser. Press F1 (or click the F1 chip) to open and close it. Esc also closes it.
+  Q / E switch categories (stand-ins for LB / RB on a controller).
+  Click a key slot in Controls, then press a key to rebind it (Esc cancels, Backspace clears).
+  The real tab is drawn by the runtime over the game's frame, pauses the game, applies changes live
+  and saves to settings.ini / bindings.ini. No game assets: everything is drawn in code.
+  Default key bindings follow CONTROLS-DRAFT.md and are provisional until Phase 3 confirms them.
+-->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Nunito:wght@600;700;800&display=swap">
+<style>
+:root{--navy:#1b2440;--navy-deep:#121b3a;--gold:#c98f2a;--gold-hi:#f3cf6b;--cream:#ffe7a3;--ink:#10182f;--text:#f4efe1;--soft:#c6d0e6;--acc:#79a5f0}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:#060a1c}
+body{display:flex;align-items:center;justify-content:center;overflow:hidden;font-family:'Nunito',system-ui,sans-serif;color:var(--text)}
+.scale-wrap{width:1280px;height:720px;flex:0 0 auto;transform-origin:center}
+.screen{position:relative;width:1280px;height:720px;overflow:hidden;background:#2a3a64}
+.game{position:absolute;inset:0;background:
+  radial-gradient(circle at 38% 58%,rgba(255,246,220,.35) 0,rgba(255,246,220,0) 320px),
+  radial-gradient(ellipse at 40% 50%,rgba(16,24,52,0) 45%,rgba(16,24,52,.7) 100%),
+  repeating-linear-gradient(0deg,rgba(36,48,84,.25) 0 2px,transparent 2px 56px),
+  repeating-linear-gradient(90deg,rgba(36,48,84,.25) 0 2px,transparent 2px 56px),
+  repeating-conic-gradient(from 0deg at 38% 58%,#93a4c6 0deg 11.25deg,#b4c1d9 11.25deg 22.5deg)}
+.placeholder{position:absolute;left:32px;top:28px;padding:8px 14px;border:2px dashed rgba(255,231,163,.75);border-radius:10px;background:rgba(18,27,58,.75);font-size:13px;font-weight:700;color:var(--cream)}
+.scrim{position:absolute;inset:0;background:linear-gradient(90deg,rgba(10,14,32,.25) 0%,rgba(10,14,32,.55) 55%,rgba(10,14,32,.8) 100%);animation:fade .35s ease-out both}
+.paused{position:absolute;left:32px;bottom:32px;display:flex;align-items:center;gap:10px;padding:8px 16px;border-radius:12px;background:rgba(18,27,58,.85);border:2px solid var(--gold-hi);font-family:'Fredoka',sans-serif;font-weight:600;font-size:17px;color:var(--cream)}
+.f1chip{position:absolute;left:32px;bottom:32px;display:flex;align-items:center;gap:10px;height:46px;padding:0 18px 0 8px;border:2px solid #5d6a8a;border-radius:14px;color:var(--navy);font-family:'Fredoka',sans-serif;font-weight:700;font-size:18px;cursor:pointer;background:linear-gradient(180deg,#b6c1d6,#8f9cb7);box-shadow:inset 0 2px 0 rgba(255,255,255,.4),inset 0 -4px 0 rgba(40,52,88,.32),0 4px 0 #4a5677}
+.key{display:inline-flex;align-items:center;justify-content:center;min-width:36px;height:28px;padding:0 6px;border-radius:8px;background:var(--navy);color:var(--cream);font-size:14px}
+
+.tab{position:absolute;left:760px;top:0;width:520px;height:720px;animation:slide .45s cubic-bezier(.2,.8,.2,1) both}
+.tab-bg{position:absolute;inset:0;border-radius:26px 0 0 26px;background:linear-gradient(180deg,#b6c1d6,#8f9cb7);box-shadow:inset 0 4px 0 rgba(255,255,255,.4),inset 6px 0 0 rgba(255,255,255,.18),0 0 0 3px var(--gold-hi),-18px 0 40px rgba(6,10,26,.5)}
+.tab-head{position:absolute;left:24px;right:20px;top:18px;height:48px;display:flex;align-items:center;justify-content:space-between}
+.tab-title{font-family:'Fredoka',sans-serif;font-weight:700;font-size:32px;color:var(--navy);text-shadow:0 2px 0 rgba(255,255,255,.5)}
+.stone-btn{display:flex;align-items:center;gap:8px;height:44px;padding:0 14px 0 6px;border:2px solid #5d6a8a;border-radius:12px;background:linear-gradient(180deg,#c3cde0,#9aa7c0);box-shadow:inset 0 2px 0 rgba(255,255,255,.45),0 4px 0 #4a5677;color:var(--navy);font-family:'Fredoka',sans-serif;font-weight:700;font-size:16px;cursor:pointer;transition:filter .15s,transform .1s}
+.stone-btn:hover,.f1chip:hover{filter:brightness(1.08)}
+.stone-btn:active,.f1chip:active{transform:translateY(3px)}
+.gems{position:absolute;left:24px;top:74px;width:472px;display:flex;justify-content:space-between}
+.gem-btn{width:70px;border:0;background:transparent;padding:0;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px;opacity:.5;transition:opacity .2s,transform .2s}
+.gem-btn[aria-pressed="true"]{opacity:1;transform:translateY(-2px)}
+.gem-btn[aria-pressed="true"] .gem-shape{filter:drop-shadow(0 0 10px var(--glow))}
+.gem-btn:hover{opacity:.85}
+.gem-shape{display:flex;align-items:center;justify-content:center;width:54px;height:54px;clip-path:polygon(50% 0,100% 28%,100% 72%,50% 100%,0 72%,0 28%)}
+.gem-label{font-size:12px;font-weight:800;color:var(--navy)}
+.panel{position:absolute;left:14px;top:168px;width:492px;height:538px;border-radius:16px;background:linear-gradient(180deg,#1f2b4f,#121b3a);border:2px solid var(--gold-hi);box-shadow:inset 0 0 0 4px rgba(18,27,58,.9),inset 0 0 0 5px rgba(243,207,107,.35);overflow:hidden}
+.p-head{position:absolute;left:0;right:0;top:0;height:80px;padding:0 24px;display:flex;align-items:center;gap:14px;border-bottom:2px solid rgba(243,207,107,.35)}
+.badge{flex:0 0 auto;width:46px;height:46px;border-radius:50%;background:var(--acc);color:var(--ink);display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 3px var(--gold-hi),0 0 16px var(--acc)}
+.p-name{font-family:'Fredoka',sans-serif;font-weight:700;font-size:26px;line-height:1.1;color:var(--cream)}
+.p-desc{font-size:13px;font-weight:700;color:var(--soft)}
+.scroll{position:absolute;left:0;right:0;top:82px;bottom:66px;overflow-y:auto;padding:4px 24px 16px;scrollbar-color:rgba(243,207,107,.5) transparent}
+.p-foot{position:absolute;left:0;right:0;bottom:0;height:64px;padding:0 24px;display:flex;align-items:center;justify-content:space-between;gap:12px;border-top:2px solid rgba(243,207,107,.35);background:rgba(18,27,58,.6)}
+.p-foot .stone-btn{height:40px;padding:0 16px}
+.note{font-size:12.5px;font-weight:700;color:var(--soft);text-align:right}
+
+.sec{padding:18px 0 6px;font-family:'Fredoka',sans-serif;font-weight:600;font-size:14px;letter-spacing:.12em;text-transform:uppercase;color:var(--acc)}
+.row{display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px;padding:14px 0;border-bottom:1px solid rgba(243,207,107,.16)}
+.row .lbl{flex:1 1 200px;min-width:0}
+.row .name{font-size:16px;font-weight:800;color:var(--text)}
+.row .desc{margin-top:2px;font-size:13px;font-weight:600;color:var(--soft)}
+.ctrl{flex:0 1 auto;display:flex;flex-wrap:wrap;justify-content:flex-end;gap:6px;align-items:center}
+.pill{min-height:38px;padding:0 14px;border-radius:999px;border:2px solid rgba(243,207,107,.4);background:#24335f;color:#e6ebf5;font-family:'Nunito',sans-serif;font-weight:800;font-size:13.5px;cursor:pointer;transition:background .15s,box-shadow .15s}
+.pill:hover{background:#2c3d70}
+.pill[aria-pressed="true"]{background:var(--acc);color:var(--ink);border-color:#fff1c2;box-shadow:0 0 0 3px rgba(255,241,194,.15),0 0 14px var(--acc)}
+.switch{position:relative;flex:0 0 auto;width:64px;height:36px;border-radius:999px;border:2px solid #5d6a8a;background:#3a466b;cursor:pointer;padding:0;transition:background .2s}
+.switch span{position:absolute;top:3px;left:3px;width:26px;height:26px;border-radius:50%;background:#b6c1d6;box-shadow:0 2px 0 rgba(16,24,47,.4);display:flex;align-items:center;justify-content:center;transition:left .2s,background .2s}
+.switch svg path{fill:#7f8daa}
+.switch[aria-checked="true"]{background:var(--acc);border-color:#fff1c2}
+.switch[aria-checked="true"] span{left:31px;background:var(--gold-hi)}
+.switch[aria-checked="true"] svg path{fill:#a8741d}
+input[type=range]{width:200px;height:24px;accent-color:var(--acc);cursor:pointer}
+.val{min-width:58px;text-align:right;font-family:'Fredoka',sans-serif;font-weight:600;font-size:17px;color:var(--cream)}
+.bind-head,.bind{display:grid;grid-template-columns:minmax(0,1.3fr) repeat(4,minmax(0,1fr));gap:6px;align-items:center}
+.bind-head{padding:6px 0 4px;font-size:11.5px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--soft)}
+.bind-head div:not(:first-child){text-align:center}
+.bind{padding:5px 0;border-bottom:1px solid rgba(243,207,107,.1)}
+.bind .name{font-size:14px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.kc{height:34px;min-width:0;padding:0 6px;border-radius:9px 12px 8px 11px;border:2px solid #5d6a8a;background:linear-gradient(180deg,#c3cde0,#9aa7c0);color:var(--navy);box-shadow:inset 0 2px 0 rgba(255,255,255,.45),0 3px 0 #4a5677;font-family:'Nunito',sans-serif;font-weight:800;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
+.kc.empty{background:transparent;border-style:dashed;border-color:rgba(214,222,239,.45);color:#aab6cf;box-shadow:none}
+.kc.listen{background:var(--acc);border-color:#fff1c2;color:var(--navy);box-shadow:0 0 14px var(--acc);animation:blink 1s ease-in-out infinite}
+button:focus-visible,input:focus-visible{outline:3px solid #3fd0d8;outline-offset:3px}
+[hidden]{display:none!important}
+@keyframes fade{from{opacity:0}to{opacity:1}}
+@keyframes slide{from{opacity:0;transform:translateX(60px)}to{opacity:1;transform:none}}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.6}}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<div class="scale-wrap" id="scaleWrap">
+<div class="screen">
+  <div class="game" aria-hidden="true"></div>
+  <div class="placeholder">Placeholder: the game keeps running behind this</div>
+
+  <button class="f1chip" id="openBtn" type="button" hidden><span class="key">F1</span><span>Settings</span></button>
+
+  <div id="open">
+    <div class="scrim"></div>
+    <div class="paused"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><rect x="6" y="5" width="4" height="14" rx="1.5" fill="#ffe7a3"/><rect x="14" y="5" width="4" height="14" rx="1.5" fill="#ffe7a3"/></svg><span>Game paused · changes apply live</span></div>
+    <section class="tab" role="dialog" aria-label="Wonderpark settings">
+      <div class="tab-bg"></div>
+      <div class="tab-head">
+        <div class="tab-title">Settings</div>
+        <button class="stone-btn" id="closeBtn" type="button"><span class="key">F1</span><span>Close</span></button>
+      </div>
+      <div class="gems" id="gems" role="tablist"></div>
+      <div class="panel" id="panel">
+        <div class="p-head"><div class="badge" id="badge"></div><div><div class="p-name" id="pName"></div><div class="p-desc" id="pDesc"></div></div></div>
+        <div class="scroll" id="rows"></div>
+        <div class="p-foot"><button class="stone-btn" id="resetBtn" type="button"></button><div class="note">Saved to settings.ini right away</div></div>
+      </div>
+    </section>
+  </div>
+</div>
+</div>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const ICONS = {
+    display: '<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/>',
+    graphics: '<path d="M12 3l2.2 5.8L20 11l-5.8 2.2L12 19l-2.2-5.8L4 11l5.8-2.2Z"/>',
+    controls: '<path d="M6 8h12a4 4 0 0 1 3.8 5.3l-1 3a2 2 0 0 1-3.5.6L15.5 14.5h-7l-1.8 2.4a2 2 0 0 1-3.5-.6l-1-3A4 4 0 0 1 6 8Z"/><path d="M8 10v3M6.5 11.5h3M15.5 11h.01M17.5 12.5h.01"/>',
+    audio: '<path d="M4 10v4h4l5 4V6L8 10Z"/><path d="M16.5 9a4 4 0 0 1 0 6M19 6.5a7.5 7.5 0 0 1 0 11"/>',
+    gameplay: '<path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/>',
+    silly: '<circle cx="12" cy="12" r="9"/><path d="M8.5 14.5a4.5 4.5 0 0 0 7 0M9 9.5h.01M15 9.5h.01"/>'
+  };
+  const icon = (id, size) => `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[id]}</svg>`;
+
+  // Six categories, one per stained-glass color. `acc` is the lighter tint used for controls.
+  const TABS = [
+    { id:'display',  name:'Display',  desc:'Window, resolution and frame rate',  gem:'#4a7fe0', acc:'#79a5f0', ink:'#fff' },
+    { id:'graphics', name:'Graphics', desc:'How sharp and shiny the park looks', gem:'#8b5bd2', acc:'#b596f0', ink:'#fff' },
+    { id:'controls', name:'Controls', desc:'Keyboard, mouse and controller',     gem:'#f6d44a', acc:'#fbe27a', ink:'#10182f' },
+    { id:'audio',    name:'Audio',    desc:'Music, sound effects and voices',    gem:'#5bc26a', acc:'#7ad68a', ink:'#10182f' },
+    { id:'gameplay', name:'Gameplay', desc:'Tune the pace and the challenge',    gem:'#f39a2b', acc:'#f7b45c', ink:'#10182f' },
+    { id:'silly',    name:'Silly',    desc:'Just for fun',                       gem:'#e2457f', acc:'#f27aa5', ink:'#fff' }
+  ];
+
+  // Settings. k = settings.ini key, def = default.
+  const ROWS = {
+    display: [
+      { k:'window_mode', type:'choice', label:'Window', opts:['Windowed','Borderless','Fullscreen'], def:'Borderless' },
+      { k:'resolution', type:'choice', label:'Resolution', opts:['1280×720','1920×1080','2560×1440','Match screen'], def:'Match screen' },
+      { k:'frame_rate', type:'choice', label:'Frame rate', desc:'Cutscenes always play at their original speed.', opts:['30 (original)','60','120'], def:'60' },
+      { k:'vsync', type:'toggle', label:'V-Sync', desc:'Stops the picture from tearing.', def:true },
+      { k:'renderer', type:'choice', label:'Renderer', opts:['Vulkan','OpenGL'], def:'Vulkan' },
+      { k:'fov', type:'slider', label:'Field of view', min:80, max:130, step:5, unit:'%', def:100 },
+      { k:'brightness', type:'slider', label:'Brightness', min:50, max:150, step:5, unit:'%', def:100 }
+    ],
+    graphics: [
+      { head:'Sharpness' },
+      { k:'internal_res', type:'choice', label:'Internal resolution', desc:'How many pixels the game draws before fitting your screen.', opts:['Native','2×','3×','4×','6×'], def:'3×' },
+      { k:'anti_aliasing', type:'choice', label:'Anti-aliasing', desc:'Smooths jagged edges.', opts:['Off','2×','4×','8×'], def:'4×' },
+      { k:'texture_filter', type:'choice', label:'Texture filtering', desc:'Keeps paths and floors crisp at an angle.', opts:['Default','4×','16×'], def:'16×' },
+      { k:'scaling_filter', type:'choice', label:'Scaling filter', opts:['Smooth','Sharp'], def:'Smooth' },
+      { head:'Effects' },
+      { k:'widescreen', type:'toggle', label:'Widescreen', desc:'Fills a 16:9 screen; the HUD stays 4:3 in the middle.', def:true },
+      { k:'hud_edges', type:'toggle', label:'HUD at screen edges', desc:'Moves HUD items out to the edges in widescreen.', def:false },
+      { k:'bloom', type:'toggle', label:'Bloom', desc:'The soft glow around bright lights.', def:true },
+      { k:'fog', type:'toggle', label:'Fog', def:true },
+      { k:'per_pixel_lighting', type:'toggle', label:'Per-pixel lighting', desc:'Smoother lighting on Pokémon and the park.', def:false },
+      { k:'hdr', type:'toggle', label:'HDR', def:false },
+      { k:'colors', type:'choice', label:'Colors', opts:['Original','Vivid'], def:'Original' },
+      { head:'Performance' },
+      { k:'shader_mode', type:'choice', label:'Shader compilation', desc:'Smooth never stutters. Precompile prepares every saved shader before the game starts.', opts:['Smooth','Fast','Precompile'], def:'Smooth' },
+      { k:'fast_loading', type:'toggle', label:'Fast loading', desc:'Reads from your drive at full speed instead of Wii disc speed.', def:true }
+    ],
+    controls: [
+      { head:'Camera and aiming' },
+      { k:'camera_speed', type:'slider', label:'Camera speed', min:25, max:200, step:5, unit:'%', def:100 },
+      { k:'invert_x', type:'toggle', label:'Invert left / right', def:false },
+      { k:'invert_y', type:'toggle', label:'Invert up / down', def:false },
+      { k:'right_stick', type:'choice', label:'Right stick', desc:'Auto switches to the pointer when the game asks for one.', opts:['Camera','Pointer','Auto'], def:'Auto' },
+      { k:'aim_assist', type:'toggle', label:'Aim assist', desc:'Controller aiming leans toward targets (Cake Contraption).', def:true },
+      { k:'rumble', type:'choice', label:'Rumble', opts:['Off','Light','Normal','Strong'], def:'Normal' },
+      { head:'Buttons' },
+      { bindhead:true },
+      { bind:'move', label:'Move', def:['WASD','Arrow keys','Left stick','D-pad'] },
+      { bind:'jump', label:'Jump', def:['Space','','A',''] },
+      { bind:'attack', label:'Attack / charge', def:['J','Left click','X',''] },
+      { bind:'special', label:'Special move', def:['K','Q','Y',''] },
+      { bind:'dodge', label:'Dodge', def:['Left Shift','','B',''] },
+      { bind:'pal', label:'Switch Pal', def:['Tab','','LB',''] },
+      { bind:'talk', label:'Talk / confirm', def:['E','','RB',''] },
+      { bind:'back', label:'Cancel / back', def:['Esc','Backspace','B',''] },
+      { bind:'menu_plus', label:'Menu (+)', def:['Enter','','Start',''] },
+      { bind:'minus', label:'− button', def:['M','','Back',''] },
+      { bind:'tilt', label:'Steer (flying)', def:['A / D','Mouse','Left stick',''] },
+      { bind:'aim', label:'Aim / pointer', def:['Mouse','','Right stick',''] },
+      { bind:'shoot', label:'Shoot (cakes)', def:['Left click','','RT',''] },
+      { bind:'gesture', label:'Dance moves', def:['Arrow keys','WASD','Right stick',''] },
+      { bind:'settings', label:'Settings', def:['F1','','Back + Start',''] },
+      { head:'Feel' },
+      { k:'steer_sensitivity', type:'slider', label:'Steering sensitivity', min:25, max:200, step:5, unit:'%', def:100 },
+      { k:'aim_speed', type:'slider', label:'Aim speed', min:25, max:200, step:5, unit:'%', def:100 },
+      { k:'rhythm_offset', type:'slider', label:'Dance timing offset', desc:'Shift if your presses feel early or late.', min:-100, max:100, step:5, unit:' ms', def:0, signed:true }
+    ],
+    audio: [
+      { k:'volume_master', type:'slider', label:'Master volume', min:0, max:100, step:5, unit:'%', def:80 },
+      { k:'volume_music', type:'slider', label:'Music', min:0, max:100, step:5, unit:'%', def:70 },
+      { k:'volume_sfx', type:'slider', label:'Sound effects', min:0, max:100, step:5, unit:'%', def:80 },
+      { k:'volume_voices', type:'slider', label:'Pokémon voices', min:0, max:100, step:5, unit:'%', def:90 },
+      { k:'voice_language', type:'choice', label:'Voice language', desc:'Japanese needs your own Japanese disc (see VOICE-LANGUAGE.md).', opts:['English','Japanese'], def:'English' },
+      { k:'mute_background', type:'toggle', label:'Mute in the background', desc:'Goes quiet when you switch to another window.', def:true },
+      { k:'audio_latency', type:'choice', label:'Audio delay', desc:'Raise it if the sound crackles.', opts:['Low','Normal','Safe'], def:'Normal' }
+    ],
+    gameplay: [
+      { head:'Balance' },
+      { k:'text_speed', type:'slider', label:'Text speed', desc:'Shares its value with the game\'s own Options page.', min:50, max:300, step:25, unit:'%', def:100 },
+      { k:'berries', type:'slider', label:'Berries collected', min:50, max:500, step:25, unit:'%', def:100 },
+      { k:'prices', type:'slider', label:'Shop prices', min:0, max:200, step:10, unit:'%', def:100 },
+      { k:'damage_dealt', type:'slider', label:'Damage you deal', min:25, max:400, step:25, unit:'%', def:100 },
+      { k:'damage_taken', type:'slider', label:'Damage you take', min:0, max:200, step:10, unit:'%', def:100 },
+      { k:'chase_speed', type:'slider', label:'Chase speed', desc:'How fast Pokémon run in chase games.', min:50, max:150, step:5, unit:'%', def:100 },
+      { head:'Comfort' },
+      { k:'pause_background', type:'toggle', label:'Pause in the background', desc:'Pauses when the window loses focus.', def:true },
+      { k:'skip_logos', type:'toggle', label:'Skip startup logos', def:false }
+    ],
+    silly: [
+      { k:'pokemon_size', type:'choice', label:'Pokémon size', opts:['Mini','Normal','Giant'], def:'Normal' },
+      { k:'voice_pitch', type:'slider', label:'Voice pitch', desc:'From deep and grumbly to tiny and squeaky.', min:-50, max:50, step:5, unit:'%', def:0, signed:true },
+      { k:'mirror_world', type:'toggle', label:'Mirror world', desc:'Flips the whole park left to right.', def:false },
+      { k:'victory_confetti', type:'toggle', label:'Victory confetti', desc:'A burst of confetti when you win an attraction.', def:false },
+      { k:'stereo_3d', type:'choice', label:'3D glasses', desc:'For red-cyan glasses or a 3D TV.', opts:['Off','Red-cyan','Side by side'], def:'Off' }
+    ]
+  };
+
+  const vals = {}, binds = {};
+  let tab = 'display', listen = null;
+  const getV = r => r.k in vals ? vals[r.k] : r.def;
+  const getB = r => binds[r.bind] || r.def;
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+  // Gem tabs
+  $('gems').innerHTML = TABS.map(t => `
+    <button class="gem-btn" type="button" role="tab" data-tab="${t.id}" style="--glow:${t.gem}">
+      <span class="gem-shape" style="background:${t.gem};color:${t.ink}">${icon(t.id, 24)}</span>
+      <span class="gem-label">${t.name}</span>
+    </button>`).join('');
+  $('gems').addEventListener('click', e => { const b = e.target.closest('[data-tab]'); if (b) setTab(b.dataset.tab); });
+
+  function setTab(id) { tab = id; listen = null; render(); $('rows').scrollTop = 0; }
+
+  function render() {
+    const t = TABS.find(x => x.id === tab);
+    $('panel').style.setProperty('--acc', t.acc);
+    document.querySelectorAll('.gem-btn').forEach(b => { const on = b.dataset.tab === tab; b.setAttribute('aria-pressed', on); b.setAttribute('aria-selected', on); });
+    $('badge').innerHTML = icon(tab, 24);
+    $('pName').textContent = t.name;
+    $('pDesc').textContent = t.desc;
+    $('resetBtn').textContent = 'Reset ' + t.name;
+    $('rows').innerHTML = ROWS[tab].map((r, i) => {
+      if (r.head) return `<div class="sec">${esc(r.head)}</div>`;
+      if (r.bindhead) return `<div class="bind-head"><div>Action</div><div>Key 1</div><div>Key 2</div><div>Pad 1</div><div>Pad 2</div></div>`;
+      if (r.bind) {
+        const slots = getB(r).map((s, si) => {
+          const id = r.bind + ':' + si, on = listen === id;
+          const cls = on ? 'kc listen' : (s ? 'kc' : 'kc empty');
+          const slotName = si < 2 ? 'key ' + (si + 1) : 'pad ' + (si - 1);
+          return `<button class="${cls}" type="button" data-slot="${id}" aria-label="${esc(r.label)}, ${slotName}: ${esc(s || 'empty')}">${on ? 'Press…' : esc(s || '+ Add')}</button>`;
+        }).join('');
+        return `<div class="bind"><div class="name">${esc(r.label)}</div>${slots}</div>`;
+      }
+      const v = getV(r), lab = `<div class="lbl"><div class="name">${esc(r.label)}</div>${r.desc ? `<div class="desc">${esc(r.desc)}</div>` : ''}</div>`;
+      if (r.type === 'choice') return `<div class="row">${lab}<div class="ctrl" role="group" aria-label="${esc(r.label)}">${r.opts.map(o => `<button class="pill" type="button" data-k="${r.k}" data-v="${esc(o)}" aria-pressed="${o === v}">${esc(o)}</button>`).join('')}</div></div>`;
+      if (r.type === 'toggle') return `<div class="row">${lab}<button class="switch" type="button" role="switch" data-k="${r.k}" aria-checked="${!!v}" aria-label="${esc(r.label)}"><span><svg viewBox="0 0 20 20" width="12" height="12" aria-hidden="true"><path d="M10 0L12.5 7.5L20 10L12.5 12.5L10 20L7.5 12.5L0 10L7.5 7.5Z"/></svg></span></button></div>`;
+      const txt = (r.signed && v > 0 ? '+' : '') + v + r.unit;
+      return `<div class="row"><div class="lbl"><label class="name" for="s-${r.k}">${esc(r.label)}</label>${r.desc ? `<div class="desc">${esc(r.desc)}</div>` : ''}</div><div class="ctrl"><input id="s-${r.k}" type="range" data-k="${r.k}" min="${r.min}" max="${r.max}" step="${r.step}" value="${v}"><span class="val">${txt}</span></div></div>`;
+    }).join('');
+  }
+
+  $('rows').addEventListener('click', e => {
+    const p = e.target.closest('.pill'); if (p) { vals[p.dataset.k] = p.dataset.v; return render(); }
+    const s = e.target.closest('.switch'); if (s) { vals[s.dataset.k] = s.getAttribute('aria-checked') !== 'true'; return render(); }
+    const k = e.target.closest('[data-slot]'); if (k) { listen = listen === k.dataset.slot ? null : k.dataset.slot; render(); const again = document.querySelector(`[data-slot="${listen}"]`); if (again) again.focus(); }
+  });
+  $('rows').addEventListener('input', e => {
+    const r = e.target.closest('input[type=range]'); if (!r) return;
+    vals[r.dataset.k] = Number(r.value);
+    const row = ROWS[tab].find(x => x.k === r.dataset.k);
+    r.nextElementSibling.textContent = (row.signed && r.value > 0 ? '+' : '') + r.value + row.unit;
+  });
+
+  $('resetBtn').addEventListener('click', () => {
+    ROWS[tab].forEach(r => { if (r.k) delete vals[r.k]; if (r.bind) delete binds[r.bind]; });
+    listen = null; render();
+  });
+
+  // Open / close
+  const setOpen = on => { $('open').hidden = !on; $('openBtn').hidden = on; listen = null; if (on) render(); };
+  $('closeBtn').addEventListener('click', () => setOpen(false));
+  $('openBtn').addEventListener('click', () => setOpen(true));
+
+  const keyName = e => {
+    if (e.code.startsWith('Key')) return e.code.slice(3);
+    if (e.code.startsWith('Digit')) return e.code.slice(5);
+    const map = { Space:'Space', ShiftLeft:'Left Shift', ShiftRight:'Right Shift', ControlLeft:'Left Ctrl', ControlRight:'Right Ctrl', AltLeft:'Left Alt', AltRight:'Right Alt', Enter:'Enter', Tab:'Tab', ArrowUp:'Up', ArrowDown:'Down', ArrowLeft:'Left', ArrowRight:'Right' };
+    return map[e.code] || e.key;
+  };
+
+  document.addEventListener('keydown', e => {
+    if (listen) {                                   // rebinding: capture the next key
+      e.preventDefault();
+      const [b, si] = listen.split(':');
+      const row = ROWS.controls.find(r => r.bind === b);
+      const cur = [...getB(row)];
+      if (e.key === 'Escape') { listen = null; return render(); }
+      cur[+si] = e.key === 'Backspace' ? '' : keyName(e);
+      binds[b] = cur; listen = null; return render();
+    }
+    if (e.key === 'F1') { e.preventDefault(); return setOpen($('open').hidden); }
+    if ($('open').hidden) return;
+    if (e.key === 'Escape') return setOpen(false);
+    if (e.key === 'q' || e.key === 'e') {           // stand-ins for LB / RB
+      const i = TABS.findIndex(t => t.id === tab);
+      setTab(TABS[(i + (e.key === 'e' ? 1 : TABS.length - 1)) % TABS.length].id);
+    }
+  });
+
+  const fit = () => { const s = Math.min(innerWidth/1280, innerHeight/720); $('scaleWrap').style.transform = `scale(${s})`; };
+  addEventListener('resize', fit); fit();
+  render();
+})();
+</script>
+</body>
+</html>

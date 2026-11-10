@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Wonderpark Options page PC settings (mockup)</title>
+<!--
+  The game's own Options page (main menu > save file > Options) with Wonderpark's "PC settings" rows added.
+  Open in a browser. Up/Down (or W/S) moves between rows, Left/Right (or A/D) changes the value; the arrow buttons work with the mouse.
+
+  IMPORTANT: the wooden sign, banners and fonts here are LOOK-ALIKE PLACEHOLDERS drawn in code.
+  The real rows must use the game's own Options art, font, cursor and sounds, loaded at run time from the
+  player's disc (never copied into the repo). Keep every existing game option exactly as it is (the dashed
+  rows stand for them) and add the PC rows below. Values are shared with the F1 tab through settings.ini.
+-->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Nunito:wght@600;700;800&display=swap">
+<style>
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:#0d1430}
+body{display:flex;align-items:center;justify-content:center;overflow:hidden;font-family:'Nunito',system-ui,sans-serif;color:#fff}
+.scale-wrap{width:1280px;height:720px;flex:0 0 auto;transform-origin:center}
+.screen{position:relative;width:1280px;height:720px;overflow:hidden;background:linear-gradient(180deg,#1c2f7a 0%,#2f4fb0 55%,#5a7fd6 100%)}
+.stars{position:absolute;inset:0;background:radial-gradient(circle at 12% 18%,rgba(255,255,255,.9) 0 1.5px,transparent 2.5px),radial-gradient(circle at 30% 8%,rgba(255,255,255,.7) 0 1px,transparent 2px),radial-gradient(circle at 84% 14%,rgba(255,255,255,.85) 0 1.5px,transparent 2.5px),radial-gradient(circle at 92% 34%,rgba(255,255,255,.6) 0 1px,transparent 2px),radial-gradient(circle at 6% 46%,rgba(255,255,255,.7) 0 1px,transparent 2px),radial-gradient(circle at 70% 6%,rgba(255,255,255,.6) 0 1px,transparent 2px)}
+.clouds{position:absolute;left:-80px;right:-80px;bottom:-120px;height:260px;background:radial-gradient(ellipse at 10% 40%,#f2f5ff 0 120px,transparent 122px),radial-gradient(ellipse at 30% 60%,#e3e9fb 0 150px,transparent 152px),radial-gradient(ellipse at 55% 50%,#f2f5ff 0 140px,transparent 142px),radial-gradient(ellipse at 80% 60%,#e3e9fb 0 160px,transparent 162px),radial-gradient(ellipse at 98% 40%,#f2f5ff 0 120px,transparent 122px)}
+.note{position:absolute;left:24px;top:24px;max-width:230px;padding:8px 12px;border:2px dashed rgba(255,255,255,.8);border-radius:10px;background:rgba(16,24,64,.6);font-size:12.5px;font-weight:700;line-height:1.4}
+.f1{position:absolute;right:24px;top:24px;width:240px;display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:12px;background:rgba(16,24,64,.7);border:2px solid #f3cf6b}
+.f1 .key{flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;min-width:38px;height:30px;border-radius:8px;background:#ffe7a3;color:#1b2440;font-family:'Fredoka',sans-serif;font-weight:700;font-size:15px}
+.f1 span:last-child{font-size:13px;font-weight:700;line-height:1.35;color:#ffe7a3}
+.sign{position:absolute;left:280px;top:34px;width:720px;height:652px;border-radius:34px 28px 30px 36px;border:6px solid #7a4a1f;
+  background:repeating-linear-gradient(180deg,rgba(122,74,31,0) 0 70px,rgba(122,74,31,.35) 70px 73px),repeating-linear-gradient(92deg,rgba(255,255,255,.05) 0 3px,transparent 3px 22px),linear-gradient(180deg,#d9a062,#b9773d);
+  box-shadow:inset 0 4px 0 rgba(255,236,200,.5),0 14px 30px rgba(10,16,48,.45)}
+.banner{position:absolute;left:50%;top:-18px;transform:translateX(-50%);width:380px;height:56px;display:flex;align-items:center;justify-content:center;border-radius:10px;background:linear-gradient(180deg,#4f8cf0,#2a5fc8);border:4px solid #fff;box-shadow:0 5px 0 #1d3f8a;font-family:'Fredoka',sans-serif;font-weight:700;font-size:28px;text-shadow:0 2px 0 #1d3f8a}
+.list{position:absolute;left:44px;right:44px;top:58px;bottom:26px;display:flex;flex-direction:column;gap:8px}
+.game-opt{height:40px;flex:0 0 auto;display:flex;align-items:center;justify-content:center;border:2px dashed rgba(90,50,16,.7);border-radius:12px;background:rgba(255,240,215,.35);font-size:14px;font-weight:800;color:#4a2a0c}
+.divider{flex:0 0 auto;display:flex;align-items:center;gap:10px;padding:4px 4px 0}
+.divider div{flex:1 1 auto;height:3px;border-radius:2px;background:#7a4a1f}
+.divider span{font-family:'Fredoka',sans-serif;font-weight:700;font-size:15px;color:#4a2a0c}
+.opt{flex:0 0 auto;height:46px;display:flex;align-items:center;gap:10px;padding:0 10px 0 22px;border-radius:12px;transform:skewX(-6deg);
+  background:linear-gradient(180deg,#7fd05a,#4fa834);border:3px solid #d8f5b8;box-shadow:0 4px 0 #2f6e1c;--sh:#2f6e1c;cursor:pointer;transition:filter .15s}
+.opt.sel{background:linear-gradient(180deg,#ffb347,#f08a1c);border-color:#ffe36b;box-shadow:0 4px 0 #a8550c,0 0 0 3px rgba(255,227,107,.5);--sh:#a8550c}
+.opt:hover{filter:brightness(1.06)}
+.opt > *{transform:skewX(6deg)}
+.opt .label{flex:1 1 auto;min-width:0;font-family:'Fredoka',sans-serif;font-weight:700;font-size:20px;text-shadow:0 2px 0 var(--sh),0 0 2px var(--sh)}
+.opt .value{flex:0 0 180px;text-align:center;font-family:'Fredoka',sans-serif;font-weight:600;font-size:18px;text-shadow:0 2px 0 var(--sh)}
+.arrow{flex:0 0 auto;width:36px;height:36px;border-radius:50%;border:2px solid #fff;background:rgba(16,24,64,.35);color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;transition:transform .1s}
+.arrow:active{transform:skewX(6deg) scale(.92)}
+button:focus-visible,.opt:focus-visible{outline:3px solid #fff;outline-offset:3px}
+</style>
+</head>
+<body>
+<div class="scale-wrap" id="scaleWrap">
+<div class="screen">
+  <div class="stars" aria-hidden="true"></div>
+  <div class="clouds" aria-hidden="true"></div>
+  <div class="note">Placeholder look. The real page reuses the game's own Options art from your disc.</div>
+  <div class="f1"><span class="key">F1</span><span>In game, press F1 for every setting</span></div>
+
+  <div class="sign">
+    <div class="banner">Options</div>
+    <div class="list" id="list" role="list">
+      <div class="game-opt">Text speed (game's own option)</div>
+      <div class="game-opt">Volume (game's own option)</div>
+      <div class="game-opt">[Other game options]</div>
+      <div class="divider"><div></div><span>PC settings</span><div></div></div>
+    </div>
+  </div>
+</div>
+</div>
+
+<script>
+(() => {
+  // The basic PC settings added to the game's own Options page. Same keys as the F1 tab (settings.ini).
+  const OPTS = [
+    { k:'window_mode',   label:'Display mode',     opts:['Windowed','Borderless','Fullscreen'], def:1 },
+    { k:'resolution',    label:'Resolution',       opts:['1280×720','1600×900','1920×1080','2560×1440','Match screen'], def:4 },
+    { k:'frame_rate',    label:'Frame rate',       opts:['30 (original)','60'], def:1 },
+    { k:'anti_aliasing', label:'Anti-aliasing',    opts:['Off','2×','4×','8×'], def:2 },
+    { k:'internal_res',  label:'Graphics quality', opts:['Original','2×','3×','4×'], def:2 },
+    { k:'widescreen',    label:'Widescreen',       opts:['Off','On'], def:1 },
+    { k:'vsync',         label:'V-Sync',           opts:['Off','On'], def:1 }
+  ];
+  const idx = OPTS.map(o => o.def);
+  let sel = 0;
+  const list = document.getElementById('list');
+  const chevron = d => `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${d}"/></svg>`;
+
+  OPTS.forEach((o, i) => {
+    const row = document.createElement('div');
+    row.className = 'opt'; row.setAttribute('role', 'listitem'); row.dataset.i = i;
+    row.innerHTML = `<div class="label">${o.label}</div>
+      <button class="arrow" type="button" data-d="-1" aria-label="${o.label}: previous option">${chevron('M15 5l-7 7 7 7')}</button>
+      <div class="value" aria-live="polite"></div>
+      <button class="arrow" type="button" data-d="1" aria-label="${o.label}: next option">${chevron('M9 5l7 7-7 7')}</button>`;
+    list.appendChild(row);
+  });
+
+  function render() {
+    list.querySelectorAll('.opt').forEach((row, i) => {
+      row.classList.toggle('sel', i === sel);
+      row.querySelector('.value').textContent = OPTS[i].opts[idx[i]];
+    });
+  }
+  const change = (i, d) => { const n = OPTS[i].opts.length; idx[i] = (idx[i] + d + n) % n; sel = i; render(); };
+
+  list.addEventListener('click', e => {
+    const row = e.target.closest('.opt'); if (!row) return;
+    const a = e.target.closest('.arrow');
+    if (a) change(+row.dataset.i, +a.dataset.d); else { sel = +row.dataset.i; render(); }
+  });
+  document.addEventListener('keydown', e => {
+    const k = e.key.toLowerCase();
+    if (k === 'arrowup' || k === 'w') { sel = (sel + OPTS.length - 1) % OPTS.length; render(); e.preventDefault(); }
+    else if (k === 'arrowdown' || k === 's') { sel = (sel + 1) % OPTS.length; render(); e.preventDefault(); }
+    else if (k === 'arrowleft' || k === 'a') { change(sel, -1); e.preventDefault(); }
+    else if (k === 'arrowright' || k === 'd') { change(sel, 1); e.preventDefault(); }
+  });
+
+  const fit = () => { const s = Math.min(innerWidth/1280, innerHeight/720); document.getElementById('scaleWrap').style.transform = `scale(${s})`; };
+  addEventListener('resize', fit); fit();
+  render();
+})();
+</script>
+</body>
+</html>

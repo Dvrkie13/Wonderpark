@@ -5,32 +5,46 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Wonderpark launcher (mockup)</title>
 <!--
-  Wonderpark launcher — visual and behavioral reference.
-  Open in a browser. Everything is drawn in code: no game assets.
-  The disc check is real: it reads the first 6 bytes of the chosen ISO and
-  expects the game ID "S2LE01". The build is simulated with a timer.
-  The native launcher should match this look and flow.
+  Wonderpark launcher: visual and behavioral reference for the real launcher.
+  Open in a browser and click through it. Everything is drawn in code; no game assets.
+  The disc check is real: it reads the first 6 bytes of the chosen ISO and expects "S2LE01".
+  The build is simulated with a timer. The native launcher should match this look and flow.
 -->
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Nunito:wght@600;700;800&display=swap">
 <style>
 :root{
-  --navy:#1b2440; --navy-deep:#121b3a; --bg:#1a2546;
-  --tile-a:#8597ba; --tile-b:#a9b7d0;
+  --navy:#1b2440; --navy-deep:#121b3a;
   --gold:#c98f2a; --gold-hi:#f3cf6b; --cream:#ffe7a3;
   --teal:#3fd0d8; --text:#f4efe1; --muted:#d0d8ea;
 }
 *{box-sizing:border-box}
-html,body{margin:0;height:100%;background:#0d1430}
-body{display:flex;align-items:center;justify-content:center;font-family:'Nunito',system-ui,sans-serif;color:var(--text)}
-.scale-wrap{width:1280px;height:720px;transform-origin:center center}
-.wp-root{position:relative;width:1280px;height:720px;overflow:hidden;background:var(--bg)}
+html,body{margin:0;height:100%;background:#060a1c}
+body{display:flex;align-items:center;justify-content:center;font-family:'Nunito',system-ui,sans-serif;color:var(--text);overflow:hidden}
+.scale-wrap{width:1280px;height:720px;flex:0 0 auto;transform-origin:center center}
+.wp-root{--mx:0;--my:0;position:relative;width:1280px;height:720px;overflow:hidden;background:#0a1029}
 .layer{position:absolute;inset:0;pointer-events:none}
-.floor{position:absolute;inset:0;background:
-  radial-gradient(circle at 50% 50%,rgba(255,246,220,.35) 0,rgba(255,246,220,0) 340px),
-  radial-gradient(ellipse at 50% 50%,rgba(16,24,52,0) 38%,rgba(16,24,52,.92) 100%),
-  repeating-linear-gradient(0deg,rgba(36,48,84,.3) 0 2px,transparent 2px 48px),
-  repeating-linear-gradient(90deg,rgba(36,48,84,.3) 0 2px,transparent 2px 48px),
-  repeating-conic-gradient(from 0deg at 50% 50%,var(--tile-a) 0deg 11.25deg,var(--tile-b) 11.25deg 22.5deg)}
+.par-f{transform:translate(calc(var(--mx) * -8px),calc(var(--my) * -6px)) scale(1.05)}
+.par-d{transform:translate(calc(var(--mx) * -14px),calc(var(--my) * -10px))}
+.par-a{transform:translate(calc(var(--mx) * -26px),calc(var(--my) * -18px))}
+
+/* Sky */
+.sky{position:absolute;inset:0;background:
+  radial-gradient(circle at 50% 52%,rgba(255,246,220,.22) 0,rgba(255,246,220,0) 330px),
+  radial-gradient(ellipse at 22% 28%,rgba(139,91,210,.3) 0,rgba(139,91,210,0) 420px),
+  radial-gradient(ellipse at 80% 74%,rgba(63,208,216,.18) 0,rgba(63,208,216,0) 380px),
+  radial-gradient(ellipse at 50% 50%,#26387a 0,#16224f 45%,#0a1029 100%)}
+.stars{position:absolute;inset:-40px;background-image:
+  radial-gradient(circle,rgba(255,255,255,.85) 0 1px,transparent 1.6px),
+  radial-gradient(circle,rgba(205,246,248,.7) 0 1px,transparent 1.6px),
+  radial-gradient(circle,rgba(255,244,207,.9) 0 1.4px,transparent 2px);
+  background-size:61px 67px,97px 89px,173px 151px;background-position:0 0,31px 47px,83px 19px}
+.twinkle{position:absolute;inset:-40px;animation:twinkle2 3.6s ease-in-out infinite}
+.twinkle.a{background-image:radial-gradient(circle,#fff 0 1.6px,rgba(255,255,255,.35) 2.4px,transparent 4px),radial-gradient(circle,#cdf6f8 0 1.4px,rgba(205,246,248,.3) 2.2px,transparent 3.6px);background-size:211px 193px,257px 229px;background-position:40px 70px,150px 20px}
+.twinkle.b{background-image:radial-gradient(circle,#fff4cf 0 1.6px,rgba(255,244,207,.35) 2.4px,transparent 4px),radial-gradient(circle,#fff 0 1.2px,rgba(255,255,255,.3) 2px,transparent 3.4px);background-size:233px 211px,181px 241px;background-position:120px 150px,10px 110px;animation-delay:-2.2s}
+.is-building .twinkle{animation-duration:1.2s}
+.planet{position:absolute;animation:bob 9s ease-in-out infinite}
+.shoot{position:absolute;left:600px;top:24px;width:140px;height:2px;border-radius:2px;background:linear-gradient(90deg,rgba(255,255,255,0),rgba(255,255,255,.95));transform-origin:100% 50%;opacity:0;animation:shoot 9s ease-in infinite}
+
 .rays{position:absolute;left:50%;top:50%;width:1500px;height:1500px;margin:-750px 0 0 -750px;pointer-events:none;
   background:repeating-conic-gradient(from 0deg,rgba(255,244,214,.18) 0deg 4deg,rgba(255,244,214,0) 4deg 18deg);
   -webkit-mask-image:radial-gradient(circle,#000 0,#000 16%,transparent 58%);mask-image:radial-gradient(circle,#000 0,#000 16%,transparent 58%);
@@ -39,16 +53,24 @@ body{display:flex;align-items:center;justify-content:center;font-family:'Nunito'
   background:linear-gradient(180deg,rgba(220,250,255,0) 0%,rgba(220,250,255,.32) 60%,rgba(255,250,230,.55) 100%);transition:opacity 1s}
 .is-menu .rays{opacity:.45}
 .is-menu .beam{opacity:.55}
-.pebble{position:absolute;border-radius:50%;box-shadow:0 2px 0 rgba(15,22,45,.45)}
+.is-building .beam{opacity:1;animation:beamPulse 1.1s ease-in-out infinite}
+.is-done .beam{opacity:1;animation:flash 1.6s ease-out 1}
+.mote{position:absolute;width:6px;height:6px;border-radius:50%;animation:mote ease-in infinite}
 .spark{position:absolute;animation:twinkle 2.8s ease-in-out infinite}
 
-.stage{position:absolute;left:340px;top:60px;width:600px;height:600px}
+/* Emblem */
+.stage{position:absolute;left:340px;top:60px;width:600px;height:600px;animation:intro 1.4s cubic-bezier(.2,.8,.2,1) both}
+.orbit{position:absolute;inset:0;pointer-events:none;animation:spin 26s linear infinite;transition:opacity .6s}
+.orbit svg{position:absolute}
+.is-menu .orbit{opacity:0}
 .emblem{position:absolute;inset:0;transition:transform 1.4s cubic-bezier(.2,.8,.2,1)}
 .is-title .emblem{transform:scale(.84)}
 .is-menu .emblem{transform:scale(1.75)}
 .pulse{position:absolute;inset:0}
 .is-title .pulse{animation:pulse 3.6s ease-in-out infinite}
 .is-menu .pulse{filter:drop-shadow(0 0 18px rgba(63,208,216,.45))}
+.stage:has(.logo-btn:hover) .pulse > svg{filter:brightness(1.15)}
+.glint{transform-box:fill-box;transform-origin:50% 50%;animation:glint 7s ease-in-out infinite}
 
 .gem{transition:fill 1s}
 .gem-n-l{fill:#f27aa5}.gem-n-d{fill:#c9346c}
@@ -67,11 +89,9 @@ body{display:flex;align-items:center;justify-content:center;font-family:'Nunito'
 .is-menu .title-copy{opacity:0}
 .menu-copy{display:none;align-items:center;justify-content:center}
 .is-menu .menu-copy{display:flex;animation:popIn .7s cubic-bezier(.2,.8,.2,1) .8s both}
-
 .spark-big{position:absolute;left:398px;top:172px;width:30px;height:30px;opacity:0;transition:opacity .6s 1.2s}
 .spark-big svg{width:30px;height:30px;animation:twinkle 2.2s ease-in-out infinite}
 .is-menu .spark-big{opacity:1}
-
 .logo-btn{position:absolute;left:130px;top:130px;width:340px;height:340px;border-radius:50%;border:0;background:transparent;cursor:pointer}
 .is-menu .logo-btn{display:none}
 .logo-btn:focus-visible{outline:3px solid var(--teal);outline-offset:6px}
@@ -90,7 +110,7 @@ body{display:flex;align-items:center;justify-content:center;font-family:'Nunito'
 .stone{position:absolute;left:140px;top:104px;display:flex;align-items:center;gap:10px;min-height:50px;padding:0 22px;
   border:3px solid #5d6a8a;border-radius:20px 13px 22px 11px / 13px 20px 11px 18px;color:var(--navy);
   font-family:'Fredoka',sans-serif;font-weight:700;font-size:19px;text-shadow:0 1px 0 rgba(255,255,255,.55);cursor:pointer;
-  background:radial-gradient(circle at 18% 30%,rgba(255,255,255,.3) 0 2px,transparent 3px),radial-gradient(circle at 72% 62%,rgba(40,52,88,.28) 0 2px,transparent 3px),radial-gradient(circle at 46% 82%,rgba(255,255,255,.22) 0 1.5px,transparent 2.5px),radial-gradient(circle at 88% 24%,rgba(40,52,88,.22) 0 1.5px,transparent 2.5px),radial-gradient(circle at 30% 70%,rgba(40,52,88,.2) 0 1px,transparent 2px),linear-gradient(180deg,#b6c1d6,#8f9cb7);
+  background:radial-gradient(circle at 18% 30%,rgba(255,255,255,.3) 0 2px,transparent 3px),radial-gradient(circle at 72% 62%,rgba(40,52,88,.28) 0 2px,transparent 3px),radial-gradient(circle at 46% 82%,rgba(255,255,255,.22) 0 1.5px,transparent 2.5px),radial-gradient(circle at 88% 24%,rgba(40,52,88,.22) 0 1.5px,transparent 2.5px),linear-gradient(180deg,#b6c1d6,#8f9cb7);
   box-shadow:inset 0 3px 0 rgba(255,255,255,.4),inset 0 -5px 0 rgba(40,52,88,.32),0 6px 0 #4a5677,0 10px 16px rgba(10,16,36,.5);
   animation:blink 2.4s ease-in-out infinite;transition:opacity .5s,filter .2s,transform .1s}
 .stone:hover{filter:brightness(1.08)}
@@ -107,38 +127,84 @@ body{display:flex;align-items:center;justify-content:center;font-family:'Nunito'
 .bar{height:14px;border-radius:999px;border:2px solid var(--gold-hi);background:var(--navy-deep);overflow:hidden}
 .bar > div{height:100%;width:0;background:var(--teal);border-radius:999px}
 [hidden]{display:none !important}
-
 .legal{position:absolute;right:40px;bottom:40px;max-width:420px;text-align:right;font-size:12px;font-weight:600;line-height:1.5;color:var(--muted)}
 .toast{position:absolute;left:50%;top:28px;transform:translateX(-50%);padding:10px 22px;border-radius:14px;border:2px solid var(--teal);
   background:var(--navy-deep);color:#e8fbfc;font-family:'Fredoka',sans-serif;font-weight:600;font-size:18px;animation:toast .4s ease-out both}
+.confetti{position:absolute;top:0;width:10px;height:14px;border-radius:2px;animation:confetti linear both}
 
 @keyframes pulse{0%,100%{transform:scale(1);filter:drop-shadow(0 0 16px rgba(255,226,140,.35))}50%{transform:scale(1.045);filter:drop-shadow(0 0 36px rgba(255,226,140,.75))}}
 @keyframes spin{to{transform:rotate(360deg)}}
 @keyframes twinkle{0%,100%{opacity:.15;transform:scale(.6)}50%{opacity:1;transform:scale(1)}}
+@keyframes twinkle2{0%,100%{opacity:.25}50%{opacity:1}}
+@keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}
+@keyframes shoot{0%,86%{opacity:0;transform:translate(0,0) rotate(21deg)}88%{opacity:1}100%{opacity:0;transform:translate(420px,160px) rotate(21deg)}}
+@keyframes mote{0%{transform:translateY(0) scale(.6);opacity:0}15%{opacity:1}100%{transform:translateY(-260px) scale(1);opacity:0}}
+@keyframes glint{0%,60%{transform:translateX(-760px) rotate(25deg)}100%{transform:translateX(760px) rotate(25deg)}}
+@keyframes intro{0%{opacity:0;transform:translateY(50px) scale(.7)}60%{opacity:1}100%{opacity:1;transform:none}}
 @keyframes blink{0%,100%{opacity:1}50%{opacity:.55}}
 @keyframes popIn{from{opacity:0;transform:scale(.88)}to{opacity:1;transform:scale(1)}}
 @keyframes toast{from{opacity:0;transform:translate(-50%,-12px)}to{opacity:1;transform:translate(-50%,0)}}
-@media (prefers-reduced-motion:reduce){*{animation:none !important;transition:none !important}}
+@keyframes beamPulse{0%,100%{opacity:.7}50%{opacity:1}}
+@keyframes flash{0%{filter:blur(8px) brightness(1)}25%{filter:blur(3px) brightness(2.4)}100%{filter:blur(8px) brightness(1)}}
+@keyframes confetti{0%{transform:translateY(-60px) rotate(0)}100%{transform:translateY(820px) rotate(600deg)}}
+@media (prefers-reduced-motion:reduce){*{animation:none !important;transition:none !important}.shoot{display:none}}
 </style>
 </head>
 <body>
 <div class="scale-wrap" id="scaleWrap">
 <div class="wp-root is-title" id="root">
 
-  <div class="floor" aria-hidden="true"></div>
+  <!-- Night sky, three depths of parallax -->
+  <div class="layer par-f"><div class="sky"></div><div class="stars"></div></div>
+  <div class="layer par-d">
+    <div class="twinkle a"></div><div class="twinkle b"></div>
+    <div class="planet" style="left:1010px;top:70px">
+      <svg viewBox="0 0 180 130" width="180" height="130" aria-hidden="true">
+        <defs><radialGradient id="pA" cx="35%" cy="30%" r="75%"><stop offset="0" stop-color="#ffe2a0"/><stop offset=".5" stop-color="#f39a2b"/><stop offset="1" stop-color="#7a3d0e"/></radialGradient></defs>
+        <path d="M18 74A72 22 -14 0 1 162 40" fill="none" stroke="rgba(255,231,163,.55)" stroke-width="5" stroke-linecap="round"/>
+        <circle cx="90" cy="60" r="36" fill="url(#pA)"/>
+        <path d="M30 70C40 62 60 56 90 52" fill="none" stroke="rgba(122,61,14,.35)" stroke-width="4" stroke-linecap="round"/>
+        <path d="M162 40A72 22 -14 0 1 18 74" fill="none" stroke="#ffe7a3" stroke-width="5" stroke-linecap="round"/>
+      </svg>
+    </div>
+    <div class="planet" style="left:118px;top:392px;animation-delay:-3s;animation-duration:11s">
+      <svg viewBox="0 0 90 70" width="90" height="70" aria-hidden="true">
+        <defs>
+          <radialGradient id="pB" cx="35%" cy="30%" r="75%"><stop offset="0" stop-color="#d9fdff"/><stop offset=".5" stop-color="#3fd0d8"/><stop offset="1" stop-color="#14505e"/></radialGradient>
+          <radialGradient id="pM" cx="35%" cy="30%" r="75%"><stop offset="0" stop-color="#e3d2ff"/><stop offset=".6" stop-color="#8b5bd2"/><stop offset="1" stop-color="#3b2370"/></radialGradient>
+        </defs>
+        <circle cx="34" cy="40" r="26" fill="url(#pB)"/>
+        <path d="M14 34C24 30 40 30 56 36" fill="none" stroke="rgba(255,255,255,.25)" stroke-width="3" stroke-linecap="round"/>
+        <circle cx="76" cy="14" r="8" fill="url(#pM)"/>
+      </svg>
+    </div>
+    <div class="planet" style="left:456px;top:70px;animation-delay:-6s;animation-duration:13s">
+      <svg viewBox="0 0 32 32" width="32" height="32" aria-hidden="true">
+        <defs><radialGradient id="pC" cx="35%" cy="30%" r="75%"><stop offset="0" stop-color="#ffc4da"/><stop offset=".55" stop-color="#e2457f"/><stop offset="1" stop-color="#6e1838"/></radialGradient></defs>
+        <circle cx="16" cy="16" r="14" fill="url(#pC)"/>
+      </svg>
+    </div>
+    <div class="shoot"></div>
+  </div>
+
   <div class="rays" aria-hidden="true"></div>
   <div class="beam" aria-hidden="true"></div>
-  <div class="layer" id="pebbles" aria-hidden="true"></div>
-  <div class="layer" id="sparks" aria-hidden="true"></div>
+  <div class="layer par-a" id="motes" aria-hidden="true"></div>
+  <div class="layer par-a" id="sparks" aria-hidden="true"></div>
 
   <div class="stage">
+    <div class="orbit" aria-hidden="true">
+      <svg viewBox="0 0 20 20" width="20" height="20" style="left:290px;top:4px"><path d="M10 0L12.5 7.5L20 10L12.5 12.5L10 20L7.5 12.5L0 10L7.5 7.5Z" fill="#fff4cf"/></svg>
+      <svg viewBox="0 0 20 20" width="16" height="16" style="left:540px;top:436px"><path d="M10 0L12.5 7.5L20 10L12.5 12.5L10 20L7.5 12.5L0 10L7.5 7.5Z" fill="#cdf6f8"/></svg>
+      <svg viewBox="0 0 20 20" width="18" height="18" style="left:44px;top:434px"><path d="M10 0L12.5 7.5L20 10L12.5 12.5L10 20L7.5 12.5L0 10L7.5 7.5Z" fill="#ffe7a3"/></svg>
+    </div>
     <div class="emblem">
       <div class="pulse">
         <svg viewBox="0 0 600 600" aria-hidden="true" style="position:absolute;inset:0;width:600px;height:600px">
           <defs>
-            <radialGradient id="wpDisc" cx="50%" cy="42%" r="60%">
-              <stop offset="0" stop-color="#2c3d70"/><stop offset="1" stop-color="#121b3a"/>
-            </radialGradient>
+            <radialGradient id="wpDisc" cx="50%" cy="42%" r="60%"><stop offset="0" stop-color="#2c3d70"/><stop offset="1" stop-color="#121b3a"/></radialGradient>
+            <clipPath id="starClip"><polygon points="300,8 380,220 592,300 380,380 300,592 220,380 8,300 220,220"/><circle cx="300" cy="300" r="150"/></clipPath>
+            <linearGradient id="glintG" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset=".5" stop-color="#fff" stop-opacity=".5"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
           </defs>
           <polygon points="300,8 380,220 592,300 380,380 300,592 220,380 8,300 220,220" fill="#c98f2a" stroke="#f3cf6b" stroke-width="6" stroke-linejoin="round"/>
           <g stroke="#f3cf6b" stroke-width="2" stroke-linejoin="round">
@@ -155,15 +221,13 @@ body{display:flex;align-items:center;justify-content:center;font-family:'Nunito'
           <g id="wedges" stroke="#f3cf6b" stroke-width="3" stroke-linejoin="round"></g>
           <circle cx="300" cy="300" r="112" fill="url(#wpDisc)" stroke="#f3cf6b" stroke-width="4"/>
           <circle cx="300" cy="300" r="103" fill="none" stroke="rgba(243,207,107,.45)" stroke-width="1.5"/>
+          <g clip-path="url(#starClip)"><rect class="glint" x="240" y="-200" width="120" height="1000" fill="url(#glintG)"/></g>
         </svg>
 
-        <!-- Title wordmark -->
         <div class="disc-overlay title-copy">
           <svg viewBox="0 0 224 224" role="img" aria-label="Wonderpark, PokéPark 2 recomp">
             <defs>
-              <linearGradient id="goldT" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0" stop-color="#fff7d6"/><stop offset=".5" stop-color="#f7d164"/><stop offset="1" stop-color="#d48f26"/>
-              </linearGradient>
+              <linearGradient id="goldT" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff7d6"/><stop offset=".5" stop-color="#f7d164"/><stop offset="1" stop-color="#d48f26"/></linearGradient>
               <path id="arcT" d="M-48 256A160 160 0 0 1 272 256"/>
             </defs>
             <g font-family="Fredoka, sans-serif" font-weight="700" font-size="42">
@@ -181,13 +245,10 @@ body{display:flex;align-items:center;justify-content:center;font-family:'Nunito'
           </svg>
         </div>
 
-        <!-- Menu: arched wordmark + the one main button -->
         <div class="disc-overlay menu-copy">
           <svg viewBox="0 0 224 224" role="img" aria-label="Wonderpark, unofficial recomp">
             <defs>
-              <linearGradient id="goldM" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0" stop-color="#fff7d6"/><stop offset=".5" stop-color="#f7d164"/><stop offset="1" stop-color="#d48f26"/>
-              </linearGradient>
+              <linearGradient id="goldM" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff7d6"/><stop offset=".5" stop-color="#f7d164"/><stop offset="1" stop-color="#d48f26"/></linearGradient>
               <path id="arcM" d="M30 116A82 82 0 0 1 194 116"/>
               <path id="arcB" d="M30 112A82 82 0 0 0 194 112"/>
             </defs>
@@ -201,10 +262,7 @@ body{display:flex;align-items:center;justify-content:center;font-family:'Nunito'
           <button class="main-btn" id="mainBtn" type="button">Place ISO</button>
         </div>
       </div>
-
-      <div class="spark-big" aria-hidden="true">
-        <svg viewBox="0 0 20 20"><path d="M10 0L12.5 7.5L20 10L12.5 12.5L10 20L7.5 12.5L0 10L7.5 7.5Z" fill="#fff"/></svg>
-      </div>
+      <div class="spark-big" aria-hidden="true"><svg viewBox="0 0 20 20"><path d="M10 0L12.5 7.5L20 10L12.5 12.5L10 20L7.5 12.5L0 10L7.5 7.5Z" fill="#fff"/></svg></div>
     </div>
     <button class="logo-btn" id="logoBtn" type="button" aria-label="Open the Wonderpark launcher"></button>
   </div>
@@ -230,6 +288,7 @@ body{display:flex;align-items:center;justify-content:center;font-family:'Nunito'
   </div>
 
   <div class="legal">Unofficial fan project. Not affiliated with Nintendo, The Pokémon Company or Creatures. Requires your own disc.</div>
+  <div class="layer" id="confettiLayer" aria-hidden="true" hidden></div>
   <div class="toast" id="toast" role="status" hidden>Launching Wonderpark…</div>
 </div>
 </div>
@@ -239,17 +298,15 @@ body{display:flex;align-items:center;justify-content:center;font-family:'Nunito'
   const EXPECTED_ID = 'S2LE01';
   const $ = id => document.getElementById(id);
   const root = $('root');
-
-  // ---- decorative layers ----
-  const pebbles = [[90,210,14,10,'#56668c'],[106,224,8,6,'#c3cee2'],[1150,160,12,9,'#56668c'],[1168,176,7,5,'#c3cee2'],
-    [1010,520,10,8,'#56668c'],[1026,534,14,10,'#c3cee2'],[252,470,9,7,'#56668c'],[234,458,6,5,'#c3cee2'],
-    [1180,450,12,9,'#56668c'],[820,70,8,6,'#c3cee2'],[832,80,11,8,'#56668c'],[980,250,7,5,'#c3cee2'],
-    [300,330,9,7,'#56668c'],[420,690,10,7,'#c3cee2']];
-  $('pebbles').innerHTML = pebbles.map(([x,y,w,h,c]) =>
-    `<div class="pebble" style="left:${x}px;top:${y}px;width:${w}px;height:${h}px;background:${c}"></div>`).join('');
   const star = c => `<path d="M10 0L12.5 7.5L20 10L12.5 12.5L10 20L7.5 12.5L0 10L7.5 7.5Z" fill="${c}"/>`;
-  const sparks = [[180,90,18,0,'#fff4cf'],[1080,110,22,.8,'#fff4cf'],[1210,330,16,1.6,'#cdf6f8'],
-    [140,400,18,2.2,'#cdf6f8'],[1060,610,20,1.1,'#fff4cf'],[560,36,16,.4,'#fff4cf']];
+
+  // Decorative layers
+  const motes = [[160,520,'#ffe7a3','#f3cf6b',6,0],[300,640,'#cdf6f8','#3fd0d8',7.5,-2],[520,690,'#ffe7a3','#f3cf6b',8,-5],[760,680,'#cdf6f8','#3fd0d8',6.5,-3.5],
+    [940,600,'#ffe7a3','#f3cf6b',7,-1],[1100,500,'#cdf6f8','#3fd0d8',8.5,-6],[230,330,'#cdf6f8','#3fd0d8',9,-4],[1040,300,'#ffe7a3','#f3cf6b',7.8,-2.6],
+    [610,330,'#fff4cf','#fff',5.5,-1.8],[680,300,'#fff4cf','#fff',6.2,-4.4]];
+  $('motes').innerHTML = motes.map(([x,y,c,g,d,dl]) =>
+    `<div class="mote" style="left:${x}px;top:${y}px;background:${c};box-shadow:0 0 10px ${g};animation-duration:${d}s;animation-delay:${dl}s"></div>`).join('');
+  const sparks = [[180,90,18,0,'#fff4cf'],[930,200,22,.8,'#fff4cf'],[1210,330,16,1.6,'#cdf6f8'],[260,560,18,2.2,'#cdf6f8'],[1060,610,20,1.1,'#fff4cf'],[560,36,16,.4,'#fff4cf']];
   $('sparks').innerHTML = sparks.map(([x,y,s,d,c]) =>
     `<svg class="spark" viewBox="0 0 20 20" style="left:${x}px;top:${y}px;width:${s}px;height:${s}px;animation-delay:${d}s">${star(c)}</svg>`).join('');
 
@@ -263,11 +320,24 @@ body{display:flex;align-items:center;justify-content:center;font-family:'Nunito'
   }
   $('wedges').innerHTML = w;
 
-  // fit 1280x720 stage to window
-  const fit = () => { const s = Math.min(innerWidth/1280, innerHeight/720, 1); $('scaleWrap').style.transform = `scale(${s})`; };
+  // Confetti pieces (shown when the build finishes)
+  const cc = ['#e2457f','#f39a2b','#f6d44a','#5bc26a','#4a7fe0','#8b5bd2','#3fd0d8','#ffe7a3'];
+  $('confettiLayer').innerHTML = Array.from({length:48}, (_,i) =>
+    `<div class="confetti" style="left:${(i*263+37)%1270}px;background:${cc[i%8]};animation-duration:${(2.4+((i*7)%10)*.18).toFixed(2)}s;animation-delay:${(((i*13)%20)*.05).toFixed(2)}s"></div>`).join('');
+
+  // Fit the 1280x720 stage to the window
+  const fit = () => { const s = Math.min(innerWidth/1280, innerHeight/720); $('scaleWrap').style.transform = `scale(${s})`; };
   addEventListener('resize', fit); fit();
 
-  // ---- state machine: noIso -> verifying -> ready -> building -> done ----
+  // Mouse parallax
+  let raf = 0, mx = 0, my = 0;
+  root.addEventListener('mousemove', e => {
+    const r = root.getBoundingClientRect();
+    mx = ((e.clientX - r.left) / r.width - .5) * 2; my = ((e.clientY - r.top) / r.height - .5) * 2;
+    if (!raf) raf = requestAnimationFrame(() => { raf = 0; root.style.setProperty('--mx', mx.toFixed(3)); root.style.setProperty('--my', my.toFixed(3)); });
+  });
+
+  // State machine: noIso -> verifying -> ready -> building -> done
   const STAGES = [[15,'Verifying disc'],[35,'Extracting main.dol and files'],[85,'Recompiling PowerPC to C++'],[100,'Compiling Wonderpark.exe']];
   let state = 'noIso', fileName = '', progress = 0, timer = null;
 
@@ -276,16 +346,16 @@ body{display:flex;align-items:center;justify-content:center;font-family:'Nunito'
     btn.className = 'main-btn' + (state === 'verifying' || state === 'building' ? ' is-busy' : state === 'done' ? ' is-play' : '');
     btn.disabled = state === 'verifying' || state === 'building';
     btn.textContent = { noIso:'Place ISO', verifying:'Verifying…', ready:'Build', building:Math.floor(progress)+'%', done:'Play' }[state];
-
     $('stIdle').hidden = state !== 'noIso';
     $('stVerifying').hidden = state !== 'verifying';
     $('stVerifying').textContent = `Verifying ${fileName}…`;
     $('stOk').hidden = !['ready','building','done'].includes(state);
     $('okText').textContent = `${fileName} · disc verified (${EXPECTED_ID})`;
     $('progress').hidden = !['building','done'].includes(state);
-
     const lit = state === 'done' ? 4 : state === 'building' ? STAGES.filter(([t]) => progress >= t).length : 0;
     ['on-n','on-e','on-s','on-w'].forEach((c,i) => root.classList.toggle(c, i < lit));
+    root.classList.toggle('is-building', state === 'building');
+    root.classList.toggle('is-done', state === 'done');
     $('stageText').textContent = state === 'done' ? 'Build complete' : (STAGES.find(([t]) => progress < t) || STAGES[3])[1];
     $('pctText').textContent = Math.floor(progress) + '%';
     $('barFill').style.width = progress + '%';
@@ -305,8 +375,7 @@ body{display:flex;align-items:center;justify-content:center;font-family:'Nunito'
   $('fileInput').addEventListener('change', async e => {
     const f = e.target.files[0]; if (!f) return;
     fileName = f.name; state = 'verifying'; $('stError').hidden = true; render();
-    // Wii disc header: bytes 0-5 hold the game ID.
-    const id = await f.slice(0, 6).text();
+    const id = await f.slice(0, 6).text();   // Wii disc header: bytes 0-5 are the game ID
     setTimeout(() => {
       if (id === EXPECTED_ID) { state = 'ready'; }
       else {
@@ -322,7 +391,11 @@ body{display:flex;align-items:center;justify-content:center;font-family:'Nunito'
     state = 'building'; progress = 0; render();
     timer = setInterval(() => {
       progress = Math.min(100, progress + 1.25);
-      if (progress >= 100) { clearInterval(timer); state = 'done'; }
+      if (progress >= 100) {
+        clearInterval(timer); state = 'done';
+        $('confettiLayer').hidden = false;
+        setTimeout(() => $('confettiLayer').hidden = true, 4500);
+      }
       render();
     }, 60);
   }
