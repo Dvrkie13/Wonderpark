@@ -54,7 +54,7 @@ Fill these in during Phase 1, once the scripts exist, and keep them current:
 - Recompile: `python tools/recomp.py` (DolRecomp, into `generated/`)
 - Build (dev): `python tools/build_game.py` (clang-cl + Ninja, into `build/game/`; `--msvc` to use MSVC)
 - Build (release): not yet separate from the dev build
-- Run: `.uild\game\Wonderpark.exe` from the repo root (`RECOMP_FPS=1` prints frame rates; debug logs via `WONDERPARK_LOG=...`, listed in `docs/recomp-status.md`)
+- Run: `.\build\game\Wonderpark.exe` from the repo root (`RECOMP_FPS=1` prints frame rates; debug logs via `WONDERPARK_LOG=...`, listed in `docs/recomp-status.md`)
 - Full pipeline: `python builder/pipeline.py <iso>` (verify, extract, recompile, build)
 - Headless test: not yet (planned `--headless`)
 
