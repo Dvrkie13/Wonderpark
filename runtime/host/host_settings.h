@@ -1,5 +1,6 @@
 /* From MildRain479/PokePark-Wiicompiled recomp/runtime/host_settings.h (CC0). */
-/* User settings, kept in settings.ini beside the program and changed in
+/* User settings, kept in settings.ini and bindings.ini in the data folder
+ * (%APPDATA%\Wonderpark; settings.c), overridable by WONDERPARK_<KEY>, and changed in
  * Options in the pause menu (and the settings menu, menu_win32.c;
  * settings.c reads and writes them). For the
  * platform layer (recomp/boot, recomp/gpu); the game patches don't see
@@ -48,6 +49,7 @@ typedef struct {
     float mouse_sensitivity; /* camera turn per pixel, times the default */
     int invert_tilt;         /* mouse up looks down */
     int check_updates;       /* ask GitHub for a newer release at start (update.c) */
+    int skip_movies;         /* skip the story's video cutscenes (hle_movie.c) */
     int key[ACT_COUNT][BIND_SLOTS];      /* Windows virtual-key codes (mouse buttons too); 0 = none */
     uint32_t pad[ACT_COUNT][BIND_SLOTS]; /* controller buttons (XPAD_*); 0 = none */
 } HostSettings;

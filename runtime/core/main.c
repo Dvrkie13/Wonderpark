@@ -27,6 +27,7 @@ void wp_devices_init(void);
 int hle_dvd_init(const char* root);
 void hle_dvd_boot_setup(void);
 void hle_nand_set_root(const char* root);
+void hle_nand_set_tmp_root(const char* root);
 void settings_load(void);
 void gx_init(void);
 void input_init(void);
@@ -166,17 +167,22 @@ int main(int argc, char** argv) {
     if (!load_dol(&cpu, dol, &entry)) return 1;
     setup_low_memory();
     {
-        /* The disc's files and the emulated NAND, next to the extracted
-         * main.dol: <game>/sys/main.dol -> <game>, and nand beside <game>. */
-        char root[512], nand[600];
+        /* The disc's files next to the extracted main.dol (<game>/sys/main.dol
+         * -> <game>); the emulated NAND, with the saves, in the data folder
+         * (paths.c), its /tmp in the cache folder. */
+        char root[512], nand[1100];
         char* p;
         snprintf(root, sizeof(root), "%s", dol);
         for (p = root; *p; p++) if (*p == '\\') *p = '/';
         if ((p = strstr(root, "/sys/main.dol")) != NULL) *p = '\0';
         if (hle_dvd_init(root) != 0) return 1;
         hle_dvd_boot_setup();
-        snprintf(nand, sizeof(nand), "%s/../nand", root);
+        snprintf(nand, sizeof(nand), "%s/nand", wp_data_dir());
+        wp_make_dirs(nand);
         hle_nand_set_root(nand);
+        snprintf(nand, sizeof(nand), "%s/nandtmp", wp_cache_dir());
+        hle_nand_set_tmp_root(nand);
+        fprintf(stderr, "wonderpark: saves and settings in %s\n", wp_data_dir());
     }
 
     cpu.pc = entry;

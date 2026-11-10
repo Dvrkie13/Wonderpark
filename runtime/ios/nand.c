@@ -1,8 +1,9 @@
 /* Ported from MildRain479/PokePark-Wiicompiled recomp/patches/hle_nand.c (CC0). */
 /* The NAND file system (ISFS), stored in a host directory: the Wii path
  * /title/00010000/53324c45/data/x is <root>/title/00010000/53324c45/data/x.
- * hle_ios.c routes /dev/fs requests and file descriptors here. The root
- * defaults to "nand" next to the disc directory (game/../nand). */
+ * hle_ios.c routes /dev/fs requests and file descriptors here. Wonderpark:
+ * the root is nand\ in the data folder (%APPDATA%\Wonderpark, main.c), and
+ * /tmp is kept in the cache folder beside the program. */
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
@@ -29,6 +30,9 @@
 #define FS_ENOTEMPTY (-115)
 
 static char sRoot[512] = "nand";
+/* The NAND's /tmp lives apart from the rest (hle_nand_set_tmp_root): the
+ * game copies tens of MB there at every start, and a Wii empties it at boot. */
+static char sTmpRoot[512];
 
 static void ensure_sysconf(void);
 static void ensure_setting_txt(void);
@@ -40,10 +44,45 @@ void hle_nand_set_root(const char* root) {
     ensure_setting_txt();
 }
 
+/* Removes a directory tree's contents (Windows; elsewhere /tmp is kept). */
+static void empty_dir(const char* dir) {
+#ifdef _WIN32
+    char pattern[600], path[600];
+    WIN32_FIND_DATAA fd;
+    HANDLE h;
+    snprintf(pattern, sizeof(pattern), "%s/*", dir);
+    h = FindFirstFileA(pattern, &fd);
+    if (h == INVALID_HANDLE_VALUE) return;
+    do {
+        if (!strcmp(fd.cFileName, ".") || !strcmp(fd.cFileName, "..")) continue;
+        snprintf(path, sizeof(path), "%s/%s", dir, fd.cFileName);
+        if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+            empty_dir(path);
+            _rmdir(path);
+        } else {
+            remove(path);
+        }
+    } while (FindNextFileA(h, &fd));
+    FindClose(h);
+#else
+    (void)dir;
+#endif
+}
+
+/* Where the NAND's /tmp is kept; emptied now, as a Wii does at boot. */
+void hle_nand_set_tmp_root(const char* root) {
+    snprintf(sTmpRoot, sizeof(sTmpRoot), "%s", root);
+    empty_dir(sTmpRoot);
+    mkdir_one(sTmpRoot);
+}
+
 /* Host path for a NAND path; rejects anything that could escape the root. */
 static int host_path(const char* nand, char* out, size_t n) {
     if (nand[0] != '/' || strstr(nand, "..")) return 0;
-    snprintf(out, n, "%s%s", sRoot, nand);
+    if (sTmpRoot[0] && strncmp(nand, "/tmp", 4) == 0 && (nand[4] == '\0' || nand[4] == '/'))
+        snprintf(out, n, "%s%s", sTmpRoot, nand + 4);
+    else
+        snprintf(out, n, "%s%s", sRoot, nand);
     return 1;
 }
 
@@ -220,7 +259,12 @@ int32_t hle_nand_ioctl(uint32_t type, uint32_t in, uint32_t out, uint32_t outsiz
         HLE_LOG("NAND rename %s -> %s", nand, nand2);
         ensure_parent(host2);
         remove(host2);
+#ifdef _WIN32
+        /* /tmp may be on another drive than the rest of the NAND. */
+        return MoveFileExA(host, host2, MOVEFILE_REPLACE_EXISTING | MOVEFILE_COPY_ALLOWED) ? FS_OK : FS_EACCESS;
+#else
         return rename(host, host2) == 0 ? FS_OK : FS_EACCESS;
+#endif
     case 13: /* Shutdown */
         return FS_OK;
     }

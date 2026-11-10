@@ -69,6 +69,12 @@ uint64_t wp_timebase(void);
 void wp_timebase_set(uint64_t tb);
 /* Monotonic host time in the same units, for device timers (the game can't move it). */
 uint64_t wp_host_time(void);
+/* Folders (paths.c): settings and saves in %APPDATA%\Wonderpark (or
+ * WONDERPARK_DATA_DIR); throwaway files beside the program (or
+ * WONDERPARK_CACHE_DIR). Created on first use. */
+const char* wp_data_dir(void);
+const char* wp_cache_dir(void);
+void wp_make_dirs(const char* path);
 /* GPU time hidden from the guest clock until it next idles (cpu_host.c). */
 void wp_parallel_time_hide(uint64_t ticks);
 void wp_parallel_time_restore(void);

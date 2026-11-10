@@ -1,11 +1,12 @@
 /* From MildRain479/PokePark-Wiicompiled recomp/boot/settings.c (CC0). */
-/* Settings: settings.ini, read at start and saved whenever one changes,
+/* Settings: settings.ini and bindings.ini, read at start and saved whenever one changes,
  * from the Options tab of the pause menu (options.c) and, on Windows, the
  * settings menu (menu_win32.c). */
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #endif
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -159,100 +160,282 @@ void settings_binding_name(int act, int controller, char* out, size_t n) {
 }
 
 /* ------------------------------------------------------------------------ */
-/* settings.ini */
+/* settings.ini and bindings.ini
+ *
+ * Both live in the data folder (%APPDATA%\Wonderpark, paths.c): settings.ini
+ * holds the options, bindings.ini the keyboard and controller bindings.
+ * WONDERPARK_SETTINGS and WONDERPARK_BINDINGS point at other files. Every
+ * option can also be set by the environment variable WONDERPARK_<KEY> (the
+ * key as in settings.ini, upper case: WONDERPARK_FRAME_RATE=60), which wins
+ * over the file. An overridden value is used but never saved: the file keeps
+ * its own. */
 
-static char sPath[1024];
+const char* wp_data_dir(void); /* paths.c */
+
+static char sPath[1024], sBindPath[1024];
+
+static const char* data_file(char* buf, size_t n, const char* env, const char* name) {
+    if (!buf[0]) {
+        const char* e = getenv(env);
+        if (e && *e) snprintf(buf, n, "%s", e);
+        else snprintf(buf, n, "%s/%s", wp_data_dir(), name);
+    }
+    return buf;
+}
 
 static const char* settings_path(void) {
-    if (!sPath[0]) {
-        const char* e = getenv("RECOMP_SETTINGS");
-        char* slash;
-        if (e && *e) {
-            snprintf(sPath, sizeof(sPath), "%s", e);
-        } else {
-#ifdef _WIN32
-            GetModuleFileNameA(NULL, sPath, sizeof(sPath) - 16);
-            slash = strrchr(sPath, '\\');
-            strcpy(slash ? slash + 1 : sPath, "settings.ini");
-#else
-            (void)slash;
-            strcpy(sPath, "settings.ini");
-#endif
-        }
-    }
-    return sPath;
+    const char* old = getenv("RECOMP_SETTINGS"); /* the reference runtime's name, still accepted */
+    if (!sPath[0] && old && *old && !getenv("WONDERPARK_SETTINGS")) snprintf(sPath, sizeof(sPath), "%s", old);
+    return data_file(sPath, sizeof(sPath), "WONDERPARK_SETTINGS", "settings.ini");
+}
+
+static const char* bindings_path(void) {
+    return data_file(sBindPath, sizeof(sBindPath), "WONDERPARK_BINDINGS", "bindings.ini");
+}
+
+/* The options that can be overridden from the environment: their section
+ * and key in settings.ini, and the variable's name. */
+static const struct { const char* section; const char* key; const char* env; } kOptions[] = {
+    {"display", "fullscreen", "WONDERPARK_FULLSCREEN"},
+    {"display", "scale", "WONDERPARK_SCALE"},
+    {"display", "msaa", "WONDERPARK_MSAA"},
+    {"display", "frame_rate", "WONDERPARK_FRAME_RATE"},
+    {"display", "fov", "WONDERPARK_FOV"},
+    {"display", "aniso", "WONDERPARK_ANISO"},
+    {"display", "renderer", "WONDERPARK_RENDERER"},
+    {"gameplay", "text_speed", "WONDERPARK_TEXT_SPEED"},
+    {"gameplay", "berries", "WONDERPARK_BERRIES"},
+    {"gameplay", "prices", "WONDERPARK_PRICES"},
+    {"gameplay", "damage_dealt", "WONDERPARK_DAMAGE_DEALT"},
+    {"gameplay", "damage_taken", "WONDERPARK_DAMAGE_TAKEN"},
+    {"gameplay", "chase_speed", "WONDERPARK_CHASE_SPEED"},
+    {"gameplay", "skip_movies", "WONDERPARK_SKIP_MOVIES"},
+    {"updates", "check", "WONDERPARK_CHECK_UPDATES"},
+    {"mouse", "sensitivity", "WONDERPARK_SENSITIVITY"},
+    {"mouse", "invert_tilt", "WONDERPARK_INVERT_TILT"},
+    {"controller", "rumble", "WONDERPARK_RUMBLE"},
+    {"controller", "touch_controls", "WONDERPARK_TOUCH_CONTROLS"},
+};
+#define OPTIONS ((int)(sizeof(kOptions) / sizeof(kOptions[0])))
+
+/* Per option: whether the environment overrides it, and the value the file
+ * had (to write back instead of the override). */
+static int sOverridden[OPTIONS];
+static char sFileValue[OPTIONS][64];
+
+static int option_index(const char* section, const char* key) {
+    int i;
+    for (i = 0; i < OPTIONS; i++)
+        if (!strcmp(kOptions[i].section, section) && !strcmp(kOptions[i].key, key)) return i;
+    return -1;
 }
 
 static uint32_t sSaves;
 
 uint32_t settings_generation(void) { return sSaves; }
 
-void settings_save(void) {
-    sSaves++;
-    FILE* f = fopen(settings_path(), "w");
-    int i;
+/* Writes text to path, replacing each overridden option's value with the
+ * file's own (or leaving its line out if the file had none). */
+static void write_file(const char* path, const char* text) {
+    FILE* f = fopen(path, "w");
+    char section[32] = "";
+    const char* line = text;
     if (!f) return;
-    fprintf(f, "; Wonderpark settings. (Options menu: coming in a later phase.)\n\n");
-    fprintf(f, "[display]\n");
-#ifndef __ANDROID__
-    fprintf(f, "fullscreen = %d\n", g_settings.fullscreen);
-#endif
-    fprintf(f, "scale = %d ; internal resolution: 0 fits the window, or 1-%d\n", g_settings.scale, MAX_SCALE);
-    fprintf(f, "msaa = %d ; anti-aliasing samples: 1 (off), 2, 4 or 8\n", g_settings.msaa);
-    fprintf(f, "frame_rate = %d ; 30 (the game's own), 60, or 120, 144, 165, 240 (interpolated)\n",
-            g_settings.frame_rate);
-    fprintf(f, "fov = %d ; field of view in the park, percent of the game's: %d-%d\n", g_settings.fov, FOV_MIN,
-            FOV_MAX);
-    fprintf(f, "aniso = %d ; anisotropic texture filtering: 1 (off), 2, 4, 8 or 16\n", g_settings.aniso);
-#ifdef __ANDROID__
-    fprintf(f, "\n");
-#else
-    fprintf(f, "renderer = %s ; opengl or vulkan, from the next start\n\n",
-            g_settings.renderer == RENDERER_VULKAN ? "vulkan" : "opengl");
-#endif
-    fprintf(f, "[gameplay]\n");
-    fprintf(f, "text_speed = %d ; dialogue: 1 (the game's), 2, 3 times as fast, or 0: a page at once\n",
-            g_settings.text_speed);
-    fprintf(f, "berries = %d ; berries collected, percent of the game's: 50, 100, 150, 200 or 300\n", g_settings.berries);
-    fprintf(f, "prices = %d ; berries spent, percent of the game's: 0 (free), 50, 100 or 200\n", g_settings.prices);
-    fprintf(f, "damage_dealt = %d ; damage Pikachu deals in battles, percent of the game's: 50, 100, 150, 200 or 300\n",
-            g_settings.damage_dealt);
-    fprintf(f, "damage_taken = %d ; damage Pikachu takes in battles, percent of the game's: 0 (none), 50, 100, 200 or 300\n",
-            g_settings.damage_taken);
-    fprintf(f, "chase_speed = %d ; the speed of the Pokemon Pikachu chases, percent of the game's: 50, 75, 100, 125 or 150\n\n",
-            g_settings.chase_speed);
-    fprintf(f, "[updates]\n");
-    fprintf(f, "check = %d ; 1: at start, ask GitHub whether a newer version is out\n\n", g_settings.check_updates);
-#ifndef __ANDROID__ /* no mouse or keyboard */
-    fprintf(f, "[mouse]\n");
-    fprintf(f, "sensitivity = %.2f ; camera turn, times the default\n", g_settings.mouse_sensitivity);
-    fprintf(f, "invert_tilt = %d\n\n", g_settings.invert_tilt);
-    fprintf(f, "[keyboard] ; Windows virtual-key codes, two per button (0: none)\n");
-    for (i = 0; i < ACT_COUNT; i++) {
-        char a[32], b[32];
-        settings_key_name(g_settings.key[i][0], a, sizeof(a));
-        settings_key_name(g_settings.key[i][1], b, sizeof(b));
-        fprintf(f, "%s = 0x%02X 0x%02X ; %s, %s\n", kActionIni[i], g_settings.key[i][0], g_settings.key[i][1], a, b);
-    }
-    fprintf(f, "\n");
-#endif
-    fprintf(f, "[controller] ; XInput buttons, two per button (0x10000: LT, 0x20000: RT)\n");
-    fprintf(f, "rumble = %d ; 0 off, 1 light, 2 normal, 3 strong\n", g_settings.rumble);
-#ifdef __ANDROID__
-    fprintf(f, "touch_controls = %d ; 1 shown while the touch screen was used last, 0 never\n",
-            g_settings.touch_controls);
-#endif
-    for (i = 0; i < ACT_COUNT; i++) {
-        fprintf(f, "%s = 0x%04X 0x%04X ; %s, %s\n", kActionIni[i], g_settings.pad[i][0], g_settings.pad[i][1],
-                settings_pad_name(g_settings.pad[i][0]), settings_pad_name(g_settings.pad[i][1]));
+    while (*line) {
+        const char* end = strchr(line, '\n');
+        size_t len = end ? (size_t)(end - line + 1) : strlen(line);
+        char buf[512], key[32];
+        int i = -1;
+        snprintf(buf, sizeof(buf), "%.*s", (int)(len < sizeof(buf) ? len : sizeof(buf) - 1), line);
+        if (buf[0] == '[') sscanf(buf, "[%31[^]]", section);
+        else if (sscanf(buf, "%31[a-z_0-9] =", key) == 1) i = option_index(section, key);
+        if (i >= 0 && sOverridden[i]) {
+            if (sFileValue[i][0]) fprintf(f, "%s = %s\n", key, sFileValue[i]);
+        } else {
+            fputs(buf, f);
+        }
+        line += len;
     }
     fclose(f);
 }
 
-void settings_load(void) {
+/* A growing text buffer for the files' contents. */
+typedef struct { char* p; size_t len, cap; } Text;
+
+static void tprintf(Text* t, const char* fmt, ...) {
+    va_list ap;
+    int n;
+    for (;;) {
+        size_t room = t->cap - t->len;
+        va_start(ap, fmt);
+        n = vsnprintf(t->p ? t->p + t->len : NULL, t->p ? room : 0, fmt, ap);
+        va_end(ap);
+        if (n >= 0 && t->p && (size_t)n < room) {
+            t->len += (size_t)n;
+            return;
+        }
+        t->cap = t->cap * 2 + (size_t)n + 256;
+        t->p = (char*)realloc(t->p, t->cap);
+    }
+}
+
+void settings_save(void) {
+    Text s = {0}, b = {0};
+    int i;
+    sSaves++;
+    tprintf(&s, "; Wonderpark settings. Each can be overridden by the environment variable\n");
+    tprintf(&s, "; WONDERPARK_<KEY> (for example WONDERPARK_FRAME_RATE=60); see docs/DEVELOPMENT.md.\n\n");
+    tprintf(&s, "[display]\n");
+#ifndef __ANDROID__
+    tprintf(&s, "fullscreen = %d\n", g_settings.fullscreen);
+#endif
+    tprintf(&s, "scale = %d ; internal resolution: 0 fits the window, or 1-%d\n", g_settings.scale, MAX_SCALE);
+    tprintf(&s, "msaa = %d ; anti-aliasing samples: 1 (off), 2, 4 or 8\n", g_settings.msaa);
+    tprintf(&s, "frame_rate = %d ; 30 (the game's own), 60, or 120, 144, 165, 240 (interpolated)\n",
+            g_settings.frame_rate);
+    tprintf(&s, "fov = %d ; field of view in the park, percent of the game's: %d-%d\n", g_settings.fov, FOV_MIN, FOV_MAX);
+    tprintf(&s, "aniso = %d ; anisotropic texture filtering: 1 (off), 2, 4, 8 or 16\n", g_settings.aniso);
+#ifdef __ANDROID__
+    tprintf(&s, "\n");
+#else
+    tprintf(&s, "renderer = %s ; opengl or vulkan, from the next start\n\n",
+            g_settings.renderer == RENDERER_VULKAN ? "vulkan" : "opengl");
+#endif
+    tprintf(&s, "[gameplay]\n");
+    tprintf(&s, "skip_movies = %d ; 1: skip the story's video cutscenes\n", g_settings.skip_movies);
+    tprintf(&s, "text_speed = %d ; dialogue: 1 (the game's), 2, 3 times as fast, or 0: a page at once\n",
+            g_settings.text_speed);
+    tprintf(&s, "berries = %d ; berries collected, percent of the game's: 50, 100, 150, 200 or 300\n", g_settings.berries);
+    tprintf(&s, "prices = %d ; berries spent, percent of the game's: 0 (free), 50, 100 or 200\n", g_settings.prices);
+    tprintf(&s, "damage_dealt = %d ; damage dealt in battles, percent of the game's: 50, 100, 150, 200 or 300\n",
+            g_settings.damage_dealt);
+    tprintf(&s, "damage_taken = %d ; damage taken in battles, percent of the game's: 0 (none), 50, 100, 200 or 300\n",
+            g_settings.damage_taken);
+    tprintf(&s, "chase_speed = %d ; the speed of the Pokemon you chase, percent of the game's: 50, 75, 100, 125 or 150\n\n",
+            g_settings.chase_speed);
+    tprintf(&s, "[updates]\n");
+    tprintf(&s, "check = %d ; 1: at start, ask GitHub whether a newer version is out\n\n", g_settings.check_updates);
+#ifndef __ANDROID__ /* no mouse or keyboard */
+    tprintf(&s, "[mouse]\n");
+    tprintf(&s, "sensitivity = %.2f ; camera turn and pointer speed, times the default\n", g_settings.mouse_sensitivity);
+    tprintf(&s, "invert_tilt = %d\n\n", g_settings.invert_tilt);
+#endif
+    tprintf(&s, "[controller]\n");
+    tprintf(&s, "rumble = %d ; 0 off, 1 light, 2 normal, 3 strong\n", g_settings.rumble);
+#ifdef __ANDROID__
+    tprintf(&s, "touch_controls = %d ; 1 shown while the touch screen was used last, 0 never\n",
+            g_settings.touch_controls);
+#endif
+
+    tprintf(&b, "; Wonderpark controls: two keys and two controller buttons per Wii Remote button.\n\n");
+#ifndef __ANDROID__
+    tprintf(&b, "[keyboard] ; Windows virtual-key codes (mouse buttons too), 0: none\n");
+    for (i = 0; i < ACT_COUNT; i++) {
+        char k1[32], k2[32];
+        settings_key_name(g_settings.key[i][0], k1, sizeof(k1));
+        settings_key_name(g_settings.key[i][1], k2, sizeof(k2));
+        tprintf(&b, "%s = 0x%02X 0x%02X ; %s, %s\n", kActionIni[i], g_settings.key[i][0], g_settings.key[i][1], k1, k2);
+    }
+    tprintf(&b, "\n");
+#endif
+    tprintf(&b, "[controller] ; XInput buttons (0x10000: LT, 0x20000: RT), 0: none\n");
+    for (i = 0; i < ACT_COUNT; i++) {
+        tprintf(&b, "%s = 0x%04X 0x%04X ; %s, %s\n", kActionIni[i], g_settings.pad[i][0], g_settings.pad[i][1],
+                settings_pad_name(g_settings.pad[i][0]), settings_pad_name(g_settings.pad[i][1]));
+    }
+    write_file(settings_path(), s.p);
+    write_file(bindings_path(), b.p);
+    free(s.p);
+    free(b.p);
+}
+
+/* Applies one "key = value" line of section; *sawShake2 notes the second
+ * shake button's lines (1 keyboard, 2 controller). */
+static void parse_option(const char* section, const char* name, const char* p, int* sawShake2) {
+    int i;
+    char* end;
+    unsigned long a, b;
+    if (!strcmp(section, "display")) {
+        if (!strcmp(name, "fullscreen")) g_settings.fullscreen = atoi(p) != 0;
+        if (!strcmp(name, "scale")) g_settings.scale = atoi(p) < 0 ? 0 : atoi(p) > MAX_SCALE ? MAX_SCALE : atoi(p);
+        if (!strcmp(name, "msaa")) g_settings.msaa = valid_msaa(atoi(p));
+        if (!strcmp(name, "aniso")) g_settings.aniso = valid_aniso(atoi(p));
+        if (!strcmp(name, "renderer")) g_settings.renderer = strstr(p, "vulkan") ? RENDERER_VULKAN : RENDERER_OPENGL;
+        if (!strcmp(name, "frame_rate")) g_settings.frame_rate = valid_frame_rate(atoi(p));
+        if (!strcmp(name, "fov")) {
+            int v = atoi(p) / 5 * 5;
+            g_settings.fov = v < FOV_MIN ? FOV_MIN : v > FOV_MAX ? FOV_MAX : v;
+        }
+    } else if (!strcmp(section, "gameplay")) {
+        if (!strcmp(name, "skip_movies")) g_settings.skip_movies = atoi(p) != 0;
+        if (!strcmp(name, "text_speed")) g_settings.text_speed = kTextSpeeds[choice(kTextSpeeds, COUNT(kTextSpeeds), atoi(p))];
+        if (!strcmp(name, "berries")) g_settings.berries = kBerries[choice(kBerries, COUNT(kBerries), atoi(p))];
+        if (!strcmp(name, "prices")) g_settings.prices = kPrices[choice(kPrices, COUNT(kPrices), atoi(p))];
+        if (!strcmp(name, "damage_dealt"))
+            g_settings.damage_dealt = kDamageDealt[choice(kDamageDealt, COUNT(kDamageDealt), atoi(p))];
+        if (!strcmp(name, "damage_taken"))
+            g_settings.damage_taken = kDamageTaken[choice(kDamageTaken, COUNT(kDamageTaken), atoi(p))];
+        if (!strcmp(name, "chase_speed"))
+            g_settings.chase_speed = kChaseSpeeds[choice(kChaseSpeeds, COUNT(kChaseSpeeds), atoi(p))];
+    } else if (!strcmp(section, "mouse")) {
+        if (!strcmp(name, "sensitivity")) {
+            float s = (float)atof(p);
+            g_settings.mouse_sensitivity = s < 0.1f ? 0.1f : s > 3.0f ? 3.0f : s;
+        }
+        if (!strcmp(name, "invert_tilt")) g_settings.invert_tilt = atoi(p) != 0;
+    } else if (!strcmp(section, "updates") && !strcmp(name, "check")) {
+        g_settings.check_updates = atoi(p) != 0;
+    } else if (!strcmp(section, "controller") && !strcmp(name, "rumble")) {
+        g_settings.rumble = atoi(p) < 0 ? 0 : atoi(p) > 3 ? 3 : atoi(p);
+    } else if (!strcmp(section, "controller") && !strcmp(name, "touch_controls")) {
+        g_settings.touch_controls = atoi(p) != 0;
+    }
+    if (!strcmp(section, "keyboard") || !strcmp(section, "controller")) {
+        for (i = 0; i < ACT_COUNT; i++) {
+            if (strcmp(name, kActionIni[i])) continue;
+            if (i == ACT_SHAKE2) *sawShake2 |= section[0] == 'k' ? 1 : 2;
+            a = strtoul(p, &end, 0);
+            b = strtoul(end, NULL, 0);
+            if (section[0] == 'k') {
+                g_settings.key[i][0] = (int)(a & 0xFF);
+                g_settings.key[i][1] = (int)(b & 0xFF);
+            } else {
+                g_settings.pad[i][0] = (uint32_t)a;
+                g_settings.pad[i][1] = (uint32_t)b;
+            }
+        }
+    }
+}
+
+/* Reads one ini file; 0 if it doesn't exist. */
+static int read_file(const char* path, int* sawShake2) {
     char line[256], section[32] = "";
-    int sawShake2 = 0, i; /* the second shake key's lines: 1 keyboard, 2 controller */
-    FILE* f;
+    FILE* f = fopen(path, "r");
+    if (!f) return 0;
+    while (fgets(line, sizeof(line), f)) {
+        char *p = line, *c, name[32];
+        int i;
+        if ((c = strchr(line, ';'))) *c = '\0';
+        while (*p == ' ' || *p == '\t') p++;
+        if (*p == '[') {
+            sscanf(p, "[%31[^]]", section);
+            continue;
+        }
+        if (!(c = strchr(p, '='))) continue;
+        *c = '\0';
+        if (sscanf(p, "%31s", name) != 1) continue;
+        p = c + 1;
+        while (*p == ' ' || *p == '\t') p++;
+        for (c = p + strlen(p); c > p && (c[-1] == '\n' || c[-1] == '\r' || c[-1] == ' ' || c[-1] == '\t'); c--) c[-1] = '\0';
+        if ((i = option_index(section, name)) >= 0) snprintf(sFileValue[i], sizeof(sFileValue[i]), "%s", p);
+        parse_option(section, name, p, sawShake2);
+    }
+    fclose(f);
+    return 1;
+}
+
+void settings_load(void) {
+    int sawShake2 = 0, i, found;
     memset(&g_settings, 0, sizeof(g_settings));
     g_settings.msaa = 1;
     g_settings.aniso = 1;
@@ -270,78 +453,36 @@ void settings_load(void) {
     g_settings.mouse_sensitivity = 1.0f;
     g_settings.check_updates = 1;
     settings_default_controls();
-    f = fopen(settings_path(), "r");
-    if (!f) {
-        settings_save();
-        return;
-    }
-    while (fgets(line, sizeof(line), f)) {
-        char *p = line, *c, *end, name[32];
-        int i;
-        unsigned long a, b;
-        if ((c = strchr(line, ';'))) *c = '\0';
-        while (*p == ' ' || *p == '\t') p++;
-        if (*p == '[') {
-            sscanf(p, "[%31[^]]", section);
-            continue;
-        }
-        if (!(c = strchr(p, '='))) continue;
-        *c = '\0';
-        if (sscanf(p, "%31s", name) != 1) continue;
-        p = c + 1;
-        if (!strcmp(section, "display")) {
-            if (!strcmp(name, "fullscreen")) g_settings.fullscreen = atoi(p) != 0;
-            if (!strcmp(name, "scale")) g_settings.scale = atoi(p) < 0 ? 0 : atoi(p) > MAX_SCALE ? MAX_SCALE : atoi(p);
-            if (!strcmp(name, "msaa")) g_settings.msaa = valid_msaa(atoi(p));
-            if (!strcmp(name, "aniso")) g_settings.aniso = valid_aniso(atoi(p));
-            if (!strcmp(name, "renderer")) g_settings.renderer = strstr(p, "vulkan") ? RENDERER_VULKAN : RENDERER_OPENGL;
-            if (!strcmp(name, "frame_rate")) g_settings.frame_rate = valid_frame_rate(atoi(p));
-            if (!strcmp(name, "fov")) {
-                int v = atoi(p) / 5 * 5;
-                g_settings.fov = v < FOV_MIN ? FOV_MIN : v > FOV_MAX ? FOV_MAX : v;
-            }
-        } else if (!strcmp(section, "gameplay")) {
-            if (!strcmp(name, "text_speed")) g_settings.text_speed = kTextSpeeds[choice(kTextSpeeds, COUNT(kTextSpeeds), atoi(p))];
-            if (!strcmp(name, "berries")) g_settings.berries = kBerries[choice(kBerries, COUNT(kBerries), atoi(p))];
-            if (!strcmp(name, "prices")) g_settings.prices = kPrices[choice(kPrices, COUNT(kPrices), atoi(p))];
-            if (!strcmp(name, "damage_dealt"))
-                g_settings.damage_dealt = kDamageDealt[choice(kDamageDealt, COUNT(kDamageDealt), atoi(p))];
-            if (!strcmp(name, "damage_taken"))
-                g_settings.damage_taken = kDamageTaken[choice(kDamageTaken, COUNT(kDamageTaken), atoi(p))];
-            if (!strcmp(name, "chase_speed"))
-                g_settings.chase_speed = kChaseSpeeds[choice(kChaseSpeeds, COUNT(kChaseSpeeds), atoi(p))];
-        } else if (!strcmp(section, "mouse")) {
-            if (!strcmp(name, "sensitivity")) {
-                float s = (float)atof(p);
-                g_settings.mouse_sensitivity = s < 0.1f ? 0.1f : s > 3.0f ? 3.0f : s;
-            }
-            if (!strcmp(name, "invert_tilt")) g_settings.invert_tilt = atoi(p) != 0;
-        } else if (!strcmp(section, "updates") && !strcmp(name, "check")) {
-            g_settings.check_updates = atoi(p) != 0;
-        } else if (!strcmp(section, "controller") && !strcmp(name, "rumble")) {
-            g_settings.rumble = atoi(p) < 0 ? 0 : atoi(p) > 3 ? 3 : atoi(p);
-        } else if (!strcmp(section, "controller") && !strcmp(name, "touch_controls")) {
-            g_settings.touch_controls = atoi(p) != 0;
-        } else if (!strcmp(section, "keyboard") || !strcmp(section, "controller")) {
-            for (i = 0; i < ACT_COUNT; i++) {
-                if (strcmp(name, kActionIni[i])) continue;
-                if (i == ACT_SHAKE2) sawShake2 |= section[0] == 'k' ? 1 : 2;
-                a = strtoul(p, &end, 0);
-                b = strtoul(end, NULL, 0);
-                if (section[0] == 'k') {
-                    g_settings.key[i][0] = (int)(a & 0xFF);
-                    g_settings.key[i][1] = (int)(b & 0xFF);
-                } else {
-                    g_settings.pad[i][0] = (uint32_t)a;
-                    g_settings.pad[i][1] = (uint32_t)b;
-                }
-            }
+    memset(sOverridden, 0, sizeof(sOverridden));
+    memset(sFileValue, 0, sizeof(sFileValue));
+
+    found = read_file(settings_path(), &sawShake2);
+#ifdef _WIN32
+    if (!found) {
+        /* Before Wonderpark kept its files in %APPDATA%, settings.ini (with
+         * the bindings in it) was beside the program: carried over once. */
+        char old[1024], *slash;
+        GetModuleFileNameA(NULL, old, sizeof(old) - 16);
+        if ((slash = strrchr(old, '\\')) != NULL) {
+            strcpy(slash + 1, "settings.ini");
+            found = read_file(old, &sawShake2);
         }
     }
-    fclose(f);
+#endif
+    read_file(bindings_path(), &sawShake2);
+
+    /* WONDERPARK_<KEY> wins over the file. */
+    for (i = 0; i < OPTIONS; i++) {
+        const char* e = getenv(kOptions[i].env);
+        if (!e || !*e) continue;
+        sOverridden[i] = 1;
+        parse_option(kOptions[i].section, kOptions[i].key, e, &sawShake2);
+        fprintf(stderr, "settings: %s = %s (from %s)\n", kOptions[i].key, e, kOptions[i].env);
+    }
+
     /* Files from before the second shake key gave its default (RB) to
      * shake: it moves over. */
-    if (!(sawShake2 & 2)) {
+    if (found && !(sawShake2 & 2)) {
         for (i = 0; i < ACT_COUNT; i++) {
             int k;
             for (k = 0; k < BIND_SLOTS; k++) {
@@ -349,12 +490,24 @@ void settings_load(void) {
             }
         }
     }
-    if (!(sawShake2 & 1)) {
+    if (found && !(sawShake2 & 1)) {
         for (i = 0; i < ACT_COUNT; i++) {
             int k;
             for (k = 0; k < BIND_SLOTS; k++) {
                 if (i != ACT_SHAKE2 && g_settings.key[i][k] == g_settings.key[ACT_SHAKE2][0]) g_settings.key[i][k] = 0;
             }
+        }
+    }
+    /* Write the files out (both, or the one that's missing). */
+    {
+        FILE* f = fopen(bindings_path(), "r");
+        int haveBindings = f != NULL;
+        if (f) fclose(f);
+        if (!found || !haveBindings) settings_save();
+        else {
+            f = fopen(settings_path(), "r");
+            if (!f) settings_save();
+            else fclose(f);
         }
     }
     apply_frame_rate();
