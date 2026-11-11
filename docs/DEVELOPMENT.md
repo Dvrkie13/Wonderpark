@@ -90,7 +90,7 @@ the file).
 | `WONDERPARK_WATCH=lo-hi` | physical range for `memcpywatch`, or the store watch (CMake `-DWP_STORE_WATCH=ON`) |
 | `WONDERPARK_AUDIO_DUMP=file.wav` | also write the sound output to a file |
 | `WONDERPARK_AX_NOAUX`, `WONDERPARK_AX_SNAP`, `WONDERPARK_AX_WB` | AX mixer debugging |
-| `RECOMP_FPS=1` | print fps and GL timings every second |
+| `RECOMP_FPS=1` | print fps, the overlay's numbers (`stats:`) and GL timings every second |
 | `RECOMP_AUDIO=0` | no sound |
 | `RECOMP_GX_HIDDEN=1` | hidden window (`--headless` does this too) |
 | `RECOMP_GX_DUMP=dir`, `RECOMP_GX_DUMP_EVERY=N`, `RECOMP_GX_DUMP_FROM=N` | save presented frames as BMPs |

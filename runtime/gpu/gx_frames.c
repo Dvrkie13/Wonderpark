@@ -168,6 +168,14 @@ static void report(void) {
             g_wp_stats.efb_copies = g_cnt_efb_copies;
             g_wp_stats.efb_copies_tex = g_cnt_efb_copies_tex;
             g_wp_stats.serial++;
+            if (e && *e == '1' && frames > 0)
+                fprintf(stderr,
+                        "stats: per frame cpu %.1f gpu %.1f wait %.1f ms; tex %u (%.1f ms); readbacks %u; "
+                        "verts %.0f; batches %.0f; gxdraws %.0f; efbcopies %.1f (tex %.1f)\n",
+                        g_wp_stats.cpu_ms / frames, gpums / frames, waitms / frames, g_wp_stats.texture_uploads,
+                        g_wp_stats.texture_ms, g_cnt_readbacks, g_cnt_vertices / frames,
+                        sGlCalls[GLK_DRAW] / frames, g_cnt_gx_draws / frames, g_cnt_efb_copies / frames,
+                        g_cnt_efb_copies_tex / frames);
             g_cnt_shader_compiles = g_cnt_readbacks = g_cnt_vertices = g_cnt_gx_draws = 0;
             g_cnt_efb_copies = g_cnt_efb_copies_tex = 0;
             lastGpu = g_gpu_tb;
