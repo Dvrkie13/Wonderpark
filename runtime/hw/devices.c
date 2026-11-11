@@ -3,6 +3,8 @@
 
 void hw_ipc_init(void);
 void hw_ipc_tick(void);
+void hw_gx_tick(void);
+extern void (*g_gx_game_tick)(void); /* runtime/gpu/gx_thread.c */
 void hw_misc_init(void);
 void hw_vi_init(void);
 void hw_vi_tick(uint64_t now);
@@ -27,6 +29,8 @@ void wp_devices_init(void) {
 
 void wp_devices_tick(uint64_t now) {
     hw_ipc_tick();
+    hw_gx_tick();
+    if (g_gx_game_tick) g_gx_game_tick();
     hw_vi_tick(now);
     hw_dsp_tick(now);
 }

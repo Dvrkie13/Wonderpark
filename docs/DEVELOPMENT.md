@@ -84,6 +84,8 @@ the file).
 | `WONDERPARK_MAX_SLICES` | stop after N dispatcher slices, printing where |
 | `WONDERPARK_PEEK=addr,len` | with `WONDERPARK_MAX_SLICES`: dump guest memory at the stop |
 | `WONDERPARK_NO_IDLE_SLEEP` | don't sleep in the game's idle loop |
+| `WONDERPARK_RENDER_THREAD=1` | decode GX and draw on a render thread beside the game (`runtime/gpu/gx_thread.c`; off by default until measured) |
+| `WONDERPARK_RT_DEBUG=1` | with the render thread: print its state and the GPU interrupt state at exit |
 | `WONDERPARK_SYNC_IOS=1` | handle IOS requests (disc, NAND) on the game thread at once, not on the IOS thread (for comparisons) |
 | `WONDERPARK_DIRECT_LOG=1` | write log lines straight to stderr instead of through the log thread |
 | `WONDERPARK_NO_HIDE` | don't hide GPU/DSP time from the game's clock (for comparisons) |
@@ -104,7 +106,7 @@ the file).
 
 ### `WONDERPARK_LOG` categories
 
-`adxcheck axramp axvoice axvoices dec dsp efbcopy exc gxhw gxirq hook hostprof hwmisc idle ios ipc irq kpad memcpywatch mmio mmiostat movie mqwatch nandio pi pointer prof stalls steps threads waits wpad wpadbtn`
+`adxcheck axramp axvoice axvoices dec dsp efbcopy exc gxhw gxirq hook gxpe hostprof hwmisc idle ios ipc irq kpad memcpywatch mmio mmiostat movie mqwatch nandio pi pointer prof stalls steps threads waits wpad wpadbtn`
 
 The most useful: `waits` (where threads block), `steps` (the game's logic
 steps per tick), `idle`, `efbcopy`, `gxirq`, `mmiostat` (slow memory

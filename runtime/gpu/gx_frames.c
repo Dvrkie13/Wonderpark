@@ -151,7 +151,13 @@ static void report(void) {
             g_wp_stats.frames = frames;
             g_wp_stats.wait_ms = waitms;
             g_wp_stats.gpu_ms = gpums;
-            g_wp_stats.cpu_ms = busyms > gpums ? busyms - gpums : 0;
+            {
+                /* On the game thread, GPU time is part of its busy time;
+                 * on the render thread (gx_thread.c) it is beside it. */
+                extern int g_gx_threaded;
+                g_wp_stats.cpu_ms = g_gx_threaded ? busyms : busyms > gpums ? busyms - gpums : 0;
+                g_wp_stats.render_thread = g_gx_threaded;
+            }
             g_wp_stats.hidden_ms = gpums;
             g_wp_stats.shader_compiles = g_cnt_shader_compiles;
             g_wp_stats.shader_compiles_total = compilesTotal;
@@ -217,9 +223,16 @@ static void show(int x, int y, int w, int h) {
     }
     if (sDev->present(x, y, w, h, sRecording)) sPresentsDropped++;
     report();
-    win_pump();
+    {
+        /* With the render thread, the window is the game thread's
+         * (gx_thread.c handles its messages and fullscreen). */
+        extern int g_gx_threaded;
+        if (!g_gx_threaded) {
+            win_pump();
+            win_set_fullscreen(g_settings.fullscreen);
+        }
+    }
     /* Between frames, so a change doesn't lose the one being drawn. */
-    win_set_fullscreen(g_settings.fullscreen);
     sDev->apply_settings();
 }
 
@@ -847,6 +860,15 @@ static void write_back_copies(void) {
     int i;
     for (i = 0; i < sWriteBackCount; i++) write_back(&sWriteBacks[i], 0);
     sWriteBackCount = 0;
+}
+
+/* A token or draw-done interrupt is about to tell the game the GPU got
+ * this far: copies made before it must be in memory by then, as on a Wii,
+ * where a copy is written as the GPU executes it. Once the game knows,
+ * it may free the memory (with the render thread, gx_thread.c, a write at
+ * the next present landed in memory the game had freed and reused). */
+void gxb_sync_point(void) {
+    if (sWriteBackCount) write_back_copies();
 }
 
 /* g_gx_copy_sync: the copy holding addr, made every frame and so never

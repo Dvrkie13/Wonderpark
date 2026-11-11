@@ -7,6 +7,10 @@
  * hardware. The CP consumes it at once while it is linked to that FIFO (CP
  * control: GP read enable + GP link enable); GXBeginDisplayList points the PI
  * FIFO at a buffer and unlinks, so display lists are recorded, not drawn. */
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#endif
 #include <string.h>
 
 #include "../core/wp.h"
@@ -81,10 +85,15 @@ static void cp_write(u32 a, u32 v, int size) {
 
 /* ---- PE: token / finish interrupts. */
 static u16 s_pe_ctrl, s_pe_token;
-#define TOKEN_QUEUE 32
-static u16 s_tokens[TOKEN_QUEUE];
+/* Token and finish interrupts in the order the GPU reached them: a token
+ * (0x10000 | token) or a finish (0x20000). One is shown at a time: the
+ * game's token handler acknowledges by writing back the register as it
+ * read it, which would acknowledge a finish shown beside it too, and the
+ * game would wait in GXDrawDone for ever (seen with the render thread,
+ * where both can arrive at once). */
+#define PE_QUEUE 64
+static u32 s_pe_queue[PE_QUEUE];
 static unsigned s_th, s_tt;
-static int s_finish_pending;
 
 static void pe_update(void) {
     hw_pi_set(PI_INT_PE_TOKEN, (s_pe_ctrl & 4) && (s_pe_ctrl & 1));
@@ -92,13 +101,14 @@ static void pe_update(void) {
 }
 
 static void pe_next(void) {
-    if (!(s_pe_ctrl & 4) && s_th != s_tt) {
-        s_pe_token = s_tokens[s_th++ % TOKEN_QUEUE];
-        s_pe_ctrl |= 4;
-    }
-    if (!(s_pe_ctrl & 8) && s_finish_pending) {
-        s_finish_pending--;
-        s_pe_ctrl |= 8;
+    if (!(s_pe_ctrl & 0xC) && s_th != s_tt) {
+        u32 e = s_pe_queue[s_th++ % PE_QUEUE];
+        if (e & 0x10000) {
+            s_pe_token = (u16)e;
+            s_pe_ctrl |= 4;
+        } else {
+            s_pe_ctrl |= 8;
+        }
     }
     pe_update();
 }
@@ -116,6 +126,7 @@ static void pe_write(u32 a, u32 v, int size) {
     (void)size;
     switch (a & 0xFEu) {
     case 0x0A:
+        WP_LOG("gxpe", "%.2f ctrl write %X (was %X) pc %08X", wp_wall_seconds() * 1000, v, s_pe_ctrl, g_cpu ? g_cpu->pc : 0);
         /* bits 0/1 enables; writing 1 to 2/3 acknowledges token/finish */
         s_pe_ctrl = (u16)((s_pe_ctrl & 0xC & ~(v & 0xC)) | (v & 3));
         pe_next();
@@ -125,12 +136,72 @@ static void pe_write(u32 a, u32 v, int size) {
     }
 }
 
+/* With the render thread (runtime/gpu/gx_thread.c), the decoder's
+ * interrupts and token writes come from that thread: they are queued and
+ * taken in on the game thread at the next device tick (hw_gx_tick), and
+ * the game is woken if it sleeps in its idle loop. */
+#ifdef _WIN32
+#define GPU_EVENTS 256
+static CRITICAL_SECTION s_ev_lock;
+static DWORD s_game_thread;
+static struct { int n; u32 data; } s_ev[GPU_EVENTS];
+static volatile unsigned s_ev_head, s_ev_tail;
+
+static int from_render_thread(int n, u32 data) {
+    if (GetCurrentThreadId() == s_game_thread) return 0;
+    EnterCriticalSection(&s_ev_lock);
+    if (s_ev_tail - s_ev_head < GPU_EVENTS) {
+        s_ev[s_ev_tail % GPU_EVENTS].n = n;
+        s_ev[s_ev_tail % GPU_EVENTS].data = data;
+        s_ev_tail++;
+    } else {
+        WP_WARN("GPU event queue full");
+    }
+    LeaveCriticalSection(&s_ev_lock);
+    wp_wake();
+    return 1;
+}
+#endif
+
+static void raise_now(int n, u32 data);
+
+/* BP 0x47: the token register, without an interrupt. */
+void hle_pe_set_token(uint32_t token) {
+#ifdef _WIN32
+    if (from_render_thread(0x47, token)) return;
+#endif
+    s_pe_token = (u16)token;
+}
+
+void hw_gx_tick(void) {
+#ifdef _WIN32
+    if (s_ev_head == s_ev_tail) return;
+    EnterCriticalSection(&s_ev_lock);
+    while (s_ev_head != s_ev_tail) {
+        int n = s_ev[s_ev_head % GPU_EVENTS].n;
+        u32 data = s_ev[s_ev_head % GPU_EVENTS].data;
+        s_ev_head++;
+        if (n == 0x47) s_pe_token = (u16)data;
+        else raise_now(n, data);
+    }
+    LeaveCriticalSection(&s_ev_lock);
+#endif
+}
+
 /* Called by the decoder (runtime/gpu/gx_fifo.c), with the OS's interrupt
  * numbers: 18 = PE token (data = the token), 19 = PE finish. The token is
  * queued here and put in the register when its interrupt is raised, so
  * each interrupt reports its own token (the decoder's before() isn't needed). */
 void hle_raise_interrupt_ex(int n, void (*before)(uint32_t data), uint32_t data) {
     (void)before;
+#ifdef _WIN32
+    if (from_render_thread(n, data)) return;
+#endif
+    raise_now(n, data);
+}
+
+static void raise_now(int n, u32 data) {
+    WP_LOG("gxpe", "%.2f raise %d data %X (ctrl %X)", wp_wall_seconds() * 1000, n, data, s_pe_ctrl);
     if (wp_log_on("gxirq")) {
         static unsigned tok, fin;
         static u64 since;
@@ -144,9 +215,9 @@ void hle_raise_interrupt_ex(int n, void (*before)(uint32_t data), uint32_t data)
         }
     }
     if (n == 18) {
-        if (s_tt - s_th < TOKEN_QUEUE) s_tokens[s_tt++ % TOKEN_QUEUE] = (u16)data;
+        if (s_tt - s_th < PE_QUEUE) s_pe_queue[s_tt++ % PE_QUEUE] = 0x10000u | (u16)data;
     } else if (n == 19) {
-        s_finish_pending++;
+        if (s_tt - s_th < PE_QUEUE) s_pe_queue[s_tt++ % PE_QUEUE] = 0x20000u;
     } else {
         WP_WARN("GPU raised interrupt %d", n);
         return;
@@ -157,6 +228,22 @@ void hle_raise_interrupt_ex(int n, void (*before)(uint32_t data), uint32_t data)
 void hle_raise_interrupt(int n) { hle_raise_interrupt_ex(n, NULL, 0); }
 
 void hw_gx_init(void) {
+#ifdef _WIN32
+    InitializeCriticalSection(&s_ev_lock);
+    s_game_thread = GetCurrentThreadId();
+#endif
     wp_mmio_register(0x0C000000u, 0x80u, cp_read, cp_write);
     wp_mmio_register(0x0C001000u, 0x100u, pe_read, pe_write);
+}
+
+/* WONDERPARK_RT_DEBUG: the PE state, at exit (gx_thread.c). */
+void hw_gx_debug_print(void) {
+    fprintf(stderr, "gpu: PE ctrl %X token %04X, interrupts queued %u, events %u of %u taken\n",
+            s_pe_ctrl, s_pe_token, s_tt - s_th,
+#ifdef _WIN32
+            s_ev_head, s_ev_tail
+#else
+            0u, 0u
+#endif
+    );
 }

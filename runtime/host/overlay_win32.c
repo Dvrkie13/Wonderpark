@@ -72,7 +72,7 @@ static void draw_panel(int w, int h) {
     snprintf(lines[n++], 96, "%.1f fps   slowest frame %.1f ms", s->fps, s->slowest_ms);
     snprintf(lines[n++], 96, "per frame: CPU %.1f ms  GPU %.1f ms  wait %.1f ms", s->cpu_ms / frames,
              s->gpu_ms / frames, s->wait_ms / frames);
-    snprintf(lines[n++], 96, "  (GPU = GX decode + GL calls, on the game thread)");
+    snprintf(lines[n++], 96, "  (GPU = GX decode + GL calls, on %s)", s->render_thread ? "the render thread" : "the game thread");
     snprintf(lines[n++], 96, "shader compiles %u (total %u)", s->shader_compiles, s->shader_compiles_total);
     snprintf(lines[n++], 96, "texture uploads %u  (%.1f ms)", s->texture_uploads, s->texture_ms);
     snprintf(lines[n++], 96, "CPU readbacks %u", s->readbacks);
@@ -80,7 +80,8 @@ static void draw_panel(int w, int h) {
     snprintf(lines[n++], 96, "draw batches %.0f / frame  (GX draws %.0f)", s->batches / frames, s->gx_draws / frames);
     snprintf(lines[n++], 96, "EFB copies %.1f / frame  (to textures %.1f)", s->efb_copies / frames,
              s->efb_copies_tex / frames);
-    snprintf(lines[n++], 96, "GPU time hidden from the game clock %.1f ms / s", s->hidden_ms);
+    if (!s->render_thread)
+        snprintf(lines[n++], 96, "GPU time hidden from the game clock %.1f ms / s", s->hidden_ms);
     {
         extern const char* wp_movie_playing(void); /* dvd.c */
         const char* m = wp_movie_playing();

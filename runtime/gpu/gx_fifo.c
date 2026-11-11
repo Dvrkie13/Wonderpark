@@ -64,6 +64,8 @@ static uint64_t gpu_ticks_to_tb(uint64_t tsc) {
 #define PE_TOKEN_REG 0xCC00100Eu
 void hle_raise_interrupt(int n);
 void hle_raise_interrupt_ex(int n, void (*before)(uint32_t data), uint32_t data);
+void hle_pe_set_token(uint32_t token);
+void gxb_sync_point(void); /* gx_frames.c: copies to memory before the game hears the GPU got here */
 
 /* Each token interrupt reports its own token, even when several are
  * queued before the first is handled. */
@@ -143,6 +145,20 @@ static void fifo_append(uint32_t value, int size) {
         wp_parallel_time_hide(tb);
     }
 }
+
+/* The render thread's side (gx_thread.c): bytes the game sent, decoded
+ * as far as they make whole commands. */
+void gx_fifo_consume(const uint8_t* p, size_t n) {
+    if (sFifoLen + n > sFifoCap) {
+        while (sFifoLen + n > sFifoCap) sFifoCap = sFifoCap ? sFifoCap * 2 : (1u << 20);
+        sFifo = (uint8_t*)realloc(sFifo, sFifoCap);
+    }
+    memcpy(sFifo + sFifoLen, p, n);
+    sFifoLen += n;
+    if (sFifoLen >= sNeed) gx_flush();
+}
+
+uint64_t gx_tsc_to_tb(uint64_t tsc) { return gpu_ticks_to_tb(tsc); }
 
 /* Big-endian reads, as one load and a byte swap (ppc.h). */
 static uint32_t rd32(const uint8_t* p) {
@@ -1637,9 +1653,9 @@ static void bp_write(uint32_t v) {
     if (reg >= 0xE0 && reg <= 0xE7) set_tev_color((int)reg, val);
     else if (reg == 0x65) load_tlut();
     else if (reg == 0x52) efb_copy(val);
-    else if (reg == 0x45) hle_raise_interrupt(INTERRUPT_PE_FINISH); /* draw done */
-    else if (reg == 0x47) ST16(PE_TOKEN_REG, val & 0xFFFF);
-    else if (reg == 0x48) hle_raise_interrupt_ex(INTERRUPT_PE_TOKEN, set_token, val & 0xFFFF);
+    else if (reg == 0x45) gxb_sync_point(), hle_raise_interrupt(INTERRUPT_PE_FINISH); /* draw done */
+    else if (reg == 0x47) gxb_sync_point(), hle_pe_set_token(val & 0xFFFF); /* hw_gx.c */
+    else if (reg == 0x48) gxb_sync_point(), hle_raise_interrupt_ex(INTERRUPT_PE_TOKEN, set_token, val & 0xFFFF);
 }
 
 /* ------------------------------------------------------------------------ */
@@ -1750,4 +1766,8 @@ void gx_init(void) {
     g_gx_flush = gx_flush;
     g_gx_copy_sync = gxb_copy_sync;
     sReady = 1;
+    {
+        int gxt_start(void); /* gx_thread.c: decoding and drawing move to a render thread */
+        gxt_start();
+    }
 }

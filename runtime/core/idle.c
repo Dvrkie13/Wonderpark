@@ -19,6 +19,7 @@ uint64_t wp_timers_next(void);
 int wp_irq_pending(void);
 extern uint64_t g_wait_ticks;
 void* wp_wake_event(void); /* hw_ipc.c */
+extern void (*g_gx_game_tick)(void); /* runtime/gpu/gx_thread.c */
 
 #define MAX_SLEEP (TB_HZ / 100) /* never more than 10 ms at once */
 
@@ -71,6 +72,7 @@ WP_HOOK(0x80296090, SelectThread_idle) {
         return 0;
     }
     if (off) return 0;
+    if (g_gx_game_tick) g_gx_game_tick(); /* the render thread has all that was sent */
     wp_clock_tick();
     start = wp_host_time();
     sleep_until(next_event(start));

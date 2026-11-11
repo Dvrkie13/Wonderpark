@@ -3,6 +3,7 @@
  *
  * Environment:
  *   RECOMP_GX_HIDDEN=1         do not show the window */
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -21,6 +22,14 @@ static int sHidden, sFullscreen;
  * and below.) */
 static double sPixelAspect = 1;
 static WINDOWPLACEMENT sWindowed;
+/* From another thread (the render thread), the title waits for the
+ * window's own thread: setting it there would wait until that thread
+ * handles its messages. */
+static DWORD sThread;
+static CRITICAL_SECTION sTitleLock;
+static char sTitle[128];
+static volatile LONG sTitlePending;
+
 
 static LRESULT CALLBACK wnd_proc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
     if (msg == WM_CLOSE) exit(0);
@@ -47,6 +56,8 @@ void win_create(void) {
         sPixelAspect = 16.0 / 9.0 * 456.0 / 640.0;
         r.right = (LONG)(r.right * sPixelAspect + 0.5);
     }
+    sThread = GetCurrentThreadId();
+    InitializeCriticalSection(&sTitleLock);
     memset(&wc, 0, sizeof(wc));
     wc.lpfnWndProc = wnd_proc;
     wc.hInstance = GetModuleHandleA(NULL);
@@ -96,10 +107,27 @@ void win_set_fullscreen(int on) {
     }
 }
 
-void win_set_title(const char* title) { SetWindowTextA(sWnd, title); }
+void win_set_title(const char* title) {
+    if (GetCurrentThreadId() == sThread) {
+        SetWindowTextA(sWnd, title);
+        return;
+    }
+    EnterCriticalSection(&sTitleLock);
+    snprintf(sTitle, sizeof(sTitle), "%s", title);
+    sTitlePending = 1;
+    LeaveCriticalSection(&sTitleLock);
+}
 
 void win_pump(void) {
     MSG msg;
+    if (sTitlePending) {
+        char t[128];
+        EnterCriticalSection(&sTitleLock);
+        memcpy(t, sTitle, sizeof(t));
+        sTitlePending = 0;
+        LeaveCriticalSection(&sTitleLock);
+        SetWindowTextA(sWnd, t);
+    }
     while (PeekMessageA(&msg, NULL, 0, 0, PM_REMOVE)) {
         TranslateMessage(&msg);
         DispatchMessageA(&msg);

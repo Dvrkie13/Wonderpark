@@ -115,6 +115,11 @@ static void ios_thread_finish(void) {
 
 void* wp_wake_event(void) { return s_wake; }
 
+/* Ends the idle loop's sleep (an IOS reply, a GPU interrupt). */
+void wp_wake(void) {
+    if (s_wake) SetEvent(s_wake);
+}
+
 static void collect(void) {
     if (s_done_head == s_done_tail) return; /* read without the lock: at worst picked up next tick */
     EnterCriticalSection(&s_lock);
@@ -126,6 +131,7 @@ static void collect(void) {
 }
 #else
 void* wp_wake_event(void) { return NULL; }
+void wp_wake(void) {}
 static void collect(void) {}
 #endif
 

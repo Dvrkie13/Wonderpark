@@ -85,6 +85,7 @@ const char* wp_data_dir(void);
 const char* wp_cache_dir(void);
 void wp_make_dirs(const char* path);
 /* GPU time hidden from the guest clock until it next idles (cpu_host.c). */
+void wp_wake(void); /* hw_ipc.c: ends the idle loop's sleep */
 void wp_parallel_time_hide(uint64_t ticks);
 void wp_parallel_time_restore(void);
 int wp_parallel_time_pending(void);
