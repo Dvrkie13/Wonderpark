@@ -20,44 +20,67 @@ contain game files, and don't ask for disc images.
 
 ## Status
 
-Early development. The opening area plays from start to save.
+Work in progress (development preview). Played so far from the start of the
+story through the first areas and the first attraction; a full playthrough
+hasn't been done yet.
 
-| Step | State |
+| Part | State |
 | --- | --- |
-| Repo, disc check and extraction | done |
-| CPU recompile (PowerPC to C, DolRecomp) | done |
-| Boot to title | reaches the title screen at full speed (30 fps) |
-| Sound (CRI Atom over AX) | plays (music, effects) |
-| First area (walk, mini-game, battle, save/load) | plays at 30 fps (dips only while loading) |
-| First attraction (Wish Park, pointer) | Cake Contraption plays to the end (mouse as pointer) |
-| Full playthrough, launcher | not started |
+| Disc check, extraction, CPU recompile (DolRecomp) | done |
+| Boot, title, saves | works; saves in `%APPDATA%\Wonderpark`, survive restarts |
+| Sound (CRI Atom over AX) | music and effects play |
+| First area (walk, mini-game, battle, save/load) | plays at 30 fps |
+| Wish Park, Seasong Beach | 30 fps; the game's own work is 10-14 ms of the 33 ms frame (PGO build) |
+| First attraction (Cake Contraption, pointer) | plays to the end (mouse as pointer) |
+| Movies (Mobiclip) | detected and played; picture and sound still to be confirmed; skipping doesn't work yet |
+| Other attractions, chases, full playthrough | not checked yet |
+| Launcher, settings menu (F1), 60 fps | not built yet |
 
-## Extracting your disc (developers)
+## Playing it (development preview)
 
-Requires Python 3 and [decomp-toolkit](https://github.com/encounter/decomp-toolkit) (`dtk`).
+There is no installer or launcher yet: you build the game on your own PC
+from your own disc. Nothing from the game is downloaded or included here.
 
-```
-python tools/extract_disc.py path\to\your\disc.iso
-```
+You need:
 
-The script checks that the disc's game ID is `S2LE01`, then extracts
-`main.dol`, any `.rel` modules and the file tree into `game/` (git-ignored).
-NKit-processed `.iso` images are also accepted.
+- Your own *PokéPark 2: Wonders Beyond* disc image, US version (`S2LE01`).
+- Windows 10 or 11, 64-bit, and about 6 GB free disk space.
+- [Python 3](https://www.python.org/) (3.10 or newer).
+- [Visual Studio Build Tools](https://visualstudio.microsoft.com/downloads/)
+  with the "Desktop development with C++" workload (CMake and Ninja come
+  with it), plus the "C++ Clang tools for Windows" component. Clang makes
+  the game run about twice as fast as Microsoft's compiler; an
+  [llvm-mingw](https://github.com/mstorsjo/llvm-mingw) install also works.
+- [decomp-toolkit](https://github.com/encounter/decomp-toolkit) (`dtk.exe`)
+  on your PATH, for reading the disc.
 
-## Building (developers)
-
-Also needs CMake, Ninja and Visual Studio Build Tools (C++). clang-cl is
-strongly recommended (the game runs about twice as fast built with it): the
-Build Tools' "C++ Clang tools" component, or an llvm-mingw install. Fetch the submodule
-first: `git submodule update --init --recursive`.
+Then, in the folder you unpacked (or cloned with
+`git clone --recursive`):
 
 ```
 python builder/pipeline.py path\to\your\disc.iso
+.\build\game\Wonderpark.exe
 ```
 
-This verifies and extracts the disc, recompiles `main.dol` with DolRecomp
-(`tools/recomp.py`), and compiles `build/game/Release/Wonderpark.exe`.
-It reaches the title screen but isn't playable yet.
+The first command checks and extracts the disc, recompiles the game and
+compiles `build\game\Wonderpark.exe` (20-30 minutes). Optional, for
+about a third less CPU time per frame: once you have a save in a busy area,
+`python tools/pgo_train.py`, then `python tools/build_game.py` again.
+
+Controls: keyboard and mouse or a controller (`bindings.ini` in
+`%APPDATA%\Wonderpark`); the mouse is the Wii Remote pointer. Alt+Enter
+toggles fullscreen; backtick opens the debug overlay.
+
+**Don't share your built game folder** (`game\`, `generated\`, `build\`):
+it contains the game's code and files from your disc.
+
+## Developers
+
+`docs/DEVELOPMENT.md` lists the commands, settings, environment variables
+and where each kind of change goes. `docs/recomp-status.md` has the progress
+notes. Fetch the submodule first: `git submodule update --init --recursive`.
+Disc extraction alone: `python tools/extract_disc.py path\to\your\disc.iso`
+(checks the game ID and revision; NKit images are accepted).
 
 ## Repository layout
 
