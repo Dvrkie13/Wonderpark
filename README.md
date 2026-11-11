@@ -34,12 +34,13 @@ hasn't been done yet.
 | First attraction (Cake Contraption, pointer) | plays to the end (mouse as pointer) |
 | Movies (Mobiclip) | detected and played; picture and sound still to be confirmed; skipping doesn't work yet |
 | Other attractions, chases, full playthrough | not checked yet |
-| Launcher, settings menu (F1), 60 fps | not built yet |
+| Launcher (one-time builder) | works: place the disc, build, play |
+| Settings menu (F1), 60 fps | not built yet |
 
 ## Playing it (development preview)
 
-There is no installer or launcher yet: you build the game on your own PC
-from your own disc. Nothing from the game is downloaded or included here.
+You build the game on your own PC from your own disc, with the launcher.
+Nothing from the game is downloaded or included here.
 
 You need:
 
@@ -52,19 +53,27 @@ You need:
   the game run about twice as fast as Microsoft's compiler; an
   [llvm-mingw](https://github.com/mstorsjo/llvm-mingw) install also works.
 - [decomp-toolkit](https://github.com/encounter/decomp-toolkit) (`dtk.exe`)
-  on your PATH, for reading the disc.
+  on your PATH or in `tools\bin`, for reading a plain `.iso`, `.wbfs` or
+  `.rvz` (NKit images are read without it).
 
 Then, in the folder you unpacked (or cloned with
-`git clone --recursive`):
+`git clone --recursive`), build the launcher once and open it:
 
 ```
-python builder/pipeline.py path\to\your\disc.iso
-.\build\game\Wonderpark.exe
+python tools/build_launcher.py
+.\build\launcher\WonderparkLauncher.exe
 ```
 
-The first command checks and extracts the disc, recompiles the game and
-compiles `build\game\Wonderpark.exe` (20-30 minutes). Optional, for
-about a third less CPU time per frame: once you have a save in a busy area,
+Click the logo, then the one button: **Place ISO** (pick your disc image),
+**Build** (checks and extracts the disc, recompiles the game and compiles
+`build\game\Wonderpark.exe`: 20-30 minutes, the window shows each stage),
+then **Play**. Next time the launcher goes straight to Play, or offers
+Rebuild after an update. Esc or closing the window stops a build. Without
+the launcher: `python builder/pipeline.py path\to\your\disc.iso`, then
+`.\build\game\Wonderpark.exe`.
+
+Optional, for about a third less CPU time per frame: once you have a save
+in a busy area,
 `python tools/pgo_train.py`, then `python tools/build_game.py` again.
 
 Controls: keyboard and mouse or a controller (`bindings.ini` in

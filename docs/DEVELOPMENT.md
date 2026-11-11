@@ -30,6 +30,10 @@ python tools/build_game.py --no-pgo         # without the PGO profile (used by d
 python tools/build_game.py --no-lto         # without ThinLTO (on by default when lld-link.exe and llvm-lib.exe are beside clang-cl; ~13 min instead of ~18)
 python tools/build_game.py --build-dir game-x --cflags "/arch:AVX2"   # a variant in build/game-x, for comparisons
 python builder/pipeline.py <disc.iso>        # all of the above, with progress for the launcher
+python builder/pipeline.py --rebuild         # recompile and compile again from the extracted disc in game/
+python builder/pipeline.py --status          # @status ok|missing|outdated (is build/game current with the sources?)
+python tools/build_launcher.py               # build build/launcher/WonderparkLauncher.exe (the launcher, MSVC)
+.\build\launcher\WonderparkLauncher.exe      # the launcher: place the disc, build, play
 .\build\game\Wonderpark.exe                  # run (from the repo root)
 .\build\game\Wonderpark.exe --headless --exit-after 60   # automated run, prints a summary
 ```
@@ -42,6 +46,42 @@ python builder/pipeline.py <disc.iso>        # all of the above, with progress f
 | `--headless` | no visible window, no sound device, no input |
 | `--exit-after N` | stop after N real seconds: frames, average fps, retraces |
 | `--help` | usage |
+
+## The launcher (`builder/launcher/`)
+
+`WonderparkLauncher.exe` is a native Win32 window drawn with Direct2D and
+DirectWrite (part of Windows; no runtime to install). It matches
+`docs/launcher-mockup.html`; everything is drawn in code, and the only
+files built into it are the Fredoka and Nunito fonts (SIL OFL,
+`builder/launcher/fonts/`). It contains no game code or data, so the
+executable can ship in a release.
+
+- It finds the Wonderpark folder by looking upwards from itself for
+  `builder/pipeline.py` (or `--root <dir>`, or `WONDERPARK_ROOT`).
+- It runs `builder/pipeline.py` with Python (`WONDERPARK_PYTHON`, else
+  `python.exe` on PATH, else `py -3`) on a worker thread, in a Windows job
+  object (stopping the build or closing the launcher ends every process
+  of it). Each build's output goes to `build/logs/build-<date>-<time>.log`
+  ("Show log" after an error opens it).
+- At start it asks `pipeline.py --status`: a current build shows Play, an
+  out-of-date one (the sources changed) Rebuild, none Place ISO.
+- The disc check on "Verifying…" (game ID S2LE01, revision 0) is done by
+  the launcher itself from the image's header; the full image hash is
+  part of the build's first stage.
+- Esc, or closing the window, during a build asks whether to stop it.
+- Controller A, Enter and Space press the main button. With Windows'
+  "Animation effects" off (or `--reduced-motion`), nothing moves.
+
+Test options: `--test-iso <file>` (instead of the file picker) and
+`--test-script "<seconds>:<action>,..."` with actions `logo`, `press`,
+`cancel` (no question), `shot=<file.png>` (saves the next frame),
+`wait-state=ready|built|noiso|building`, `wait-progress=<0-100>`, `quit`;
+`+N` times are after the previous action. `WONDERPARK_LAUNCHER_STATS=<file>`
+writes the average time per frame spent drawing, in `EndDraw` and in
+`Present`. It draws 30 frames a second while idle and 60 after input and
+during transitions: about 4% of one core on the menu (0.2% with reduced
+motion). Fixed shapes are drawn from geometry realizations; flattening
+them every frame was most of its CPU time.
 
 ## Files
 

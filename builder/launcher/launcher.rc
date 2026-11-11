@@ -1,0 +1,4 @@
+// The launcher's fonts (SIL Open Font License; see fonts/*-OFL.txt), built
+// into the executable so it needs nothing beside it.
+101 RCDATA "fonts/Fredoka.ttf"
+102 RCDATA "fonts/Nunito.ttf"

@@ -38,6 +38,7 @@ CLEAN_SHA1 = "e429a232431ea7075ae959b030a7675846357c19"
 CLEAN_MD5 = "4b087f066230fa72db05362186532899"
 REPO = Path(__file__).resolve().parent.parent
 
+PROGRESS = False  # --progress
 WII_MAGIC = 0x5D1C9EA3
 NKIT_MAGIC_OFFSET = 0x200
 CHUNK = 1 << 20
@@ -65,13 +66,24 @@ def read_header(path: Path) -> tuple[bytes, int, str]:
     return head[:6], head[7], kind
 
 
+def progress_line(pct: float, msg: str) -> None:
+    """For the launcher (builder/pipeline.py): @progress <0-100> <message>."""
+    if PROGRESS:
+        print(f"@progress {int(pct)} {msg}", flush=True)
+
+
 def image_hashes(path: Path) -> tuple[str, str]:
     """SHA-1 and MD5 of the whole image file."""
     sha1, md5 = hashlib.sha1(), hashlib.md5()
+    total, done, last = max(1, path.stat().st_size), 0, -1
     with path.open("rb") as f:
         while chunk := f.read(CHUNK * 8):
             sha1.update(chunk)
             md5.update(chunk)
+            done += len(chunk)
+            if (pct := 100 * done // total) != last:
+                last = pct
+                progress_line(pct, "Hashing the disc image")
     return sha1.hexdigest(), md5.hexdigest()
 
 
@@ -111,11 +123,39 @@ def find_dtk(explicit: str | None) -> str | None:
     return shutil.which("dtk")
 
 
+# What extracting the US disc writes, in bytes (game/ after extraction), for
+# progress while dtk works: dtk shows none when its output isn't a console.
+EXTRACTED_BYTES = 916_992_770
+
+
+def process_bytes_written(handle: int) -> int | None:
+    """Bytes a child process has written so far (Windows I/O counters)."""
+    if os.name != "nt":
+        return None
+    import ctypes
+
+    class IoCounters(ctypes.Structure):
+        _fields_ = [(n, ctypes.c_ulonglong) for n in ("ReadOps", "WriteOps", "OtherOps", "ReadBytes", "WriteBytes",
+                                                      "OtherBytes")]
+    c = IoCounters()
+    if not ctypes.windll.kernel32.GetProcessIoCounters(ctypes.c_void_p(handle), ctypes.byref(c)):
+        return None
+    return c.WriteBytes
+
+
 def extract_with_dtk(dtk: str, image: Path, out: Path) -> None:
-    proc = subprocess.run([dtk, "disc", "extract", str(image), str(out)],
-                          capture_output=True, text=True)
+    proc = subprocess.Popen([dtk, "disc", "extract", str(image), str(out)],
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    while True:
+        try:
+            output, _ = proc.communicate(timeout=1.0)
+            break
+        except subprocess.TimeoutExpired:
+            written = process_bytes_written(int(proc._handle)) if hasattr(proc, "_handle") else None
+            if written is not None:
+                progress_line(min(99, 100 * written / EXTRACTED_BYTES), "Extracting files")
     if proc.returncode != 0:
-        raise DiscError("dtk failed:\n" + (proc.stderr or proc.stdout).strip())
+        raise DiscError("dtk failed:\n" + (output or "").strip())
 
 
 # --------------------------------------------------------------------------- NKit reader
@@ -216,6 +256,8 @@ def extract_nkit(image: Path, out: Path, progress=print) -> None:
             done += 1
             if done % 100 == 0 or done == total_files:
                 progress(f"  {done}/{total_files} files")
+            if done % 10 == 0 or done == total_files:
+                progress_line(100 * done / max(1, total_files), "Extracting files")
 
 
 # --------------------------------------------------------------------------- manifest
@@ -263,12 +305,18 @@ def main() -> int:
     ap.add_argument("--verify-only", action="store_true")
     ap.add_argument("--force", action="store_true", help="overwrite an existing output folder")
     ap.add_argument("--allow-untested-revision", action="store_true", help="accept a disc revision not yet tested")
+    ap.add_argument("--progress", action="store_true",
+                    help="for the launcher: @phase verify|extract and @progress <0-100> lines")
     a = ap.parse_args()
     sys.stdout.reconfigure(line_buffering=True)  # keep progress and errors in order
+    global PROGRESS
+    PROGRESS = a.progress
 
     try:
         if not a.image.is_file():
             raise DiscError(f"not found: {a.image}")
+        if PROGRESS:
+            print("@phase verify", flush=True)
         print("[1/2] Verifying disc")
         kind, rev = verify(a.image, a.allow_untested_revision)
         print(f"  game ID {EXPECTED_ID.decode()}, revision {rev} OK ({kind})")
@@ -282,6 +330,8 @@ def main() -> int:
             shutil.rmtree(a.out)
         a.out.mkdir(parents=True, exist_ok=True)
 
+        if PROGRESS:
+            print("@phase extract", flush=True)
         print("[2/2] Extracting main.dol and files")
         dtk = find_dtk(a.dtk)
         method = None

@@ -2,32 +2,58 @@
 """One-time build pipeline: disc image -> Wonderpark.exe, all on this PC.
 
 Usage:
-    python builder/pipeline.py <disc image> [--dtk path]
+    python builder/pipeline.py <disc image> [--dtk path]   build (the launcher's Build)
+    python builder/pipeline.py --rebuild                   build again from the extracted disc in game/
+    python builder/pipeline.py --status                    is there a build, and is it current?
 
-Stages (the launcher shows one star point per stage):
-  1. Verifying disc                  tools/extract_disc.py --verify-only
+Stages (the launcher relights one star point per finished stage):
+  1. Verifying disc                  tools/extract_disc.py (game ID, revision, image hash)
   2. Extracting main.dol and files   tools/extract_disc.py
   3. Recompiling PowerPC to C++      tools/recomp.py
   4. Compiling Wonderpark.exe        tools/build_game.py (clang-cl when available)
+Stages 1-2 are skipped (shown as done) when game/ already holds this disc.
 
-Machine-readable progress for the launcher, one line each:
+Machine-readable lines for the launcher, one each (everything else is log):
     @stage <1-4> <name>
-    @progress <overall 0-100> <message>
-    @done <path to exe>        or   @error <message>
+    @progress <overall 0-100> <stage name>
+    @done <path to exe>
+    @error <short plain-language message>
+    @status ok|missing|outdated            (--status)
+    @image <path of the disc image last built from>   (--status, when known)
+
+After a build, build/game/wonderpark_build.json records a hash of the
+sources it was built from; --status compares it with the sources now
+("outdated" when they differ, as after an update).
 """
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
+import os
 import re
+import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 PY = sys.executable
 STAGES = ["Verifying disc", "Extracting main.dol and files", "Recompiling PowerPC to C++", "Compiling Wonderpark.exe"]
 # Share of the overall bar per stage (sums to 100).
-WEIGHT = [2, 8, 15, 75]
+WEIGHT = [3, 7, 15, 75]
+GAME = REPO / "game"
+BUILD = REPO / "build" / "game"
+STAMP = BUILD / "wonderpark_build.json"
+# What the build is made from: a change to any of these makes a build out of date.
+SOURCES = ["CMakeLists.txt", "runtime", "config", "tools/recomp.py", "tools/build_game.py",
+           "tools/extract_disc.py", "tools/dolrecomp/src", "tools/dolrecomp/CMakeLists.txt"]
+SOURCE_EXT = {".c", ".h", ".cpp", ".hpp", ".cc", ".inc", ".py", ".txt", ".toml", ".json", ".cmake", ".def"}
+
+
+class StageError(Exception):
+    """A failure with a short message for the player (details are in the log)."""
 
 
 def emit(line: str) -> None:
@@ -35,49 +61,171 @@ def emit(line: str) -> None:
 
 
 def overall(stage: int, pct: float) -> int:
-    return int(sum(WEIGHT[:stage]) + WEIGHT[stage] * pct / 100)
+    return int(sum(WEIGHT[:stage]) + WEIGHT[stage] * max(0.0, min(100.0, pct)) / 100)
 
 
-def run_stage(i: int, cmd: list[str], parse=None) -> None:
-    emit(f"@stage {i + 1} {STAGES[i]}")
-    emit(f"@progress {overall(i, 0)} {STAGES[i]}")
-    proc = subprocess.Popen(cmd, cwd=REPO, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+def source_stamp() -> str:
+    h = hashlib.sha1()
+    for rel in SOURCES:
+        p = REPO / rel
+        files = [p] if p.is_file() else sorted(f for f in p.rglob("*") if f.is_file() and f.suffix.lower() in SOURCE_EXT)
+        for f in files:
+            h.update(str(f.relative_to(REPO)).replace("\\", "/").encode())
+            h.update(f.read_bytes().replace(b"\r\n", b"\n"))
+    return h.hexdigest()
+
+
+def find_exe() -> Path | None:
+    return next((p for p in (BUILD / "Wonderpark.exe", BUILD / "Release" / "Wonderpark.exe") if p.is_file()), None)
+
+
+def status() -> int:
+    stamp = {}
+    try:
+        stamp = json.loads(STAMP.read_text())
+    except (OSError, ValueError):
+        pass
+    if stamp.get("image"):
+        emit(f"@image {stamp['image']}")
+    if not find_exe() or not stamp:
+        emit("@status missing")
+    elif stamp.get("sources") != source_stamp() or not (GAME / "manifest.json").is_file():
+        emit("@status outdated")
+    else:
+        emit("@status ok")
+    return 0
+
+
+def preflight() -> None:
+    """What the build needs on this PC, checked before anything starts."""
+    sys.path.insert(0, str(REPO / "tools"))
+    import build_game  # noqa: E402
+    try:
+        env = build_game.vs_env()
+    except build_game.BuildError:
+        raise StageError("Visual Studio Build Tools (with the C++ workload) aren't installed. "
+                         "The README says how to get them.")
+    if not shutil.which("cmake", path=env.get("PATH") or env.get("Path")):
+        raise StageError("CMake wasn't found. Install the Visual Studio C++ workload, which includes it.")
+    if not (REPO / "tools" / "dolrecomp" / "CMakeLists.txt").is_file():
+        raise StageError("The DolRecomp recompiler is missing from tools/dolrecomp. Download the full release again.")
+
+
+def run_stage(i: int, cmd: list[str], fail: str, phases: dict[str, int] | None = None) -> None:
+    """Runs one stage's script; its @progress lines become overall progress.
+    phases maps a script's "@phase <name>" lines to stages (extract_disc.py
+    does stages 1 and 2 in one run)."""
+    stage = i
+    emit(f"@stage {stage + 1} {STAGES[stage]}")
+    emit(f"@progress {overall(stage, 0)} {STAGES[stage]}")
+    env = dict(os.environ, PYTHONUNBUFFERED="1")
+    proc = subprocess.Popen(cmd, cwd=REPO, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                            encoding="utf-8", errors="replace", env=env)
     tail: list[str] = []
+    last = -1
     for line in proc.stdout:
+        line = line.rstrip("\n")
+        m = re.match(r"@phase (\w+)", line)
+        if m and phases and m.group(1) in phases and phases[m.group(1)] != stage:
+            emit(f"@progress {overall(stage, 100)} {STAGES[stage]}")
+            stage = phases[m.group(1)]
+            emit(f"@stage {stage + 1} {STAGES[stage]}")
+            last = -1
+            continue
+        m = re.match(r"@progress (\d+)", line)
+        if m:
+            pct = overall(stage, int(m.group(1)))
+            if pct != last:
+                last = pct
+                emit(f"@progress {pct} {STAGES[stage]}")
+            continue
+        print(line, flush=True)  # the log
         tail = (tail + [line])[-40:]
-        m = re.match(r"@progress (\d+) (.*)", line)
-        pct = int(m.group(1)) if m else (parse(line) if parse else None)
-        if pct is not None:
-            emit(f"@progress {overall(i, pct)} {STAGES[i]}")
     if proc.wait():
-        raise RuntimeError(f"{STAGES[i]} failed:\n" + "".join(tail))
-    emit(f"@progress {overall(i, 100)} {STAGES[i]}")
+        err = next((l for l in reversed(tail) if l.lower().startswith(("error", "fatal"))), "")
+        raise StageError(fail(err) if callable(fail) else fail)
+    emit(f"@progress {overall(stage, 100)} {STAGES[stage]}")
+
+
+def disc_failure(err: str) -> str:
+    low = err.lower()
+    if "wrong disc" in low:
+        return "That isn't the US PokéPark 2 disc (S2LE01)."
+    if "revision" in low:
+        return "This disc revision hasn't been tested with Wonderpark yet."
+    if "dtk not found" in low:
+        return ("Reading this disc image needs decomp-toolkit (dtk.exe). Put dtk.exe in tools\\bin "
+                "or on your PATH; the README has the link.")
+    if "not found" in low:
+        return "The disc image wasn't found. Place it again."
+    return "The disc image couldn't be read. It may be damaged or in a format that isn't supported."
+
+
+def already_extracted(image: Path) -> bool:
+    """game/ holds this disc already (same file name and size, fully extracted)."""
+    try:
+        man = json.loads((GAME / "manifest.json").read_text())
+    except (OSError, ValueError):
+        return False
+    return (man.get("game_id") == "S2LE01" and man.get("source_image") == image.name
+            and man.get("image_size") == image.stat().st_size and (GAME / "sys" / "main.dol").is_file())
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("image")
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("image", nargs="?", type=Path)
     ap.add_argument("--dtk")
+    ap.add_argument("--status", action="store_true", help="report whether a current build exists")
+    ap.add_argument("--rebuild", action="store_true", help="build from the already extracted disc in game/")
     a = ap.parse_args()
-    dtk = ["--dtk", a.dtk] if a.dtk else []
-    build = REPO / "build" / "game"
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace", line_buffering=True)
+    if a.status:
+        return status()
+    if not a.image and not a.rebuild:
+        ap.error("give a disc image, or --rebuild")
+    t0 = time.time()
     try:
-        run_stage(0, [PY, "tools/extract_disc.py", a.image, "--verify-only"])
-        run_stage(1, [PY, "tools/extract_disc.py", a.image, "--force", *dtk],
-                  parse=lambda l: (lambda m: int(100 * int(m[1]) / int(m[2])) if m else None)(re.search(r"(\d+)/(\d+) files", l)))
+        emit(f"Wonderpark build, {time.strftime('%Y-%m-%d %H:%M:%S')}, Python {sys.version.split()[0]}")
+        preflight()
+        image = a.image.resolve() if a.image else None
+        if image and not image.is_file():
+            raise StageError("The disc image wasn't found. Place it again.")
+        if image is None or already_extracted(image):
+            if not (GAME / "sys" / "main.dol").is_file():
+                raise StageError("There's no extracted disc to rebuild from. Place your disc image again.")
+            emit("The disc is already extracted in game/: skipping stages 1 and 2")
+            for i in (0, 1):
+                emit(f"@stage {i + 1} {STAGES[i]}")
+                emit(f"@progress {overall(i, 100)} {STAGES[i]}")
+            if image is None:
+                image = Path(json.loads((GAME / "manifest.json").read_text()).get("source_image", ""))
+        else:
+            dtk = ["--dtk", a.dtk] if a.dtk else []
+            run_stage(0, [PY, "-u", "tools/extract_disc.py", str(image), "--force", "--progress", *dtk],
+                      disc_failure, phases={"verify": 0, "extract": 1})
+            man_path = GAME / "manifest.json"
+            man = json.loads(man_path.read_text())
+            man["image_size"] = image.stat().st_size
+            man_path.write_text(json.dumps(man, indent=2))
 
-        run_stage(2, [PY, "tools/recomp.py"])
+        run_stage(2, [PY, "-u", "tools/recomp.py"], "Recompiling the game's code failed. The log has the details.")
+        run_stage(3, [PY, "-u", "tools/build_game.py"], "Compiling Wonderpark.exe failed. The log has the details.")
 
-        run_stage(3, [PY, "tools/build_game.py"])
-
-        exe = next((p for p in (build / "Wonderpark.exe", build / "Release" / "Wonderpark.exe") if p.is_file()), None)
+        exe = find_exe()
         if not exe:
-            raise RuntimeError("build finished but Wonderpark.exe is missing")
+            raise StageError("The build finished but Wonderpark.exe is missing. The log has the details.")
+        STAMP.write_text(json.dumps({"sources": source_stamp(), "image": str(image),
+                                     "built": time.strftime("%Y-%m-%d %H:%M:%S")}, indent=2))
+        emit(f"Done in {(time.time() - t0) / 60:.1f} min")
         emit(f"@done {exe}")
         return 0
-    except (RuntimeError, subprocess.CalledProcessError) as e:
-        msg = str(e).strip().replace("\n", " | ")
-        emit(f"@error {msg}")
+    except StageError as e:
+        emit(f"@error {e}")
+        return 1
+    except Exception as e:  # anything unexpected: still a message for the player
+        import traceback
+        traceback.print_exc(file=sys.stdout)
+        emit(f"@error Something went wrong in the builder ({type(e).__name__}). The log has the details.")
         return 1
 
 

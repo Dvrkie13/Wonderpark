@@ -58,7 +58,8 @@ Fill these in during Phase 1, once the scripts exist, and keep them current:
 - PGO profile: `python tools/pgo_train.py --save <nand dir> ...` (into git-ignored `build/pgo/`; `build_game.py` then uses it, `--no-pgo` to skip)
 - Build (release): not yet separate from the dev build
 - Run: `.\build\game\Wonderpark.exe` from the repo root (`RECOMP_FPS=1` prints frame rates; debug logs via `WONDERPARK_LOG=...`, listed in `docs/recomp-status.md`)
-- Full pipeline: `python builder/pipeline.py <iso>` (verify, extract, recompile, build)
+- Full pipeline: `python builder/pipeline.py <iso>` (verify, extract, recompile, build); `--rebuild` from game/, `--status`
+- Launcher: `python tools/build_launcher.py`, then `.\build\launcher\WonderparkLauncher.exe` (test hooks in `docs/DEVELOPMENT.md`)
 - Headless test: not yet (planned `--headless`)
 
 ## Owner context
