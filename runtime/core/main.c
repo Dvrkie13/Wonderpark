@@ -158,6 +158,17 @@ int main(int argc, char** argv) {
     int i;
 
     wp_logpipe_start(); /* log lines never block the game (logpipe.c) */
+#ifdef WP_PGO_GENERATE
+    {
+        /* An instrumented build (build_game.py --pgo-generate): the profile
+         * runtime comes from a MinGW clang, whose own write-at-exit is
+         * registered by MinGW's start-up code, never run here. */
+        extern void __llvm_profile_initialize_file(void); /* reads LLVM_PROFILE_FILE */
+        extern int __llvm_profile_write_file(void);
+        __llvm_profile_initialize_file();
+        atexit((void (*)(void))__llvm_profile_write_file);
+    }
+#endif
     /* Wonderpark [main.dol] [--headless] [--exit-after <seconds>] */
     for (i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--headless")) g_wp_headless = 1;

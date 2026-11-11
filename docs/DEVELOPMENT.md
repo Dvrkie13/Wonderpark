@@ -25,6 +25,8 @@ ignored). See `CLAUDE.md`.
 python tools/extract_disc.py <disc.iso>      # verify (ID, revision, hash) and extract to game/
 python tools/recomp.py                       # DolRecomp: game/sys/main.dol -> generated/
 python tools/build_game.py                   # build build/game/Wonderpark.exe (clang-cl; --msvc for MSVC)
+python tools/pgo_train.py                    # PGO: instrumented build, train on a park and a beach save, merge to build/pgo/ (~35 min)
+python tools/build_game.py --no-pgo         # without the PGO profile (used by default when build/pgo/wonderpark.profdata exists)
 python tools/build_game.py --no-lto         # without ThinLTO (on by default when lld-link.exe and llvm-lib.exe are beside clang-cl; ~13 min instead of ~18)
 python tools/build_game.py --build-dir game-x --cflags "/arch:AVX2"   # a variant in build/game-x, for comparisons
 python builder/pipeline.py <disc.iso>        # all of the above, with progress for the launcher

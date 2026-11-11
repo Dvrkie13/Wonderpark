@@ -12,6 +12,10 @@ headers, libraries and linker. Where clang-cl comes from, in order:
   clang-23.exe needs a clang-cl.exe hard link beside it.
 --msvc builds with MSVC instead. The executable is build/game/Wonderpark.exe.
 
+With a profile at build/pgo/wonderpark.profdata (made on this PC by
+tools/pgo_train.py; game-derived, never in git), the build is also
+profile-guided: the game code takes about 35% less time. --no-pgo skips it.
+
 With clang-cl the whole program is optimised together (ThinLTO: the game
 runs 3-5% faster; the build takes ~18 min instead of ~13), when
 lld-link.exe and llvm-lib.exe are beside clang-cl; else without, with a
@@ -107,9 +111,16 @@ def main() -> int:
     ap.add_argument("--no-lto", action="store_true", help="no ThinLTO (faster to build, the game a little slower)")
     ap.add_argument("--pgo-generate", action="store_true",
                     help="an instrumented build that writes a profile when it exits (LLVM_PROFILE_FILE)")
-    ap.add_argument("--pgo-use", metavar="PROFDATA", help="optimise with a merged profile (llvm-profdata merge)")
+    ap.add_argument("--pgo-use", metavar="PROFDATA",
+                    help="optimise with a merged profile (default: build/pgo/wonderpark.profdata when it exists)")
+    ap.add_argument("--no-pgo", action="store_true", help="don't use a profile even if there is one")
     a = ap.parse_args()
     build = REPO / "build" / a.build_dir
+    default_prof = REPO / "build" / "pgo" / "wonderpark.profdata"
+    if not a.pgo_use and not a.no_pgo and not a.pgo_generate and default_prof.is_file():
+        # Made on this PC from this PC's recompiled code (tools/pgo_train.py):
+        # game-derived, so never in git.
+        a.pgo_use = str(default_prof)
     try:
         env = vs_env()
         clang = None if a.msvc else find_clang_cl(env)
@@ -135,7 +146,7 @@ def main() -> int:
                             + glob.glob(str(Path(path).parent.parent / "lib/clang/*/lib/windows/libclang_rt.profile-x86_64.a")))
                 if not rt:
                     raise BuildError("--pgo-generate: no clang_rt.profile-x86_64 library in the clang install")
-                flags.append("-fprofile-instr-generate")
+                flags += ["-fprofile-instr-generate", "-DWP_PGO_GENERATE"]
                 # The compiler asks the linker for clang_rt.profile.lib by name.
                 libdir = REPO / "build" / "pgo-lib"
                 libdir.mkdir(parents=True, exist_ok=True)
@@ -149,6 +160,7 @@ def main() -> int:
                 prof = Path(a.pgo_use).resolve()
                 if not prof.is_file():
                     raise BuildError(f"--pgo-use: no profile at {prof}")
+                print(f"PGO: using {prof}", flush=True)
                 flags += [f"-fprofile-instr-use={prof}", "-Wno-profile-instr-out-of-date",
                           "-Wno-profile-instr-unprofiled", "-Wno-backend-plugin"]
             if not a.no_lto:
