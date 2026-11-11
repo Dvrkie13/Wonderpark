@@ -2,7 +2,7 @@
 """Compile Wonderpark.exe from the recompiled code (generated/) and the runtime.
 
 Usage:
-    python tools/build_game.py [--msvc] [--debug-info] [--clean]
+    python tools/build_game.py [--msvc] [--no-lto] [--debug-info] [--clean]
 
 Uses clang-cl when one is found (the recompiled code runs about twice as fast
 built with clang as with MSVC), with Ninja and the Visual Studio Build Tools'
@@ -11,6 +11,12 @@ headers, libraries and linker. Where clang-cl comes from, in order:
   clang-cl on PATH, or an llvm-mingw install (D:/Tools/llvm-mingw-*), whose
   clang-23.exe needs a clang-cl.exe hard link beside it.
 --msvc builds with MSVC instead. The executable is build/game/Wonderpark.exe.
+
+With clang-cl the whole program is optimised together (ThinLTO: the game
+runs 3-5% faster; the build takes ~18 min instead of ~13), when
+lld-link.exe and llvm-lib.exe are beside clang-cl; else without, with a
+warning. llvm-mingw has no lld-link.exe: a hard link to its ld.lld.exe
+named lld-link.exe works. --no-lto builds without.
 
 Progress lines for the launcher: @progress <0-100> <message>
 """
@@ -98,7 +104,7 @@ def main() -> int:
     ap.add_argument("--clean", action="store_true")
     ap.add_argument("--build-dir", default="game", help="folder under build/ (default game)")
     ap.add_argument("--cflags", default="", help="extra compiler flags, e.g. /arch:AVX2 (clang-cl)")
-    ap.add_argument("--lto", action="store_true", help="ThinLTO across the whole program (clang-cl, needs lld-link)")
+    ap.add_argument("--no-lto", action="store_true", help="no ThinLTO (faster to build, the game a little slower)")
     a = ap.parse_args()
     build = REPO / "build" / a.build_dir
     try:
@@ -117,16 +123,26 @@ def main() -> int:
                 shutil.rmtree(build)  # switching generators needs a fresh build folder
             flags = extra + a.cflags.split()
             linker = ["-DCMAKE_LINKER=link.exe"]
-            if a.lto:
+            if not a.no_lto:
                 tools = Path(path).parent
                 lld, lib = tools / "lld-link.exe", tools / "llvm-lib.exe"
-                if not lld.is_file() or not lib.is_file():
-                    raise BuildError(f"--lto needs lld-link.exe and llvm-lib.exe beside {path}")
-                flags += ["-flto=thin", "-fuse-ld=lld"]
-                linker = [f"-DCMAKE_LINKER={lld}", f"-DCMAKE_AR={lib}"]
+                if lld.is_file() and lib.is_file():
+                    flags += ["-flto=thin", "-fuse-ld=lld"]
+                    linker = [f"-DCMAKE_LINKER={lld}", f"-DCMAKE_AR={lib}"]
+                    print("ThinLTO: on (lld-link)", flush=True)
+                else:
+                    print(f"warning: no lld-link.exe/llvm-lib.exe beside {path}: building without ThinLTO "
+                          "(the game runs 3-5% slower)", flush=True)
             cfg = ["cmake", "-S", str(REPO), "-B", str(build), "-G", "Ninja", "-DCMAKE_BUILD_TYPE=Release",
                    f"-DCMAKE_MAKE_PROGRAM={ninja}", f"-DCMAKE_C_COMPILER={path}",
                    f"-DCMAKE_C_FLAGS_INIT={' '.join(flags)}", *linker, *opts]
+            # CMake takes the flags and linker only when a build folder is
+            # first configured: when they change, start the folder again.
+            marker = build / "wonderpark_toolchain.txt"
+            want = "\n".join([path, *flags, *linker]) + "\n"
+            if marker.is_file() and marker.read_text() != want or not marker.is_file() and cache.is_file():
+                print("compiler settings changed: building from scratch", flush=True)
+                shutil.rmtree(build)
             build_cmd = ["cmake", "--build", str(build)]
         else:
             if not a.msvc:
@@ -139,6 +155,8 @@ def main() -> int:
         p = subprocess.run(cfg, cwd=REPO, env=env, capture_output=True, text=True)
         if p.returncode:
             raise BuildError("cmake configure failed:\n" + (p.stdout + p.stderr)[-3000:])
+        if clang and ninja:
+            marker.write_text(want)
         run_build(build_cmd, env, 2, 99)
         exe = next((x for x in (build / "Wonderpark.exe", build / "Release" / "Wonderpark.exe") if x.is_file()), None)
         if not exe:
