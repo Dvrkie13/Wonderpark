@@ -328,6 +328,8 @@ writes). `mqwatch` lines now carry timestamps.
 - **Saves and settings** in `%APPDATA%\Wonderpark` (`settings.ini`,
   `bindings.ini`, `nand\`); the NAND's `/tmp` (the ~41 MB the game copies at
   each start) in `cache\` beside the program, emptied at start.
+  Confirmed by the owner (2026-11-10): an in-game save survives a restart
+  with IOS on its own thread (`runtime/hw/hw_ipc.c`).
 - **`WONDERPARK_<KEY>`** overrides every setting (never saved to the file).
 - **`--headless`**, **`--exit-after N`**: automated runs with a summary.
 - **Debug overlay** (backtick) and **game speed** (F7: x1/x2/x4/x10).
