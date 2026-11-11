@@ -341,9 +341,13 @@ writes). `mqwatch` lines now carry timestamps.
 What's known:
 - The runtime now sees when a movie plays: the disc layer notes reads of
   `Movie/*.mo` (`WONDERPARK_LOG=movie`, and a line in the overlay).
-- Test case: idling at the title starts the attract video
-  `DmCh0000_01.mo` after about 166 s (about 42 s with
-  `WONDERPARK_GAME_SPEED=4`), so it can be tested headless.
+- `DmCh0000_01.mo` is the title screen's own background (the beach, desert,
+  plaza and forest shots behind the logo): it starts as the title appears
+  (~25-30 s after boot) and loops about every 110 s. (An earlier note here
+  said it was an attract video starting after 166 s idle: that was under
+  Windows power throttling, when start-up took much longer.) Its pictures
+  are right; the sound heard over it is the title music. It is the one
+  movie testable headless without a save.
 - The game's own buttons don't skip story cutscenes in the one tried
   (+, ②, Ⓐ, ①, Ⓑ during the intro were in-engine scenes, not a movie, so
   this is still open for real movies).
@@ -355,3 +359,36 @@ Next: find the movie player's end-of-movie path (the player around
 `0x80185800–0x80188C00`, built from Mobiclip's sample code, and the MO
 library's `MORun`) and trigger it, or test whether a button skips a real
 movie.
+
+# Coverage check (2026-11-11, PGO build)
+
+Headless, with scripted buttons, frame dumps and a sound dump
+(`RECOMP_GX_DUMP`, `WONDERPARK_AUDIO_DUMP`), from the saves there are.
+
+Checked, working:
+- **New game intro** (strap screen, title, new game, the Zekrom and
+  Reshiram scene with dialogue, the cave with Piplup): pictures right,
+  sound throughout, 30 fps apart from a few seconds at loads (13 of 237 s
+  under 29 fps). The intro is all in-engine; no movie plays in it.
+- **Title movie** (`DmCh0000_01.mo`): pictures right and looping; the title
+  music plays over it.
+- **Cake Contraption stage** (the first attraction's waiting area, from the
+  attraction-door save): 30 fps (1 of 39 s under 29), game 9 ms + GPU 3 ms a
+  frame. Playing it needs the pointer, which scripted input can't aim; it
+  was played to the end on 2026-11-05.
+
+Not reached (no save near them, and they're hours into the story):
+- a battle after the Timburr tutorial, a chase, the other three
+  attractions, a story movie with its own sound (the Seasong Beach arrival
+  is one; the Seasong Beach save is just after it).
+
+Seen once: one start-up (of 7 today) froze for about 25 s on the strap
+screen with the game thread fully busy (98%) and no disc reads; the next
+run of the same thing was normal. Something else on the PC may have taken
+the CPU; watch for it.
+
+Scripted input notes: start-up time varies by 5-10 s between runs (title
+accepts ② anywhere from ~25 to ~43 s), so fixed-time menu scripts miss.
+Press ② repeatedly to get through the title; the main menu's default
+is Play in PokéPark.
+
