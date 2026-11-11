@@ -96,8 +96,11 @@ def main() -> int:
     ap.add_argument("--msvc", action="store_true", help="build with MSVC instead of clang-cl")
     ap.add_argument("--debug-info", action="store_true", help="PDBs for the recompiled code too (for profiling)")
     ap.add_argument("--clean", action="store_true")
+    ap.add_argument("--build-dir", default="game", help="folder under build/ (default game)")
+    ap.add_argument("--cflags", default="", help="extra compiler flags, e.g. /arch:AVX2 (clang-cl)")
+    ap.add_argument("--lto", action="store_true", help="ThinLTO across the whole program (clang-cl, needs lld-link)")
     a = ap.parse_args()
-    build = REPO / "build" / "game"
+    build = REPO / "build" / a.build_dir
     try:
         env = vs_env()
         clang = None if a.msvc else find_clang_cl(env)
@@ -112,9 +115,18 @@ def main() -> int:
             cache = build / "CMakeCache.txt"
             if cache.is_file() and "CMAKE_GENERATOR:INTERNAL=Ninja" not in cache.read_text(errors="replace"):
                 shutil.rmtree(build)  # switching generators needs a fresh build folder
+            flags = extra + a.cflags.split()
+            linker = ["-DCMAKE_LINKER=link.exe"]
+            if a.lto:
+                tools = Path(path).parent
+                lld, lib = tools / "lld-link.exe", tools / "llvm-lib.exe"
+                if not lld.is_file() or not lib.is_file():
+                    raise BuildError(f"--lto needs lld-link.exe and llvm-lib.exe beside {path}")
+                flags += ["-flto=thin", "-fuse-ld=lld"]
+                linker = [f"-DCMAKE_LINKER={lld}", f"-DCMAKE_AR={lib}"]
             cfg = ["cmake", "-S", str(REPO), "-B", str(build), "-G", "Ninja", "-DCMAKE_BUILD_TYPE=Release",
                    f"-DCMAKE_MAKE_PROGRAM={ninja}", f"-DCMAKE_C_COMPILER={path}",
-                   f"-DCMAKE_C_FLAGS_INIT={' '.join(extra)}", "-DCMAKE_LINKER=link.exe", *opts]
+                   f"-DCMAKE_C_FLAGS_INIT={' '.join(flags)}", *linker, *opts]
             build_cmd = ["cmake", "--build", str(build)]
         else:
             if not a.msvc:

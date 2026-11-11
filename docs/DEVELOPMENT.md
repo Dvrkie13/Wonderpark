@@ -25,6 +25,8 @@ ignored). See `CLAUDE.md`.
 python tools/extract_disc.py <disc.iso>      # verify (ID, revision, hash) and extract to game/
 python tools/recomp.py                       # DolRecomp: game/sys/main.dol -> generated/
 python tools/build_game.py                   # build build/game/Wonderpark.exe (clang-cl; --msvc for MSVC)
+python tools/build_game.py --lto            # ThinLTO (needs lld-link.exe and llvm-lib.exe beside clang-cl; ~18 min instead of ~13)
+python tools/build_game.py --build-dir game-x --cflags "/arch:AVX2"   # a variant in build/game-x, for comparisons
 python builder/pipeline.py <disc.iso>        # all of the above, with progress for the launcher
 .\build\game\Wonderpark.exe                  # run (from the repo root)
 .\build\game\Wonderpark.exe --headless --exit-after 60   # automated run, prints a summary
