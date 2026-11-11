@@ -98,6 +98,8 @@ the file).
 | `RECOMP_AUDIO=0` | no sound |
 | `RECOMP_GX_HIDDEN=1` | hidden window (`--headless` does this too) |
 | `RECOMP_GX_DUMP=dir`, `RECOMP_GX_DUMP_EVERY=N`, `RECOMP_GX_DUMP_FROM=N` | save presented frames as BMPs |
+| `RECOMP_GX_LISTS=0` | decode display lists at every call instead of keeping their vertices on the GPU (for comparisons) |
+| `RECOMP_GX_CACHE_LOG=1` | every 30 frames: draws from kept display lists, lists decoded, other draws; and vertex arena growth |
 | `RECOMP_GX_LOG`, `RECOMP_GX_DEBUG_FRAME`, `RECOMP_GX_COPY_LOG`, `RECOMP_GX_SKIP`, `RECOMP_GX_DUMP_TEX(TURES)` | GX decoder debugging |
 | `RECOMP_GL_DEBUG`, `RECOMP_GL_PRESENT`, `RECOMP_GPU` | OpenGL debugging and presenting path |
 | `RECOMP_WIDESCREEN` | 16:9 |

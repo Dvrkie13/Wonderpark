@@ -175,6 +175,18 @@ int main(int argc, char** argv) {
 
 #ifdef _WIN32
     SetUnhandledExceptionFilter(crash_filter);
+    {
+        /* No power throttling ("efficiency mode"): Windows 11 runs a
+         * process without a visible window in front at lower clocks and
+         * ignores its timer requests, and the game then falls below 30 fps
+         * (in the background, and every --headless run). */
+        PROCESS_POWER_THROTTLING_STATE pt;
+        memset(&pt, 0, sizeof(pt));
+        pt.Version = PROCESS_POWER_THROTTLING_CURRENT_VERSION;
+        pt.ControlMask = PROCESS_POWER_THROTTLING_EXECUTION_SPEED | PROCESS_POWER_THROTTLING_IGNORE_TIMER_RESOLUTION;
+        pt.StateMask = 0;
+        SetProcessInformation(GetCurrentProcess(), ProcessPowerThrottling, &pt, sizeof(pt));
+    }
 #endif
     if (!alloc_memory(&cpu)) return 1;
     g_cpu = &cpu;

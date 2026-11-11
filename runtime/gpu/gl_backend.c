@@ -69,6 +69,8 @@ typedef ptrdiff_t GLintptr;
 #define GL_FUNC_ADD 0x8006
 #define GL_FUNC_REVERSE_SUBTRACT 0x800B
 #define GL_UNIFORM_BUFFER 0x8A11
+#define GL_COPY_READ_BUFFER 0x8F36
+#define GL_COPY_WRITE_BUFFER 0x8F37
 #define GL_DYNAMIC_DRAW 0x88E8
 #define GL_LOWER_LEFT 0x8CA1
 #define GL_ZERO_TO_ONE 0x935F
@@ -81,6 +83,8 @@ typedef ptrdiff_t GLintptr;
     X(void, glBindBuffer, (GLenum, GLuint)) \
     X(void, glBufferData, (GLenum, GLsizeiptr, const void*, GLenum)) \
     X(void, glBufferSubData, (GLenum, GLintptr, GLsizeiptr, const void*)) \
+    X(void, glCopyBufferSubData, (GLenum, GLenum, GLintptr, GLintptr, GLsizeiptr)) \
+    X(void, glDeleteBuffers, (GLsizei, const GLuint*)) \
     X(void, glBindBufferBase, (GLenum, GLuint, GLuint)) \
     X(GLuint, glGetUniformBlockIndex, (GLuint, const GLchar*)) \
     X(void, glUniformBlockBinding, (GLuint, GLuint, GLuint)) \
@@ -437,6 +441,8 @@ static const char* kFragmentShader =
     "}\n";
 
 static GLuint sProgram, sVao, sVbo, sIbo, sXfUbo;
+static GLuint sArenaVao, sArenaVbo; /* the vertex arena (gl_arena_alloc) */
+static GLuint sBoundVao; /* the vertex array bound: the per-draw one or the arena's */
 static GLint uNumStages, uCin, uAin, uCop, uAop, uMap, uSel, uReg, uKonst, uSwap, uAlpha, uAlphaRef, uFog, uFogF, uFogColor;
 static GLint uInd, uIndCmd, uIndStage, uIndMtx, uTcSize, uFogRange;
 
@@ -455,6 +461,32 @@ static GLuint compile(GLenum type, const char* src) {
         exit(1);
     }
     return s;
+}
+
+/* Points the arena's vertex array at buffer b. */
+static void arena_vao(GLuint b) {
+    int i;
+    p_glBindVertexArray(sArenaVao);
+    p_glBindBuffer(GL_ARRAY_BUFFER, b);
+    p_glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, sIbo);
+    for (i = 0; i < 3; i++) {
+        p_glEnableVertexAttribArray(i);
+        p_glVertexAttribPointer(i, 4, GL_UNSIGNED_BYTE, GL_FALSE, sizeof(GXVertex), (void*)(offsetof(GXVertex, mtx) + i * 4));
+    }
+    p_glEnableVertexAttribArray(3);
+    p_glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, sizeof(GXVertex), (void*)offsetof(GXVertex, pos));
+    p_glEnableVertexAttribArray(4);
+    p_glVertexAttribPointer(4, 3, GL_FLOAT, GL_FALSE, sizeof(GXVertex), (void*)offsetof(GXVertex, nrm));
+    p_glEnableVertexAttribArray(5);
+    p_glVertexAttribPointer(5, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(GXVertex), (void*)offsetof(GXVertex, color[0]));
+    p_glEnableVertexAttribArray(6);
+    p_glVertexAttribPointer(6, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(GXVertex), (void*)offsetof(GXVertex, color[1]));
+    for (i = 0; i < 4; i++) {
+        p_glEnableVertexAttribArray(7 + i);
+        p_glVertexAttribPointer(7 + i, 4, GL_FLOAT, GL_FALSE, sizeof(GXVertex), (void*)(offsetof(GXVertex, tex) + i * 4 * sizeof(float)));
+    }
+    p_glBindVertexArray(sVao);
+    p_glBindBuffer(GL_ARRAY_BUFFER, sVbo);
 }
 
 static void build_program(void) {
@@ -524,6 +556,13 @@ static void build_program(void) {
         p_glEnableVertexAttribArray(7 + i);
         p_glVertexAttribPointer(7 + i, 4, GL_FLOAT, GL_FALSE, sizeof(GXVertex), (void*)(offsetof(GXVertex, tex) + i * 4 * sizeof(float)));
     }
+
+    /* The same layout over the vertex arena (gl_arena_alloc). */
+    p_glGenVertexArrays(1, &sArenaVao);
+    p_glGenBuffers(1, &sArenaVbo);
+    arena_vao(sArenaVbo);
+    p_glBindVertexArray(sVao);
+    p_glBindBuffer(GL_ARRAY_BUFFER, sVbo);
 
     /* The XF state, for the vertex shader. */
     p_glGenBuffers(1, &sXfUbo);
@@ -1435,8 +1474,134 @@ static int sXfStale;
 static uint32_t sXfShadow[GX_XF_WORDS];
 static int sXfShadowValid;
 
+/* The vertex arena (gxb_arena): vertices kept in a buffer on the GPU from
+ * frame to frame, so a display list's are decoded and sent once, not every
+ * time it is called (gx_fifo.c; nearly all of the park's 220,000 vertices
+ * a frame). Handed out in spans; the free spans are kept in address order,
+ * joined where they touch. Writes go to a copy in memory and reach the
+ * buffer as one range before the next draw from it; OpenGL keeps them in
+ * order with the draws, so a span is free again as soon as it is let go. */
+typedef struct Span {
+    int first, n;
+} Span;
+static GXVertex* sArenaMem;
+static int sArenaVerts, sArenaSize; /* vertices in the copy; in the buffer */
+static int sArenaDirtyLo = 0x7FFFFFFF, sArenaDirtyHi;
+static Span* sSpans;
+static int sSpanCount, sSpanCap;
+
+static void span_add(int first, int n) {
+    int lo = 0, hi = sSpanCount;
+    while (lo < hi) {
+        int mid = (lo + hi) / 2;
+        if (sSpans[mid].first < first) lo = mid + 1;
+        else hi = mid;
+    }
+    if (lo > 0 && sSpans[lo - 1].first + sSpans[lo - 1].n == first) {
+        sSpans[lo - 1].n += n;
+        if (lo < sSpanCount && sSpans[lo - 1].first + sSpans[lo - 1].n == sSpans[lo].first) {
+            sSpans[lo - 1].n += sSpans[lo].n;
+            memmove(sSpans + lo, sSpans + lo + 1, (size_t)(sSpanCount - lo - 1) * sizeof(Span));
+            sSpanCount--;
+        }
+        return;
+    }
+    if (lo < sSpanCount && first + n == sSpans[lo].first) {
+        sSpans[lo].first = first;
+        sSpans[lo].n += n;
+        return;
+    }
+    if (sSpanCount == sSpanCap) {
+        sSpanCap = sSpanCap ? sSpanCap * 2 : 256;
+        sSpans = (Span*)realloc(sSpans, (size_t)sSpanCap * sizeof(Span));
+    }
+    memmove(sSpans + lo + 1, sSpans + lo, (size_t)(sSpanCount - lo) * sizeof(Span));
+    sSpans[lo].first = first;
+    sSpans[lo].n = n;
+    sSpanCount++;
+}
+
+static int gl_arena_alloc(int n) {
+    int i, first;
+    if (n <= 0) return 0;
+    for (;;) {
+        for (i = 0; i < sSpanCount && sSpans[i].n < n; i++) {}
+        if (i < sSpanCount) break;
+        {
+            /* Twice as big (the buffer follows at the next draw). */
+            int verts = sArenaVerts ? sArenaVerts * 2 : 1 << 20; /* 108 MB: the park needs about that */
+            while (verts < sArenaVerts + n) verts *= 2;
+            sArenaMem = (GXVertex*)realloc(sArenaMem, (size_t)verts * sizeof(GXVertex));
+            span_add(sArenaVerts, verts - sArenaVerts);
+            sArenaVerts = verts;
+        }
+    }
+    first = sSpans[i].first;
+    sSpans[i].first += n;
+    sSpans[i].n -= n;
+    if (!sSpans[i].n) {
+        memmove(sSpans + i, sSpans + i + 1, (size_t)(sSpanCount - i - 1) * sizeof(Span));
+        sSpanCount--;
+    }
+    return first;
+}
+
+static void gl_arena_write(int first, const GXVertex* v, int n) {
+    if (n <= 0) return;
+    memcpy(sArenaMem + first, v, (size_t)n * sizeof(GXVertex));
+    if (first < sArenaDirtyLo) sArenaDirtyLo = first;
+    if (first + n > sArenaDirtyHi) sArenaDirtyHi = first + n;
+}
+
+static void gl_arena_free(int first, int n) {
+    if (n > 0) span_add(first, n);
+}
+
+/* The buffer brought up to date with the copy, before a draw from it. */
+static void arena_upload(void) {
+    if (sArenaSize != sArenaVerts) {
+        /* Grown: a new buffer, with the old one's contents copied over on
+         * the GPU (sent again from memory, 216 MB took 48 ms and left the
+         * driver busy for 300 ms more), then the writes since. */
+        GLuint b;
+        p_glGenBuffers(1, &b);
+        p_glBindBuffer(GL_COPY_WRITE_BUFFER, b);
+        p_glBufferData(GL_COPY_WRITE_BUFFER, (GLsizeiptr)sArenaVerts * sizeof(GXVertex), NULL, GL_DYNAMIC_DRAW);
+        if (sArenaSize) {
+            p_glBindBuffer(GL_COPY_READ_BUFFER, sArenaVbo);
+            p_glCopyBufferSubData(GL_COPY_READ_BUFFER, GL_COPY_WRITE_BUFFER, 0, 0,
+                                  (GLsizeiptr)sArenaSize * sizeof(GXVertex));
+        }
+        p_glDeleteBuffers(1, &sArenaVbo);
+        sArenaVbo = b;
+        arena_vao(b);
+        sBoundVao = 0;
+        if (getenv("RECOMP_GX_CACHE_LOG"))
+            fprintf(stderr, "gl: vertex arena now %d vertices (%.0f MB)\n", sArenaVerts,
+                    sArenaVerts * (double)sizeof(GXVertex) / 1048576.0);
+        sArenaSize = sArenaVerts;
+    }
+    if (sArenaDirtyLo < sArenaDirtyHi) {
+        p_glBindBuffer(GL_ARRAY_BUFFER, sArenaVbo);
+        p_glBufferSubData(GL_ARRAY_BUFFER, (GLintptr)sArenaDirtyLo * sizeof(GXVertex),
+                          (GLsizeiptr)(sArenaDirtyHi - sArenaDirtyLo) * sizeof(GXVertex), sArenaMem + sArenaDirtyLo);
+        p_glBindBuffer(GL_ARRAY_BUFFER, sVbo);
+    }
+    sArenaDirtyLo = 0x7FFFFFFF;
+    sArenaDirtyHi = 0;
+}
+
+
+static void use_vao(GLuint vao, int fresh) {
+    if (fresh || vao != sBoundVao) {
+        p_glBindVertexArray(vao);
+        sBoundVao = vao;
+    }
+}
+
 static void gl_draw(const GXDrawState* st, const GXVertex* v, int first_vertex, int vertices, const uint32_t* index,
               int first_index, int count) {
+    int fresh = !sGl.valid; /* apply_draw_state binds the per-draw vertex array then */
     apply_draw_state(st);
     if (st->xf && sXfStale) {
         p_glBufferSubData(GL_UNIFORM_BUFFER, 0, GX_XF_WORDS * 4, st->xf);
@@ -1447,6 +1612,15 @@ static void gl_draw(const GXDrawState* st, const GXVertex* v, int first_vertex, 
                           (GLsizeiptr)(st->xf_dirty_hi - st->xf_dirty_lo) * 4, st->xf + st->xf_dirty_lo);
     }
     sXfShadowValid = 0;
+    if (!v) {
+        /* From the arena, by index from its start. */
+        arena_upload();
+        use_vao(sArenaVao, fresh);
+        p_glBufferData(GL_ELEMENT_ARRAY_BUFFER, (GLsizeiptr)count * sizeof(uint32_t), index + first_index, GL_STREAM_DRAW);
+        glDrawElements(GL_TRIANGLES, count, GL_UNSIGNED_INT, NULL);
+        return;
+    }
+    use_vao(sVao, fresh);
     p_glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)vertices * sizeof(GXVertex), v + first_vertex, GL_STREAM_DRAW);
     p_glBufferData(GL_ELEMENT_ARRAY_BUFFER, (GLsizeiptr)count * sizeof(uint32_t), index + first_index, GL_STREAM_DRAW);
     glDrawElements(GL_TRIANGLES, count, GL_UNSIGNED_INT, NULL);
@@ -1465,11 +1639,21 @@ static void frame_buffer(GLenum target, GLsizeiptr* size, GLsizeiptr bytes, cons
     p_glBufferSubData(target, 0, bytes, data);
 }
 
+/* A recorded frame's vertices are the arena's when v is NULL. */
+static int sFrameFromArena;
+
 static void gl_frame_data(const GXVertex* v, int vertices, const uint32_t* index, int count) {
-    p_glBindVertexArray(sVao);
-    p_glBindBuffer(GL_ARRAY_BUFFER, sVbo);
-    frame_buffer(GL_ARRAY_BUFFER, &sFrameVbSize, (GLsizeiptr)vertices * sizeof(GXVertex), v);
+    sFrameFromArena = !v;
+    if (!v) {
+        arena_upload();
+        p_glBindVertexArray(sArenaVao);
+    } else {
+        p_glBindVertexArray(sVao);
+        p_glBindBuffer(GL_ARRAY_BUFFER, sVbo);
+        frame_buffer(GL_ARRAY_BUFFER, &sFrameVbSize, (GLsizeiptr)vertices * sizeof(GXVertex), v);
+    }
     frame_buffer(GL_ELEMENT_ARRAY_BUFFER, &sFrameIbSize, (GLsizeiptr)count * sizeof(uint32_t), index);
+    sBoundVao = 0; /* bound again by the next draw */
 }
 
 /* Sends the words of xf that differ from what the buffer holds. */
@@ -1487,7 +1671,10 @@ static void upload_xf(const uint32_t* xf) {
 }
 
 static void gl_draw_recorded(const GXDrawState* st, const uint32_t* xf, int first_vertex, int first_index, int count) {
+    int fresh = !sGl.valid;
     apply_draw_state(st);
+    if (sFrameFromArena) arena_upload();
+    use_vao(sFrameFromArena ? sArenaVao : sVao, fresh);
     upload_xf(xf);
     p_glDrawElementsBaseVertex(GL_TRIANGLES, count, GL_UNSIGNED_INT, (void*)((size_t)first_index * 4), first_vertex);
 }
@@ -1736,6 +1923,6 @@ static int gl_present(int x, int y, int cw, int ch, int may_drop) {
 const GXDevice g_gl_device = {
     "OpenGL",       gl_init,       gl_texture,     gl_texture_update, gl_texture_delete, gl_draw,
     gl_frame_data,  gl_draw_recorded, gl_clear,    gl_copy_target,    gl_copy_texture,   gl_copy,
-    gl_present,     gl_apply_settings, gl_scale,   gl_msaa,          NULL,              NULL,
-    NULL,           NULL,          gl_copy_read,
+    gl_present,     gl_apply_settings, gl_scale,   gl_msaa,          gl_arena_alloc,    gl_arena_write,
+    gl_arena_free,  NULL,          gl_copy_read,
 };

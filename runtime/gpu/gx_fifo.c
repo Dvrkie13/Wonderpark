@@ -1177,6 +1177,9 @@ typedef struct ListEntry {
 
 #define LIST_SETS 4096
 #define LIST_WAYS 4
+/* A list not called for this many frames (5 s) is let go of, its vertices
+ * freed: kept for 20 s, the park's walk filled 216 MB of video memory. */
+#define LIST_KEEP_FRAMES 150
 /* Calls in a row a list was different, after which it's only checked
  * every 64 frames; and the count for one that can't be kept. */
 #define LIST_CHANGING 4
@@ -1428,10 +1431,10 @@ static void list_frame_end(void) {
             sLate[i] = sLate[--sLateCount];
         } else i++;
     }
-    for (i = 0; i < 64; i++) {
+    for (i = 0; i < 256; i++) {
         ListEntry* e = &sLists[sweep];
         sweep = (sweep + 1) % (LIST_SETS * LIST_WAYS);
-        if (e->size && e->used + 600 < sFrame) {
+        if (e->size && e->used + LIST_KEEP_FRAMES < sFrame) {
             list_drop_vertices(e);
             e->size = 0;
         }
@@ -1501,6 +1504,25 @@ static void draw(int prim, const uint8_t* p, const VtxFormat* f, int count, int 
         v = sBatch;
         base = (uint32_t)transient(count);
         own = 1;
+    }
+    {
+        /* RECOMP_GX_CACHE_LOG=1: per frame, draws from kept display lists,
+         * draws of lists being decoded, other draws, and their vertices. */
+        static int on = -1;
+        static unsigned kept, built, other, vk, vb, vo;
+        if (on < 0) on = getenv("RECOMP_GX_CACHE_LOG") != NULL;
+        if (on) {
+            static uint64_t lastFrame;
+            if (!v) kept++, vk += count;
+            else if (sDisplayList) built++, vb += count; /* (without the arena: in a display list) */
+            else other++, vo += count;
+            if (sFrame != lastFrame && sFrame % 30 == 0) {
+                fprintf(stderr, "gxcache: frame %llu: kept %u (%u verts), decoded lists %u (%u), other %u (%u)\n",
+                        (unsigned long long)sFrame, kept, vk, built, vb, other, vo);
+                kept = built = other = vk = vb = vo = 0;
+            }
+            lastFrame = sFrame;
+        }
     }
     if (v) {
         vertex_template(&tpl);
