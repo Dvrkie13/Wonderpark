@@ -90,6 +90,7 @@ the file).
 | `WONDERPARK_RT_DEBUG=1` | with the render thread: print its state and the GPU interrupt state at exit |
 | `WONDERPARK_SYNC_IOS=1` | handle IOS requests (disc, NAND) on the game thread at once, not on the IOS thread (for comparisons) |
 | `WONDERPARK_DIRECT_LOG=1` | write log lines straight to stderr instead of through the log thread |
+| `WONDERPARK_NO_NATIVE_MTX=1` | run the SDK's matrix routines as recompiled instead of natively (`runtime/hle/hle_mtx.c`) |
 | `WONDERPARK_NO_HIDE` | don't hide GPU/DSP time from the game's clock (for comparisons) |
 | `WONDERPARK_VI_HZ` | retrace rate (default 60) |
 | `WONDERPARK_MQ=addr` | message queue for the `mqwatch` log |

@@ -11,3 +11,4 @@ emulating the hardware underneath isn't worth it.
 - `hle_debug.c`: debugging hooks, active only with their `WONDERPARK_LOG` category.
 
 Game-specific behaviour changes don't go here; they go in `config/patches/`.
+- `hle_mtx.c`: native PSMTXIdentity, PSMTXCopy, PSMTXConcat and PSMTXMultVec (the SDK's paired-single matrix code, called hundreds of thousands of times a second).

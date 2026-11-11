@@ -13,12 +13,12 @@ extern const unsigned wp_hook_count;
 #define SLICE_CYCLES 20000
 #define RETURN_MAGIC 0xFFFFFF00u /* lr for host-made calls; no code there */
 
-static u32 s_bypass; /* run the original once instead of the hook */
+u32 g_wp_hook_bypass; /* run the original once instead of the hook (also read by the generated code) */
 
 int wp_hook(CPUState* c, u32 addr) {
     unsigned lo = 0, hi = wp_hook_count;
-    if (s_bypass == addr) {
-        s_bypass = 0;
+    if (g_wp_hook_bypass == addr) {
+        g_wp_hook_bypass = 0;
         return 0;
     }
     while (lo < hi) {
@@ -63,7 +63,7 @@ void wp_call_original(CPUState* c, u32 addr) {
     u32 ret = c->lr;
     c->lr = RETURN_MAGIC;
     c->pc = addr;
-    s_bypass = addr;
+    g_wp_hook_bypass = addr;
     run_until(c, RETURN_MAGIC);
     c->lr = ret;
     c->pc = ret;

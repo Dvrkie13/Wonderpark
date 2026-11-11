@@ -105,6 +105,9 @@ def main() -> int:
     ap.add_argument("--build-dir", default="game", help="folder under build/ (default game)")
     ap.add_argument("--cflags", default="", help="extra compiler flags, e.g. /arch:AVX2 (clang-cl)")
     ap.add_argument("--no-lto", action="store_true", help="no ThinLTO (faster to build, the game a little slower)")
+    ap.add_argument("--pgo-generate", action="store_true",
+                    help="an instrumented build that writes a profile when it exits (LLVM_PROFILE_FILE)")
+    ap.add_argument("--pgo-use", metavar="PROFDATA", help="optimise with a merged profile (llvm-profdata merge)")
     a = ap.parse_args()
     build = REPO / "build" / a.build_dir
     try:
@@ -123,6 +126,31 @@ def main() -> int:
                 shutil.rmtree(build)  # switching generators needs a fresh build folder
             flags = extra + a.cflags.split()
             linker = ["-DCMAKE_LINKER=link.exe"]
+            link_flags = []
+            if a.pgo_generate:
+                # Profile-guided optimisation, step 1. The profile runtime
+                # comes from the clang install (llvm-mingw has it only as a
+                # MinGW-style .a, which lld-link and link.exe read too).
+                rt = sorted(glob.glob(str(Path(path).parent.parent / "lib/clang/*/lib/windows/clang_rt.profile-x86_64.lib"))
+                            + glob.glob(str(Path(path).parent.parent / "lib/clang/*/lib/windows/libclang_rt.profile-x86_64.a")))
+                if not rt:
+                    raise BuildError("--pgo-generate: no clang_rt.profile-x86_64 library in the clang install")
+                flags.append("-fprofile-instr-generate")
+                # The compiler asks the linker for clang_rt.profile.lib by name.
+                libdir = REPO / "build" / "pgo-lib"
+                libdir.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(rt[-1], libdir / "clang_rt.profile.lib")
+                # Built for MinGW, it also needs printf-family functions (in
+                # legacy_stdio_definitions.lib with the UCRT) and MinGW's
+                # stack probe, which does what __chkstk does on x64.
+                link_flags += [f"/LIBPATH:{libdir}", "legacy_stdio_definitions.lib",
+                               "/alternatename:___chkstk_ms=__chkstk"]
+            if a.pgo_use:
+                prof = Path(a.pgo_use).resolve()
+                if not prof.is_file():
+                    raise BuildError(f"--pgo-use: no profile at {prof}")
+                flags += [f"-fprofile-instr-use={prof}", "-Wno-profile-instr-out-of-date",
+                          "-Wno-profile-instr-unprofiled", "-Wno-backend-plugin"]
             if not a.no_lto:
                 tools = Path(path).parent
                 lld, lib = tools / "lld-link.exe", tools / "llvm-lib.exe"
@@ -136,10 +164,12 @@ def main() -> int:
             cfg = ["cmake", "-S", str(REPO), "-B", str(build), "-G", "Ninja", "-DCMAKE_BUILD_TYPE=Release",
                    f"-DCMAKE_MAKE_PROGRAM={ninja}", f"-DCMAKE_C_COMPILER={path}",
                    f"-DCMAKE_C_FLAGS_INIT={' '.join(flags)}", *linker, *opts]
+            if link_flags:
+                cfg.append(f"-DCMAKE_EXE_LINKER_FLAGS_INIT={' '.join(link_flags)}")
             # CMake takes the flags and linker only when a build folder is
             # first configured: when they change, start the folder again.
             marker = build / "wonderpark_toolchain.txt"
-            want = "\n".join([path, *flags, *linker]) + "\n"
+            want = "\n".join([path, *flags, *linker, *link_flags]) + "\n"
             if marker.is_file() and marker.read_text() != want or not marker.is_file() and cache.is_file():
                 print("compiler settings changed: building from scratch", flush=True)
                 shutil.rmtree(build)

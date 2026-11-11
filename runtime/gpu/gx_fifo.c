@@ -1529,7 +1529,11 @@ static void draw(int prim, const uint8_t* p, const VtxFormat* f, int count, int 
         for (i = 0; i < count; i++) v[i] = tpl;
         read_vertices(p, f, v, count);
         if ((long)sFrame == sDebugFrame) debug_draw(&sBatchState, v, count);
-        if (own) gxb_arena_write((int)base, v, count);
+        /* A list being decoded: its vertices go to the arena now, not at
+         * list_end, as a batch flushed before the list ends draws them (with
+         * OpenGL, at once: Pikachu's body went missing or streaked in the
+         * frames its lists were decoded again). */
+        if (own || (sList && sListBuild)) gxb_arena_write((int)base, v, count);
     }
     ix = sIndex + sIndexCount;
     switch (prim) {
