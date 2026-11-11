@@ -8,6 +8,6 @@ file registers its address range with `mmio.c` (`devices.c` starts them).
 - `hw_ai.c`, `hw_dsp.c`: audio interface and DSP mailboxes (boot handshake, AX protocol), the AI DMA timer that plays sound.
 - `hw_ax.c`: runs AX's command lists (voice mixing, aux buses, output), the part a Wii's DSP does.
 - `hw_gx.c`: the GPU's CPU side: write-gather pipe, command processor, pixel engine tokens.
-- `hw_ipc.c`: the IPC registers to IOS (`runtime/ios`).
+- `hw_ipc.c`: the IPC registers to IOS (`runtime/ios`), which runs on a thread of its own so disc and NAND file access never holds up the game thread.
 - `hw_lc.c`: the locked cache and its DMA.
 - `hw_misc.c`: Hollywood registers at `0x0D800000`.

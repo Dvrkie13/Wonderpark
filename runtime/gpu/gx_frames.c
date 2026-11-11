@@ -176,6 +176,15 @@ static void report(void) {
                         g_wp_stats.texture_ms, g_cnt_readbacks, g_cnt_vertices / frames,
                         sGlCalls[GLK_DRAW] / frames, g_cnt_gx_draws / frames, g_cnt_efb_copies / frames,
                         g_cnt_efb_copies_tex / frames);
+            {
+                extern unsigned g_cnt_disc_reads;
+                extern double g_disc_ms, g_disc_max_ms;
+                if (e && *e == '1' && g_cnt_disc_reads)
+                    fprintf(stderr, "disc: %u reads, %.1f ms, slowest %.1f ms\n", g_cnt_disc_reads, g_disc_ms,
+                            g_disc_max_ms);
+                g_cnt_disc_reads = 0;
+                g_disc_ms = g_disc_max_ms = 0;
+            }
             g_cnt_shader_compiles = g_cnt_readbacks = g_cnt_vertices = g_cnt_gx_draws = 0;
             g_cnt_efb_copies = g_cnt_efb_copies_tex = 0;
             lastGpu = g_gpu_tb;
@@ -202,6 +211,10 @@ static void show(int x, int y, int w, int h) {
      * display, maybe a slower one's), and once its queue is full a
      * present waits for it, and the game, drawing these frames while it
      * waits, would slow down. Then the frame is left out. */
+    {
+        extern void wp_stallwatch_frame(void);
+        wp_stallwatch_frame();
+    }
     if (sDev->present(x, y, w, h, sRecording)) sPresentsDropped++;
     report();
     win_pump();

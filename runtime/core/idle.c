@@ -18,6 +18,7 @@ uint64_t wp_dec_next_host(void);
 uint64_t wp_timers_next(void);
 int wp_irq_pending(void);
 extern uint64_t g_wait_ticks;
+void* wp_wake_event(void); /* hw_ipc.c */
 
 #define MAX_SLEEP (TB_HZ / 100) /* never more than 10 ms at once */
 
@@ -42,7 +43,11 @@ static void sleep_until(uint64_t deadline) {
         LARGE_INTEGER due;
         /* The clock may run faster than real time (game speed, cpu_host.c). */
         due.QuadPart = -(left * 10000000 / (int64_t)TB_HZ / wp_game_speed());
-        if (SetWaitableTimer(timer, &due, 0, NULL, NULL, FALSE)) WaitForSingleObject(timer, INFINITE);
+        if (SetWaitableTimer(timer, &due, 0, NULL, NULL, FALSE)) {
+            /* An IOS reply (hw_ipc.c) ends the sleep early. */
+            HANDLE h[2] = {timer, (HANDLE)wp_wake_event()};
+            WaitForMultipleObjects(h[1] ? 2 : 1, h, FALSE, INFINITE);
+        }
     } else {
         Sleep(1);
     }

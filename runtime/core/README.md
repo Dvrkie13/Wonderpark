@@ -8,4 +8,5 @@
 - `mmio.c`: hardware register dispatch by physical address.
 - `paths.c`: the data folder (`%APPDATA%\Wonderpark`) and cache folder.
 - `wp_cpu_fast.h`, `wp_fast_fp.h`: inline fast paths compiled into the generated code (RAM, locked cache, GX pipe, floating point).
-- `debug.c`, `hostprof.c`, `watch.c`: symbols and backtraces, a host profiler, a store watch.
+- `logpipe.c`: stderr goes through a pipe that a thread of its own empties, so a log line never makes the game thread wait for a console or disk.
+- `debug.c`, `hostprof.c`, `stallwatch.c`, `watch.c`: symbols and backtraces, a host profiler, the long-frame catcher (`WONDERPARK_LOG=stalls`), a store watch.

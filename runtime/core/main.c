@@ -33,6 +33,9 @@ void gx_init(void);
 void input_init(void);
 void audio_init(void);
 void wp_hostprof_start(void);
+void wp_stallwatch_start(void);
+void wp_logpipe_start(void);
+void wp_logpipe_drain(void);
 void wp_watch_init(void);
 void wp_run(CPUState* c, unsigned long long max_slices);
 
@@ -64,7 +67,7 @@ static LONG WINAPI crash_filter(EXCEPTION_POINTERS* e) {
         fprintf(stderr, "  guest pc %08X lr %08X r1 %08X\n", g_cpu->pc, g_cpu->lr, g_cpu->gpr[1]);
         wp_backtrace(g_cpu);
     }
-    fflush(stderr);
+    wp_logpipe_drain();
     return EXCEPTION_EXECUTE_HANDLER;
 }
 #endif
@@ -154,6 +157,7 @@ int main(int argc, char** argv) {
     const char* env;
     int i;
 
+    wp_logpipe_start(); /* log lines never block the game (logpipe.c) */
     /* Wonderpark [main.dol] [--headless] [--exit-after <seconds>] */
     for (i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--headless")) g_wp_headless = 1;
@@ -211,6 +215,7 @@ int main(int argc, char** argv) {
     if (!g_wp_headless) audio_init();
 
     wp_hostprof_start();
+    wp_stallwatch_start();
     wp_watch_init();
     wp_run(&cpu, max_slices);
     return 2;

@@ -84,13 +84,15 @@ the file).
 | `WONDERPARK_MAX_SLICES` | stop after N dispatcher slices, printing where |
 | `WONDERPARK_PEEK=addr,len` | with `WONDERPARK_MAX_SLICES`: dump guest memory at the stop |
 | `WONDERPARK_NO_IDLE_SLEEP` | don't sleep in the game's idle loop |
+| `WONDERPARK_SYNC_IOS=1` | handle IOS requests (disc, NAND) on the game thread at once, not on the IOS thread (for comparisons) |
+| `WONDERPARK_DIRECT_LOG=1` | write log lines straight to stderr instead of through the log thread |
 | `WONDERPARK_NO_HIDE` | don't hide GPU/DSP time from the game's clock (for comparisons) |
 | `WONDERPARK_VI_HZ` | retrace rate (default 60) |
 | `WONDERPARK_MQ=addr` | message queue for the `mqwatch` log |
 | `WONDERPARK_WATCH=lo-hi` | physical range for `memcpywatch`, or the store watch (CMake `-DWP_STORE_WATCH=ON`) |
 | `WONDERPARK_AUDIO_DUMP=file.wav` | also write the sound output to a file |
 | `WONDERPARK_AX_NOAUX`, `WONDERPARK_AX_SNAP`, `WONDERPARK_AX_WB` | AX mixer debugging |
-| `RECOMP_FPS=1` | print fps, the overlay's numbers (`stats:`) and GL timings every second |
+| `RECOMP_FPS=1` | print fps, the overlay's numbers (`stats:`), disc reads (`disc:`) and GL timings every second |
 | `RECOMP_AUDIO=0` | no sound |
 | `RECOMP_GX_HIDDEN=1` | hidden window (`--headless` does this too) |
 | `RECOMP_GX_DUMP=dir`, `RECOMP_GX_DUMP_EVERY=N`, `RECOMP_GX_DUMP_FROM=N` | save presented frames as BMPs |
@@ -102,12 +104,12 @@ the file).
 
 ### `WONDERPARK_LOG` categories
 
-`adxcheck axramp axvoice axvoices dec dsp efbcopy exc gxhw gxirq hook hostprof hwmisc idle ios ipc irq kpad memcpywatch mmio mmiostat mqwatch nandio pi pointer prof steps threads waits wpad wpadbtn`
+`adxcheck axramp axvoice axvoices dec dsp efbcopy exc gxhw gxirq hook hostprof hwmisc idle ios ipc irq kpad memcpywatch mmio mmiostat movie mqwatch nandio pi pointer prof stalls steps threads waits wpad wpadbtn`
 
 The most useful: `waits` (where threads block), `steps` (the game's logic
 steps per tick), `idle`, `efbcopy`, `gxirq`, `mmiostat` (slow memory
 accesses), `axvoices`, `pointer`, `hostprof` (host profiler; see
-`tools/analysis/hostprof.py`), `prof` (where slices end).
+`tools/analysis/hostprof.py`), `stalls` (the game thread's call stacks during any frame over 250 ms), `prof` (where slices end).
 
 ## Developer tools
 

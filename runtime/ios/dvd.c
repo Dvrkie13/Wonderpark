@@ -175,8 +175,24 @@ const char* wp_movie_playing(void) {
     return sMovie[0] && wp_host_time() - sMovieAt < 5 * TB_HZ ? sMovie : NULL;
 }
 
+/* Disc reads in the last second and their time (RECOMP_FPS's stats line). */
+unsigned g_cnt_disc_reads;
+double g_disc_ms, g_disc_max_ms;
+
+static int read_regions(uint64_t offset, uint32_t len, uint32_t dst);
+
 /* Copies len bytes at a data-partition offset to guest memory. */
 int hle_dvd_read(uint64_t offset, uint32_t len, uint32_t dst) {
+    double t0 = wp_wall_seconds(), ms;
+    int ok = read_regions(offset, len, dst);
+    ms = (wp_wall_seconds() - t0) * 1000.0;
+    g_cnt_disc_reads++;
+    g_disc_ms += ms;
+    if (ms > g_disc_max_ms) g_disc_max_ms = ms;
+    return ok;
+}
+
+static int read_regions(uint64_t offset, uint32_t len, uint32_t dst) {
     uint64_t end = offset + len;
     int i, ok = 1;
     if (sImageRead) {
