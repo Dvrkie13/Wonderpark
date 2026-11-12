@@ -49,6 +49,8 @@ extern "C" {
 char g_dump_next[512];  // a frame for gl_backend.c to save as shown (test shots)
 int win_has_focus(void);
 extern int g_wp_headless;
+int hle_game_text_speed(void);           /* hle_options.c: 0 Normal, 1 Fast, -1 no save loaded */
+void hle_set_game_text_speed(int fast);
 void* win_handle(void);
 }
 
@@ -117,6 +119,10 @@ struct Row {
     std::function<int()> get;
     std::function<void(int)> set;
     std::function<void()> reset;
+    // Available only sometimes (the game's own settings need a loaded save):
+    // while off() is true the row is greyed with tag instead of "Coming soon".
+    std::function<bool()> off;
+    std::wstring tag;
 };
 
 struct Category {
@@ -337,7 +343,21 @@ void build_rows() {
             r.reset = [] {};
             return r;
         };
-        c.rows.push_back(soon(L"Text speed", L"Will share its value with the game's own Options page.", 50, 300, 25, nullptr));
+        {
+            // The game's own Text Speed (Options page), read and written in
+            // place in its loaded save (hle_options.c).
+            Row ts;
+            ts.kind = CHOICE;
+            ts.label = L"Text speed";
+            ts.desc = L"The game's own setting, as on its Options page; saved with your game.";
+            ts.opts = {L"Normal", L"Fast"};
+            ts.get = [] { return std::max(0, hle_game_text_speed()); };
+            ts.set = [](int v) { hle_set_game_text_speed(v); };
+            ts.reset = [] { hle_set_game_text_speed(0); };
+            ts.off = [] { return hle_game_text_speed() < 0; };
+            ts.tag = L"Load a save first";
+            c.rows.push_back(ts);
+        }
         c.rows.push_back(soon(L"Berries collected", nullptr, 50, 500, 25, &g_settings.berries));
         c.rows.push_back(soon(L"Shop prices", nullptr, 0, 200, 10, &g_settings.prices));
         c.rows.push_back(soon(L"Damage you deal", nullptr, 25, 400, 25, &g_settings.damage_dealt));
@@ -690,7 +710,8 @@ void place_rows() {
             float lh = label_h(r, p.labelW);
             float top = y + 14;
             if (r.kind == CHOICE && wrap) {
-                // Pills on lines of their own under the label, right-aligned.
+                // Pills on lines of their own under the label, from the left
+                // (as the mockup's flex-wrap puts them).
                 std::vector<std::vector<int>> lines(1);
                 float lw = 0;
                 for (size_t o = 0; o < r.opts.size(); o++) {
@@ -702,9 +723,11 @@ void place_rows() {
                 float py = top + lh + 10;
                 p.parts.assign(r.opts.size(), RectF());
                 for (auto& line : lines) {
+                    // One line: from the left; several (the pills fill the
+                    // row): each right-aligned, as flex-end in the mockup.
                     float total = -6;
                     for (int o : line) total += pill_w(r.opts[o]) + 6;
-                    float px = ROW_X + ROW_W - total;
+                    float px = lines.size() > 1 ? ROW_X + ROW_W - total : ROW_X;
                     for (int o : line) {
                         float pw = pill_w(r.opts[o]);
                         p.parts[o] = RectF(px, py, px + pw, py + 38);
@@ -718,7 +741,7 @@ void place_rows() {
                 p.h = (py - 6 + 14) - y;
             } else {
                 float rowH = std::max(lh, ch);
-                p.ctrlX = ROW_X + ROW_W - cw, p.ctrlW = cw, p.ctrlH = ch;
+                p.ctrlX = wrap ? ROW_X : ROW_X + ROW_W - cw, p.ctrlW = cw, p.ctrlH = ch;
                 p.ctrlY = wrap ? top + lh + 10 : top + (rowH - ch) / 2;
                 if (r.kind == CHOICE) {
                     float px = p.ctrlX;
@@ -868,7 +891,7 @@ void draw_rows(float listTop, float t) {
         float nameH = measure(ln.Get()).height;
         if (r.soon) {
             float nw = measure(ln.Get()).widthIncludingTrailingWhitespace;
-            auto tl = layout(L"Coming soon", fmt(L"Nunito", 800, 11), 200);
+            auto tl = layout(r.tag.empty() ? L"Coming soon" : r.tag, fmt(L"Nunito", 800, 11), 200);
             float tw = measure(tl.Get()).widthIncludingTrailingWhitespace + 16;
             float tx = ROW_X + nw + 8;
             if (tx + tw > ROW_X + p.labelW) tx = ROW_X + p.labelW - tw;
@@ -1318,7 +1341,12 @@ extern "C" int settings_ui_wants_pause(void) {
         const char* at = getenv("WONDERPARK_F1_SHOT_AT");
         if (e && *e) g_shotPrefix = e, g_shotStep = 0, g_shotAt = now_s() + (at && *at ? atof(at) : 1.0);
     }
-    if (g_shotStep == 0 && now_s() >= g_shotAt) open_tab(true), g_shotStep = 1, g_shotAt = now_s() + .8;
+    if (g_shotStep == 0 && now_s() >= g_shotAt) {
+        open_tab(true);
+        if (G.ok) set_tab(0);
+        else U.tab = 0;
+        g_shotStep = 1, g_shotAt = now_s() + .8;
+    }
     run_key_script();
     if (g_wp_headless) return U.open;
     if (U.open) return 1;
@@ -1330,6 +1358,12 @@ extern "C" const uint32_t* settings_ui_draw(int w, int h) {
     static int dw, dh;
     if (!U.open || w <= 0 || h <= 0) return nullptr;
     if (!ensure_target(w, h)) return nullptr;
+    // Rows available only sometimes: greyed (soon) while they can't be used.
+    for (auto& r : g_cats[U.tab].rows)
+        if (r.off) {
+            bool o = r.off();
+            if (o != r.soon) r.soon = o, U.gen++;
+        }
     if (g_placed.size() != g_cats[U.tab].rows.size()) place_rows();
     double t = now_s();
     bool animating = !U.reduced && (t - U.openT < .5 || U.listenRow >= 0);

@@ -979,6 +979,10 @@ void gxb_copy_to_texture(uint32_t addr, int x, int y, int w, int h, int fmt, int
 
 void gxb_present(int x, int y, int cw, int ch) {
     sGameFrames++;
+    {
+        extern void wp_ramdump_frame(unsigned frame); /* WONDERPARK_RAMDUMP (ramdump.c) */
+        wp_ramdump_frame(sGameFrames);
+    }
 #ifdef __ANDROID__
     {
         void android_frame_done(void); /* window_android.c: the CPU's clocks kept up */

@@ -152,7 +152,9 @@ tab closes (they rebuild the EFB). The same pause holds the game while its
 window is in the background, with "Pause in the background" on.
 
 Settings not built yet are shown greyed with "Coming soon" (a choice not
-available yet is a dimmed pill).
+available yet is a dimmed pill). Text speed is the game's own value, read
+and written in its loaded save (`runtime/hle/hle_options.c`; greyed "Load
+a save first" before one is loaded).
 
 Test hooks: `WONDERPARK_F1_SHOT=<prefix>` opens the tab
 `WONDERPARK_F1_SHOT_AT` seconds after the first frame (default 1) and saves
@@ -171,6 +173,7 @@ keys (f1 esc up down left right enter q e backspace, a letter or digit) or
 | `WONDERPARK_OVERLAY=1` | debug overlay open at start |
 | `WONDERPARK_GAME_SPEED=N` | game speed 1, 2, 4 or 10 at start |
 | `WONDERPARK_PAD_SCRIPT` | scripted Wii Remote input, timed from start: `40:2,40.4:,45:down,45.3:` (time in seconds, then buttons joined by `+`: up down left right a b 1 2 plus minus home shake shake2; empty = release). `f3000:2,f3010:` counts the game's finished frames instead (waits for the disc don't shift it) |
+| `WONDERPARK_RAMDUMP=f<frame>:<file>,...` | at the game's n-th finished frame, save guest memory (MEM1 then MEM2, 88 MB) to a file, written by a thread of its own; compare dumps to find where the game keeps a value (`runtime/core/ramdump.c`) |
 | `WONDERPARK_LOG` | debug log categories, comma-separated (below) |
 | `WONDERPARK_MAX_SLICES` | stop after N dispatcher slices, printing where |
 | `WONDERPARK_PEEK=addr,len` | with `WONDERPARK_MAX_SLICES`: dump guest memory at the stop |
