@@ -6,6 +6,7 @@ emulating the hardware underneath isn't worth it.
 - `hle_os.c`: audio-system and interrupt-enable functions; `SCGetAspectRatio`, which tells the game the TV is 16:9 when the Widescreen setting is on (the game then runs in its own 16:9 mode).
 - `hle_bt.c`: Bluetooth stack start-up (no real Bluetooth).
 - `hle_cache.c`: cache flush and invalidate (no-ops: there is no cache to keep coherent).
+- `hle_frame.c`: the Frame rate setting: at 60, the game's frame timer's 30 Hz request becomes 60 Hz each frame, except while a movie plays.
 - `hle_wpad.c`: the Wii Remote (WPAD): buttons from the keyboard and controller, the pointer from the mouse.
 - `hle_kpad.c`: KPAD logging.
 - `hle_debug.c`: debugging hooks, active only with their `WONDERPARK_LOG` category.

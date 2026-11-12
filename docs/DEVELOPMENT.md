@@ -106,7 +106,7 @@ the file).
 | `[display] msaa` | `WONDERPARK_MSAA` | 1, 2, 4, 8 | works |
 | `[display] aniso` | `WONDERPARK_ANISO` | 1, 2, 4, 8, 16 | works |
 | `[display] renderer` | `WONDERPARK_RENDERER` | opengl, vulkan | only OpenGL is built |
-| `[display] frame_rate` | `WONDERPARK_FRAME_RATE` | 30, 60, 120-240 | not hooked up yet (plan section 12) |
+| `[display] frame_rate` | `WONDERPARK_FRAME_RATE` | 30, 60, 120-240 | 30 and 60 work, at once (F1 or the Options page): at 60 the game's frame timer runs at 59.94 Hz instead of 29.97 and draws every 60 Hz logic step; movies stay at 30 (`runtime/hle/hle_frame.c`). 120 and up: not yet (frame interpolation) |
 | `[display] fov` | `WONDERPARK_FOV` | 80-150 | not hooked up yet |
 | `[gameplay] skip_movies` | `WONDERPARK_SKIP_MOVIES` | 0, 1 | not working yet (see "Skip movies" in `docs/recomp-status.md`) |
 | `[gameplay] text_speed`, `berries`, `prices`, `damage_dealt`, `damage_taken`, `chase_speed` | `WONDERPARK_<KEY>` | percent | from the PokéPark 1 runtime; not hooked up for PokéPark 2 yet |

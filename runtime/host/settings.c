@@ -13,7 +13,7 @@
 
 #include "host_settings.h"
 
-void hle_set_frame_rate(int fps);   /* hle_game.c */
+void hle_set_frame_rate(int fps);   /* hle_frame.c */
 void gxb_set_output_rate(int fps);  /* gx_frames.c */
 
 /* The frame rates offered. Above 60 the game still draws 60 frames a

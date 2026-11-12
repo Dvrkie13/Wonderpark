@@ -19,7 +19,6 @@ void hle_set_damage(int dealt, int taken) { (void)dealt; (void)taken; }
 void hle_set_chase_speed(int percent) { (void)percent; }
 void hle_set_text_speed(int speed) { (void)speed; }
 void hle_set_fov(int percent) { (void)percent; }
-void hle_set_frame_rate(int fps) { (void)fps; }
 void update_check(void) {}
 /* menu_draw and menu_window_message: the debug overlay (overlay_win32.c). */
 

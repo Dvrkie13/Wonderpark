@@ -209,9 +209,9 @@ void build_rows() {
         c.rows.push_back(wm);
         c.rows.push_back(xrow(CHOICE, X_RESOLUTION, L"Resolution", L"The window's size, when in a window.",
                               {L"1280×720", L"1600×900", L"1920×1080", L"2560×1440", L"Match screen"}));
-        Row fr = vchoice(L"Frame rate", L"Cutscenes always play at their original speed.", {L"30 (original)", L"60", L"120"},
+        Row fr = vchoice(L"Frame rate", L"60 draws every step of the game; movies stay at 30.", {L"30 (original)", L"60", L"120"},
                          {30, 60, 120}, &g_settings.frame_rate, 30);
-        fr.soonOpts = 6;
+        fr.soonOpts = 4;  // 120: frame interpolation, not built yet
         c.rows.push_back(fr);
         c.rows.push_back(xrow(TOGGLE, X_VSYNC, L"V-Sync", L"Stops the picture from tearing.", {}, true));
         Row rd;
@@ -1695,7 +1695,7 @@ void build_pc_rows() {
     };
     add(L"Display mode", {L"Windowed", L"Borderless", L"Fullscreen"}, 4, x(X_WINDOW_MODE));
     add(L"Resolution", {L"1280×720", L"1600×900", L"1920×1080", L"2560×1440", L"Match screen"}, 0, x(X_RESOLUTION));
-    add(L"Frame rate", {L"30 (original)", L"60"}, 2, field(&g_settings.frame_rate, {30, 60}));
+    add(L"Frame rate", {L"30 (original)", L"60"}, 0, field(&g_settings.frame_rate, {30, 60}));
     add(L"Anti-aliasing", {L"Off", L"2×", L"4×", L"8×"}, 0, field(&g_settings.msaa, {1, 2, 4, 8}));
     add(L"Graphics quality", {L"Auto", L"Original", L"2×", L"3×", L"4×"}, 0, field(&g_settings.scale, {0, 1, 2, 3, 4}));
     add(L"Widescreen", {L"Off", L"On"}, 0, x(X_WIDESCREEN));
