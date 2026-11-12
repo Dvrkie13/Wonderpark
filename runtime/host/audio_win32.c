@@ -29,8 +29,17 @@
  * with a windowed-sinc filter (below) rather than left to Windows. */
 #define OUT_RATE 48000
 #define BLOCK_FRAMES 576 /* 12 ms at 48 kHz */
-#define BLOCKS 10 /* at most 120 ms queued */
+/* Wonderpark: playback starts with PRIME_BLOCKS queued and the queue then
+ * sits about there (production keeps pace with the device), so BLOCKS is
+ * headroom: windows reports finished blocks in clumps, and after a stall
+ * the DMA timer catches up in a burst. With 10 the queue sat at 9 of 10
+ * and either overflowed (dropped blocks: clicks, e.g. at the Cake
+ * Contraption's character select); 16 absorbs them, and the latency stays
+ * that of PRIME_BLOCKS. */
+#define BLOCKS 16 /* at most 192 ms queued */
 #define PRIME_BLOCKS 7 /* 84 ms */
+#define TRIM_ABOVE 2
+#define TRIM_EVERY 128
 
 static HWAVEOUT sOut;
 static WAVEHDR sHdr[BLOCKS];
@@ -56,6 +65,15 @@ static int log_on(void) {
     return on;
 }
 
+/* WONDERPARK_LOG=audioq: the queue's depth at each block written, and each
+ * block dropped, with the time. */
+static int qlog_on(void) {
+    static int on = -1;
+    if (on < 0) { const char* e = getenv("WONDERPARK_LOG"); on = e && strstr(e, "audioq") != NULL; }
+    return on;
+}
+extern double wp_wall_seconds(void);
+
 static void push_out(const int16_t* lr, int frames) {
     sPushed += (unsigned)frames;
     if (log_on() && sPushed >= (unsigned)OUT_RATE * 5) {
@@ -67,7 +85,11 @@ static void push_out(const int16_t* lr, int frames) {
         WAVEHDR* h = &sHdr[sFill];
         int n;
         if (sFrames == 0) {
-            if (busy(h)) { sDrops++; return; } /* queue full: drop */
+            if (busy(h)) {
+                if (qlog_on()) fprintf(stderr, "audioq %.3f s: dropped\n", wp_wall_seconds());
+                sDrops++;
+                return;
+            } /* queue full: drop */
             if (!sPriming && queued() == 0) {
                 /* Ran dry: hold the device until the queue is primed. */
                 waveOutPause(sOut);
@@ -93,6 +115,7 @@ static void push_out(const int16_t* lr, int frames) {
             }
             h->dwFlags &= ~WHDR_DONE;
             waveOutWrite(sOut, h, sizeof(*h));
+            if (qlog_on()) fprintf(stderr, "audioq %.3f s: %d queued\n", wp_wall_seconds(), queued());
             sFill = (sFill + 1) % BLOCKS;
             sFrames = 0;
             if (sPriming && queued() >= PRIME_BLOCKS) {
@@ -135,9 +158,18 @@ int wp_game_speed(void); /* cpu_host.c */
 
 static void push(const int16_t* lr, int frames) {
     static int16_t out[2048 * 2];
-    int i, n = 0;
+    static unsigned trim;
+    int i, n = 0, over;
     if (wp_game_speed() != 1) return; /* sped up (debug overlay, F7): silent rather than garbled */
+    /* Wonderpark: a burst (catching up after a stall, start-up) can leave
+     * the queue well above where playback started, and as production then
+     * keeps pace with the device it would stay there, as latency. While it
+     * is more than TRIM_ABOVE blocks over PRIME_BLOCKS, one input sample in
+     * TRIM_EVERY is left out (0.8% faster, inaudible; before the low-pass
+     * filter, so no click) until it is back. */
+    over = !sPriming && queued() > PRIME_BLOCKS + TRIM_ABOVE;
     for (i = 0; i < frames; i++) {
+        if (over && ++trim % TRIM_EVERY == 0) continue;
         sHist[0][sIn & 63] = lr[2 * i];
         sHist[1][sIn & 63] = lr[2 * i + 1];
         sIn++;

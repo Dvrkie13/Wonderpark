@@ -11,4 +11,5 @@ emulating the hardware underneath isn't worth it.
 - `hle_debug.c`: debugging hooks, active only with their `WONDERPARK_LOG` category.
 
 Game-specific behaviour changes don't go here; they go in `config/patches/`.
+- `hle_string.c`: native strcmp and the game's resource-by-name lookups (0x802330F0, 0x80233380). A scene's loading looks up every resource by name; recompiled, that was a 650 ms frame in the Cake Contraption's character select.
 - `hle_mtx.c`: native PSMTXIdentity, PSMTXCopy, PSMTXConcat and PSMTXMultVec (the SDK's paired-single matrix code, called hundreds of thousands of times a second).

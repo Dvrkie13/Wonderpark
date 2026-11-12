@@ -377,6 +377,18 @@ Checked, working:
   frame. Playing it needs the pointer, which scripted input can't aim; it
   was played to the end on 2026-11-05.
 
+The owner's report (2026-11-11): sound glitches at the Cake Contraption's
+character select. Confirmed cause: one frame of 560-660 ms there, all in
+the game's own code. It looks up each of the scene's resources by name
+(0x802330F0 and its twin 0x80233380, a walk through a table calling strcmp
+for each entry). The output queue never ran dry (the sound interrupt is
+still served inside a long frame), but afterwards the late timer ticks
+come in a burst and blocks were dropped (2 in that 5 s, none elsewhere).
+Native versions of strcmp and both lookups (`runtime/hle/hle_string.c`)
+bring that frame to about 200 ms (dev build) with no dropped blocks. The
+frames where Pikachu seemed to be missing there (with a yellow shape at
+the top) were jumps: the script presses ② 20 frames before each.
+
 Not reached (no save near them, and they're hours into the story):
 - a battle after the Timburr tutorial, a chase, the other three
   attractions, a story movie with its own sound (the Seasong Beach arrival

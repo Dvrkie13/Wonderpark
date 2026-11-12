@@ -201,6 +201,8 @@ keys (f1 esc up down left right enter q e backspace, a letter or digit) or
 | `WONDERPARK_SYNC_IOS=1` | handle IOS requests (disc, NAND) on the game thread at once, not on the IOS thread (for comparisons) |
 | `WONDERPARK_DIRECT_LOG=1` | write log lines straight to stderr instead of through the log thread |
 | `WONDERPARK_NO_NATIVE_MTX=1` | run the SDK's matrix routines as recompiled instead of natively (`runtime/hle/hle_mtx.c`) |
+| `WONDERPARK_NO_NATIVE_STRING=1` | run strcmp and the game's two resource-by-name lookups as recompiled instead of natively (`runtime/hle/hle_string.c`) |
+| `WONDERPARK_STALL_MS` | with `WONDERPARK_LOG=stalls`: the frame length that counts as a stall (default 250) |
 | `WONDERPARK_NO_HIDE` | don't hide GPU/DSP time from the game's clock (for comparisons) |
 | `WONDERPARK_VI_HZ` | retrace rate (default 60) |
 | `WONDERPARK_MQ=addr` | message queue for the `mqwatch` log |
@@ -221,12 +223,15 @@ keys (f1 esc up down left right enter q e backspace, a letter or digit) or
 
 ### `WONDERPARK_LOG` categories
 
-`adxcheck axramp axvoice axvoices dec dsp efbcopy exc gxhw gxirq hook gxpe hostprof hwmisc idle ios ipc irq kpad memcpywatch mmio mmiostat movie mqwatch nandio pi pointer prof stalls steps threads waits wpad wpadbtn`
+`adxcheck audioq audiostats axramp axvoice axvoices dec dsp efbcopy exc gxhw gxirq hook gxpe hostprof hwmisc idle ios ipc irq kpad memcpywatch mmio mmiostat movie mqwatch nandio pi pointer prof stalls steps threads waits wpad wpadbtn`
 
 The most useful: `waits` (where threads block), `steps` (the game's logic
 steps per tick), `idle`, `efbcopy`, `gxirq`, `mmiostat` (slow memory
 accesses), `axvoices`, `pointer`, `hostprof` (host profiler; see
-`tools/analysis/hostprof.py`), `stalls` (the game thread's call stacks during any frame over 250 ms), `prof` (where slices end).
+`tools/analysis/hostprof.py`), `audioq` (the sound output queue's depth at each block, and dropped blocks), `stalls` (the game thread during any frame over 250 ms: its most common
+host stacks, the host functions and source lines the time went to, and
+the guest link registers, which name the game functions since the
+generated chunks have no line info), `prof` (where slices end).
 
 ## Developer tools
 
