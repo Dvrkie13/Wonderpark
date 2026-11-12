@@ -101,7 +101,7 @@ the file).
 | settings.ini | Environment | Values | Status |
 | --- | --- | --- | --- |
 | `[display] fullscreen` | `WONDERPARK_FULLSCREEN` | 0, 1 (borderless; Alt+Enter toggles) | works |
-| `[display] scale` | `WONDERPARK_SCALE` | 0 (fit window), 1-6 internal resolution | works |
+| `[display] scale` | `WONDERPARK_SCALE` | 0 (Auto: fits the window, at most 2x for now: higher costs too much GPU time until the TEV shader is faster), 1-6 internal resolution | works |
 | `[display] msaa` | `WONDERPARK_MSAA` | 1, 2, 4, 8 | works |
 | `[display] aniso` | `WONDERPARK_ANISO` | 1, 2, 4, 8, 16 | works |
 | `[display] renderer` | `WONDERPARK_RENDERER` | opengl, vulkan | only OpenGL is built |

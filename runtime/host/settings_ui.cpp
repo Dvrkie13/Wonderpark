@@ -53,6 +53,8 @@ char g_dump_next[512];  // a frame for gl_backend.c to save as shown (test shots
 extern int g_picture_rect[4];  // gl_backend.c: where the game's picture is in the window
 int win_has_focus(void);
 extern int g_wp_headless;
+void input_release_mouse(void);          /* input_win32.c */
+unsigned gxb_game_frames(void);          /* gx_frames.c */
 int hle_game_text_speed(void);           /* hle_options.c: 0 Normal, 1 Fast, -1 no save loaded */
 void hle_set_game_text_speed(int fast);
 void* win_handle(void);
@@ -763,9 +765,13 @@ void place_rows() {
     g_listH = y + 16;
 }
 
-// The rows that take focus (keyboard / controller), and the Reset button (-2).
+// What can be highlighted, top to bottom: the top line (FOCUS_TOP: the six
+// gems, then Close), the rows, and the Reset button (FOCUS_RESET). Within
+// a line, U.focusSlot says which part (gem, choice, key slot).
+const int FOCUS_TOP = -3, FOCUS_RESET = -2, CLOSE_SLOT = 6;
 std::vector<int> focusables() {
     std::vector<int> f;
+    f.push_back(FOCUS_TOP);
     const Category& c = g_cats[U.tab];
     for (size_t i = 0; i < c.rows.size(); i++)
         if (c.rows[i].kind != HEAD && c.rows[i].kind != BINDHEAD) f.push_back((int)i);
@@ -836,7 +842,7 @@ void draw_rows(float listTop, float t) {
         float y0 = listTop + p.y - U.scroll;
         if (y0 > listTop + view_h() + 40 || y0 + p.h < listTop - 40) continue;
         float dy = listTop - U.scroll;  // list -> panel
-        bool focused = U.keyNav && U.focus == (int)i;
+        bool focused = U.focus == (int)i;  // highlighted by the mouse, stick, d-pad or keys
         if (r.kind == HEAD) {
             std::wstring up = r.label;
             for (auto& ch : up) ch = towupper(ch);
@@ -945,7 +951,7 @@ void draw_rows(float listTop, float t) {
                      DWRITE_TEXT_ALIGNMENT_CENTER);
             }
             if (focused && !p.parts.empty()) {
-                D2D1_RECT_F b = p.parts[std::min<size_t>(v, p.parts.size() - 1)];
+                D2D1_RECT_F b = p.parts[std::max(0, std::min<int>(U.focusSlot, (int)p.parts.size() - 1))];
                 b.top += dy, b.bottom += dy;
                 draw_focus(b, 19);
             }
@@ -1028,6 +1034,7 @@ void render(float t) {
             float x = 520 - 20 - w, y = 18 + 2;
             stone_button(x, y, 44, L"Close", true, U.closeBtnHover);
             H.close = RectF(x, y, x + w, y + 44);
+            if (U.focus == FOCUS_TOP && U.focusSlot == CLOSE_SLOT) draw_focus(H.close, 12);
         }
         // Gem tabs
         for (int i = 0; i < 6; i++) {
@@ -1053,6 +1060,7 @@ void render(float t) {
             draw_icon(c.id, cx - 12, cy - 12, 24, rgb(c.ink, op));
             text(c.name, fmt(L"Nunito", 800, 12), gx - 10, gy + 54 + 4 + lift, 90, rgb(0x1b2440, op), DWRITE_TEXT_ALIGNMENT_CENTER);
             H.gems[i] = RectF(gx, gy, gx + 70, gy + 74);
+            if (U.focus == FOCUS_TOP && U.focusSlot == i) draw_focus(RectF(gx + 2, gy - 2, gx + 68, gy + 74), 14);
         }
         // The panel
         const Category& c = g_cats[U.tab];
@@ -1084,7 +1092,7 @@ void render(float t) {
         rt->DrawLine(Point2F(2, fy), Point2F(PANEL_W - 2, fy), brush(rgb(0xf3cf6b, .35f)), 2);
         float rw = stone_button(24, fy + 12, 40, L"Reset " + c.name, false, U.resetHover);
         H.reset = RectF(PANEL_X + 24, PANEL_Y + fy + 12, PANEL_X + 24 + rw, PANEL_Y + fy + 52);
-        if (U.keyNav && U.focus == -2) draw_focus(RectF(24, fy + 12, 24 + rw, fy + 52), 12);
+        if (U.focus == FOCUS_RESET) draw_focus(RectF(24, fy + 12, 24 + rw, fy + 52), 12);
         text(L"Saved to settings.ini right away", fmt(L"Nunito", 700, 12.5f), 24, fy + 24, PANEL_W - 48, rgb(0xc6d0e6),
              DWRITE_TEXT_ALIGNMENT_TRAILING);
     }
@@ -1131,19 +1139,29 @@ const Row* row_at(int i) {
     return i >= 0 && i < (int)c.rows.size() ? &c.rows[i] : nullptr;
 }
 
+// Where the highlight starts on a line: the gem of this category, the
+// chosen choice, the first key slot.
+void enter_line(int focus) {
+    U.focus = focus;
+    if (focus == FOCUS_TOP) U.focusSlot = U.tab;
+    else if (const Row* r = row_at(focus)) U.focusSlot = r->kind == CHOICE ? std::max(0, r->get ? r->get() : 0) : 0;
+    else U.focusSlot = 0;
+}
+
 void set_tab(int t) {
+    bool onTop = U.focus == FOCUS_TOP;
     U.tab = (t + 6) % 6;
     U.scroll = 0;
     U.listenRow = U.listenSlot = -1;
-    U.focus = -1;
     place_rows();
-    auto f = focusables();
-    if (U.keyNav && !f.empty()) U.focus = f[0];
+    enter_line(FOCUS_TOP);  // the highlight stays on the gems (the new one)
+    (void)onTop;
     changed();
 }
 
 void open_tab(bool on) {
     if (on == U.open) return;
+    if (getenv("WONDERPARK_F1_SCRIPT")) fprintf(stderr, "[f1] %.2f %s\n", now_s(), on ? "open" : "close");
     U.open = on;
     U.listenRow = U.listenSlot = -1;
     U.dragRow = -1;
@@ -1151,7 +1169,11 @@ void open_tab(bool on) {
         U.openT = now_s();
         U.reduced = reduced_motion();
         if (G.ok) place_rows();
+        enter_line(FOCUS_TOP);
     }
+    // The mouse cursor: free and shown while the tab is up (input_win32.c
+    // stops capturing it), the game's again after.
+    if (on && !g_wp_headless) input_release_mouse();
     changed();
 }
 
@@ -1233,14 +1255,21 @@ void move_focus(int d) {
     auto it = std::find(f.begin(), f.end(), U.focus);
     int i = it == f.end() ? (d > 0 ? -1 : (int)f.size()) : (int)(it - f.begin());
     i = std::max(0, std::min((int)f.size() - 1, i + d));
-    U.focus = f[i];
+    enter_line(f[i]);
     if (U.focus >= 0) scroll_to(U.focus);
+    else if (U.focus == FOCUS_TOP) U.scroll = 0, clamp_scroll();
     else U.scroll = std::max(0.f, g_listH - view_h());
     changed();
 }
 
+// A (controller), Enter or Space, a click: what's highlighted.
 void activate() {
-    if (U.focus == -2) {
+    if (U.focus == FOCUS_TOP) {
+        if (U.focusSlot >= CLOSE_SLOT) open_tab(false);
+        else if (U.focusSlot != U.tab) set_tab(U.focusSlot);
+        return;
+    }
+    if (U.focus == FOCUS_RESET) {
         reset_tab();
         return;
     }
@@ -1248,13 +1277,20 @@ void activate() {
     if (!r) return;
     if (r->kind == BIND) start_listen(U.focus, U.focusSlot);
     else if (r->kind == TOGGLE) step(*r, 1);
-    else if (r->kind == CHOICE) step(*r, 1);
+    else if (r->kind == CHOICE) choose(*r, U.focusSlot);
 }
 
-// Keyboard and controller navigation.
+// The stick, d-pad and arrow keys move the highlight: up and down between
+// lines, left and right between a line's parts (on a slider they move its
+// value, on a switch they set it).
 enum Nav { N_UP, N_DOWN, N_LEFT, N_RIGHT, N_OK, N_BACK, N_PREV, N_NEXT };
 void nav(Nav n) {
     U.keyNav = true;
+    if (U.focus == -1 && n != N_BACK && n != N_PREV && n != N_NEXT) {
+        enter_line(FOCUS_TOP);
+        changed();
+        if (n != N_DOWN) return;
+    }
     const Row* r = row_at(U.focus);
     switch (n) {
     case N_UP: move_focus(-1); break;
@@ -1262,23 +1298,31 @@ void nav(Nav n) {
     case N_LEFT:
     case N_RIGHT: {
         int d = n == N_RIGHT ? 1 : -1;
-        if (!r) {
-            if (U.focus < 0) move_focus(1);
-            break;
+        if (U.focus == FOCUS_TOP) {
+            U.focusSlot = std::max(0, std::min(CLOSE_SLOT, U.focusSlot + d));
+            changed();
+        } else if (r && r->kind == CHOICE) {
+            int n2 = (int)r->opts.size();
+            U.focusSlot = std::max(0, std::min(n2 - 1, U.focusSlot + d));
+            changed();
+        } else if (r && r->kind == BIND) {
+            U.focusSlot = std::max(0, std::min(3, U.focusSlot + d));
+            changed();
+        } else if (r && r->kind == SLIDER) {
+            step(*r, d);
+        } else if (r && r->kind == TOGGLE && !r->soon) {
+            choose(*r, d > 0 ? 1 : 0);
         }
-        if (r->kind == BIND) U.focusSlot = std::max(0, std::min(3, U.focusSlot + d)), changed();
-        else step(*r, d);
         break;
     }
-    case N_OK:
-        if (U.focus == -1) move_focus(1);
-        else activate();
-        break;
+    case N_OK: activate(); break;
     case N_BACK: open_tab(false); break;
     case N_PREV: set_tab(U.tab - 1); break;
     case N_NEXT: set_tab(U.tab + 1); break;
     }
-    if (U.focus == -1 && (n == N_UP || n == N_DOWN)) move_focus(1);
+    if (getenv("WONDERPARK_F1_SCRIPT"))  // tests: where the highlight is
+        fprintf(stderr, "[f1] nav %d: tab %d, focus %d, part %d, window_mode %d\n", (int)n, U.tab, U.focus,
+                U.focusSlot, g_x[X_WINDOW_MODE]);
 }
 
 // ---- Mouse: what's under a window point.
@@ -1650,7 +1694,7 @@ void build_pc_rows() {
     add(L"Resolution", {L"1280×720", L"1600×900", L"1920×1080", L"2560×1440", L"Match screen"}, 0, x(X_RESOLUTION));
     add(L"Frame rate", {L"30 (original)", L"60"}, 2, field(&g_settings.frame_rate, {30, 60}));
     add(L"Anti-aliasing", {L"Off", L"2×", L"4×", L"8×"}, 0, field(&g_settings.msaa, {1, 2, 4, 8}));
-    add(L"Graphics quality", {L"Original", L"2×", L"3×", L"4×"}, 0, field(&g_settings.scale, {1, 2, 3, 4}));
+    add(L"Graphics quality", {L"Auto", L"Original", L"2×", L"3×", L"4×"}, 0, field(&g_settings.scale, {0, 1, 2, 3, 4}));
     add(L"Widescreen", {L"Off", L"On"}, 0, x(X_WIDESCREEN));
     add(L"V-Sync", {L"Off", L"On"}, 3, x(X_VSYNC));
 }
@@ -1777,7 +1821,12 @@ void list_row(const Map& m, float cx, float cy, bool selected, Img* icon, Img* t
     }
 }
 
+// Our rows on screen, in window pixels (render_options), for the mouse.
+struct OptHit { D2D1_RECT_F rect; int index; float valueX; };  // index -1: the PC Settings row
+std::vector<OptHit> g_optHits;
+
 void render_options(int w, int h) {
+    g_optHits.clear();
     int px = g_picture_rect[0], py = g_picture_rect[1], pw = g_picture_rect[2], ph = g_picture_rect[3];
     if (pw <= 0 || ph <= 0) px = 0, py = 0, pw = w, ph = h;
     float across = (float)pw / ph > 1.5f ? 659.f : 640.f;  // 4:3: not measured yet
@@ -1794,6 +1843,7 @@ void render_options(int w, int h) {
             list_row(m, rowX[2], rowY[2], false, &a.iconDelete, &a.textDelete, L"");
         }
         list_row(m, rowX[3], rowY[3], O.st == OPT_ROW, &a.iconPc, nullptr, L"PC Settings");
+        g_optHits.push_back({m.rect(rowX[3], rowY[3], 340, 55), -1, 0});
     } else {
         build_pc_rows();
         for (int i = 0; i < 4 && O.top + i < (int)g_pcRows.size(); i++) {
@@ -1803,6 +1853,7 @@ void render_options(int w, int h) {
             std::wstring value = v < 0 ? L"Auto" : r.opts[v];
             list_row(m, rowX[i], rowY[i], O.top + i == O.sub, nullptr, nullptr, r.label, value,
                      v >= 0 && (r.soon >> v & 1), O.top + i == O.sub);
+            g_optHits.push_back({m.rect(rowX[i], rowY[i], 340, 55), O.top + i, m.x0 + (rowX[i] + 92) * m.sx});
         }
         // More rows above or below, and the line about F1.
         float lh = 20 * m.sy;
@@ -1833,9 +1884,10 @@ extern "C" void options_rows_filter(uint32_t* held) {
     // The game reads the remote more than once a frame: a press we used
     // stays hidden from it until it's let go.
     O.swallow &= b;
-    const uint32_t ok = HOST_PAD_2 | HOST_PAD_A, back = HOST_PAD_1 | HOST_PAD_B;
-    switch (O.st) {
-    case OPT_GAME:
+    if (O.st == OPT_GAME) {
+        // Down from the game's last item: onto our row. Moving about our
+        // rows is opt_nav's (the controller, keys and mouse, as they are,
+        // not the Wii buttons they stand for).
         if ((down & HOST_PAD_SCREEN_DOWN) && hle_options_cursor() == 2 && g_artState == 2) {
             O.st = OPT_ROW;
             changed();
@@ -1843,34 +1895,55 @@ extern "C" void options_rows_filter(uint32_t* held) {
         }
         *held &= ~O.swallow;
         return;
-    case OPT_ROW:
-        if (down & HOST_PAD_SCREEN_UP) O.st = OPT_GAME, changed();
-        else if (down & ok) O.st = OPT_SUB, O.sub = 0, O.top = 0, build_pc_rows(), changed();
-        else if (down & back) O.st = OPT_GAME, changed();
-        O.swallow |= b;
-        *held = 0;
-        return;
-    case OPT_SUB: {
-        int n = (int)g_pcRows.size();
-        if (down & HOST_PAD_SCREEN_UP) O.sub = std::max(0, O.sub - 1);
-        if (down & HOST_PAD_SCREEN_DOWN) O.sub = std::min(n - 1, O.sub + 1);
-        if (O.sub < O.top) O.top = O.sub;
-        if (O.sub >= O.top + 4) O.top = O.sub - 3;
-        if (down & HOST_PAD_SCREEN_LEFT) pc_step(g_pcRows[O.sub], -1);
-        if (down & HOST_PAD_SCREEN_RIGHT) pc_step(g_pcRows[O.sub], 1);
-        if (down & back) O.st = OPT_ROW;
-        if (down) changed();
-        O.swallow |= b;
-        *held = 0;
-        return;
     }
+    O.swallow |= b;  // everything pressed while ours has the focus
+    *held = 0;
+}
+
+// Moving about our rows: up, down, left, right, select, back.
+enum OptNav { ON_UP, ON_DOWN, ON_LEFT, ON_RIGHT, ON_OK, ON_BACK };
+void opt_show(int i) {
+    int n = (int)g_pcRows.size();
+    O.sub = std::max(0, std::min(n - 1, i));
+    if (O.sub < O.top) O.top = O.sub;
+    if (O.sub >= O.top + 4) O.top = O.sub - 3;
+}
+void opt_nav(OptNav n) {
+    if (O.st == OPT_ROW) {
+        if (n == ON_UP || n == ON_BACK) O.st = OPT_GAME, O.swallow = ~0u;  // back to the game's own rows
+        else if (n == ON_OK || n == ON_RIGHT) build_pc_rows(), O.st = OPT_SUB, O.sub = 0, O.top = 0;
+    } else if (O.st == OPT_SUB) {
+        if (n == ON_UP) opt_show(O.sub - 1);
+        if (n == ON_DOWN) opt_show(O.sub + 1);
+        if (n == ON_LEFT) pc_step(g_pcRows[O.sub], -1);
+        if (n == ON_RIGHT || n == ON_OK) {
+            // Right, or select: the next value (round to the first after the last).
+            PcRow& r = g_pcRows[O.sub];
+            int before = r.get();
+            pc_step(r, 1);
+            if (n == ON_OK && r.get() == before) {
+                for (int o = 0; o < (int)r.opts.size(); o++)
+                    if (!(r.soon >> o & 1)) {
+                        if (o != before) r.set(o);
+                        break;
+                    }
+            }
+        }
+        if (n == ON_BACK) O.st = OPT_ROW;
     }
+    if (getenv("WONDERPARK_F1_SCRIPT"))  // tests: where the PC rows' highlight is
+        fprintf(stderr, "[opt] nav %d: state %d, row %d, window_mode %d, scale %d\n", (int)n, (int)O.st, O.sub,
+                g_x[X_WINDOW_MODE], g_settings.scale);
+    changed();
 }
 
 // ------------------------------------------------------------------------
 // The C interface (overlay_win32.c, gx_frames.c)
 
 extern "C" int settings_ui_is_open(void) { return U.open; }
+// The cursor free and shown (input_win32.c): the F1 tab, or the Options
+// page with our row on it.
+extern "C" int settings_ui_wants_cursor(void) { return U.open || (O.shown && g_artState == 2); }
 extern "C" unsigned settings_ui_generation(void) { return U.gen; }
 
 static void run_key_script();
@@ -2009,11 +2082,14 @@ static void run_key_script() {
             if (c == std::string::npos) c = s.size();
             std::string item = s.substr(p, c - p);
             size_t colon = item.find(':');
-            if (colon != std::string::npos) items.push_back({atof(item.c_str()), item.substr(colon + 1)});
+            // "f<n>:": at the game's n-th finished frame (stored negative).
+            if (colon != std::string::npos)
+                items.push_back({item[0] == 'f' ? -atof(item.c_str() + 1) : atof(item.c_str()), item.substr(colon + 1)});
             p = c + 1;
         }
     }
-    while (pos < items.size() && now_s() - t0 >= items[pos].first) {
+    auto due =[&](double at) { return at < 0 ? (double)gxb_game_frames() >= -at : now_s() - t0 >= at; };
+    while (pos < items.size() && due(items[pos].first)) {
         const std::string& k = items[pos++].second;
         if (k.rfind("shot=", 0) == 0) {
             snprintf(g_dump_next, sizeof(g_dump_next), "%s", k.c_str() + 5);
@@ -2059,11 +2135,29 @@ extern "C" void settings_ui_paused_tick(void) {
 }
 
 extern "C" void settings_ui_controller(uint32_t b) {
+    run_key_script();  // also each input poll: a busy game may not go idle
     uint32_t down = b & ~U.prevPad;
     U.prevPad = b;
     // Back + Start opens and closes it.
     if ((b & (XPAD_BACK | XPAD_START)) == (XPAD_BACK | XPAD_START) && (down & (XPAD_BACK | XPAD_START))) {
         open_tab(!U.open);
+        return;
+    }
+    if (!U.open && O.shown && O.st != OPT_GAME) {
+        // The Options page's PC rows: the stick or d-pad moves, A selects,
+        // B goes back (with repeat while a direction is held).
+        static uint32_t held;
+        static double repeatAt;
+        double t = now_s();
+        uint32_t dirs = b & (XPAD_UP | XPAD_DOWN | XPAD_LEFT | XPAD_RIGHT), nd = down & dirs;
+        if (nd || (dirs && dirs == held && t >= repeatAt)) {
+            uint32_t d = nd ? nd : dirs;
+            opt_nav(d & XPAD_UP ? ON_UP : d & XPAD_DOWN ? ON_DOWN : d & XPAD_LEFT ? ON_LEFT : ON_RIGHT);
+            repeatAt = t + (nd ? .4 : .12);
+        }
+        held = dirs;
+        if (down & XPAD_A) opt_nav(ON_OK);
+        if (down & XPAD_B) opt_nav(ON_BACK);
         return;
     }
     if (!U.open || !G.ok) return;
@@ -2100,6 +2194,53 @@ extern "C" int settings_ui_message(void* hwnd, unsigned msg, uintptr_t wp, intpt
     if (keyDown && wp == VK_F1) {
         if (!(lp & (1 << 30))) open_tab(!U.open);
         return 1;
+    }
+    if (!U.open && O.shown && g_artState == 2) {
+        // The Options page's PC rows: the mouse highlights and clicks, the
+        // keys move (arrows or WASD), Enter or Space select, Esc or
+        // Backspace go back.
+        if (msg == WM_MOUSEMOVE || msg == WM_LBUTTONDOWN || msg == WM_RBUTTONDOWN || msg == WM_MOUSEWHEEL) {
+            int x = GET_X_LPARAM(lp), y = GET_Y_LPARAM(lp);
+            const OptHit* over = nullptr;
+            if (msg == WM_MOUSEWHEEL) {
+                POINT pt = {x, y};
+                ScreenToClient((HWND)win_handle(), &pt);
+                x = pt.x, y = pt.y;
+            }
+            for (auto& h : g_optHits)
+                if (x >= h.rect.left && x <= h.rect.right && y >= h.rect.top && y <= h.rect.bottom) over = &h;
+            if (msg == WM_RBUTTONDOWN) {
+                if (O.st != OPT_GAME) opt_nav(ON_BACK);
+                return O.st != OPT_GAME;
+            }
+            if (msg == WM_MOUSEWHEEL) {
+                if (O.st == OPT_SUB) opt_nav(GET_WHEEL_DELTA_WPARAM(wp) > 0 ? ON_UP : ON_DOWN);
+                return O.st == OPT_SUB;
+            }
+            if (!over) return 0;
+            SetCursor(LoadCursor(nullptr, IDC_HAND));
+            if (over->index < 0) {  // the PC Settings row
+                if (O.st == OPT_GAME) O.st = OPT_ROW, O.swallow = ~0u, changed();
+                if (msg == WM_LBUTTONDOWN) opt_nav(ON_OK);
+            } else if (O.st == OPT_SUB) {
+                if (over->index != O.sub) opt_show(over->index), changed();
+                // A click left of the value: the one before; else the next.
+                if (msg == WM_LBUTTONDOWN) opt_nav((float)x < over->valueX - 40 && x > over->valueX - 200 ? ON_LEFT : ON_OK);
+            }
+            return 1;
+        }
+        if (O.st != OPT_GAME && (msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN)) {
+            switch (wp) {
+            case VK_UP: case 'W': opt_nav(ON_UP); break;
+            case VK_DOWN: case 'S': opt_nav(ON_DOWN); break;
+            case VK_LEFT: case 'A': opt_nav(ON_LEFT); break;
+            case VK_RIGHT: case 'D': opt_nav(ON_RIGHT); break;
+            case VK_RETURN: case VK_SPACE: opt_nav(ON_OK); break;
+            case VK_ESCAPE: case VK_BACK: opt_nav(ON_BACK); break;
+            default: break;
+            }
+            return 1;
+        }
     }
     if (!U.open) return 0;
     if (!G.ok) return msg == WM_KEYDOWN || msg == WM_KEYUP || msg == WM_CHAR;
@@ -2155,6 +2296,12 @@ extern "C" int settings_ui_message(void* hwnd, unsigned msg, uintptr_t wp, intpt
             U.hoverRow = hr, U.hoverPart = hp, U.closeBtnHover = ch, U.resetHover = rh;
             changed();
         }
+        // The highlight follows the mouse onto whatever it's over (the
+        // same highlight the stick and keys move; A or a click selects).
+        if (h.what == 1) U.focus = FOCUS_TOP, U.focusSlot = CLOSE_SLOT;
+        else if (h.what == 2) U.focus = FOCUS_RESET, U.focusSlot = 0;
+        else if (h.what == 3) U.focus = FOCUS_TOP, U.focusSlot = h.part;
+        else if (h.what == 4) U.focus = h.row, U.focusSlot = h.part;
         SetCursor(LoadCursor(nullptr, h.what ? IDC_HAND : IDC_ARROW));
         return 1;
     }
@@ -2186,7 +2333,9 @@ extern "C" int settings_ui_message(void* hwnd, unsigned msg, uintptr_t wp, intpt
         clamp_scroll();
         changed();
         return 1;
-    case WM_RBUTTONDOWN:
+    case WM_RBUTTONDOWN:  // right click: back (closes the tab)
+        if (msg == WM_RBUTTONDOWN) open_tab(false);
+        return 1;
     case WM_RBUTTONUP:
     case WM_MBUTTONDOWN:
     case WM_MBUTTONUP:

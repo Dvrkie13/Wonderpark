@@ -48,8 +48,8 @@ static unsigned sGeneration; /* the debug panel's image, redrawn */
  * debug overlay's keys. */
 int menu_is_open(void) { return settings_ui_is_open(); }
 void menu_controller(uint32_t buttons, uint32_t nav) {
-    (void)nav;
-    settings_ui_controller(buttons);
+    (void)buttons;
+    settings_ui_controller(nav); /* the buttons, with the left stick as the d-pad */
 }
 unsigned menu_generation(void) { return sGeneration + settings_ui_generation() * 7919u + settings_ui_is_open(); }
 

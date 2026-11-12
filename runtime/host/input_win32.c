@@ -84,15 +84,24 @@ static void capture(int on) {
     sCaptured = on;
 }
 
+/* Lets the cursor go now (the F1 tab opening: the game is paused then and
+ * doesn't poll input, which would release it). */
+void input_release_mouse(void) { capture(0); }
+
 /* Captures or releases the mouse and collects its movement; works out
  * whether its buttons count (sButtonsLive). */
 static void mouse(void) {
     int left = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0, right = (GetAsyncKeyState(VK_RBUTTON) & 0x8000) != 0;
     POINT p;
     sButtonsLive = 0;
-    if (!has_focus() || menu_is_open()) {
-        capture(0);
-        return;
+    {
+        /* Our menus over the game (the F1 tab, the Options page's PC rows)
+         * want the cursor free and shown, to point and click. */
+        extern int settings_ui_wants_cursor(void);
+        if (!has_focus() || menu_is_open() || settings_ui_wants_cursor()) {
+            capture(0);
+            return;
+        }
     }
     if (GetAsyncKeyState(VK_ESCAPE) & 0x8000) sReleased = 1;
     if (sReleased && (left || right)) {

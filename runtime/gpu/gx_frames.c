@@ -230,6 +230,13 @@ static void show(int x, int y, int w, int h) {
         if (!g_gx_threaded) {
             win_pump();
             win_set_fullscreen(g_settings.fullscreen);
+            {
+                /* The F1 tab just opened and the game, busy, may not go
+                 * idle (where it's normally paused): pause here then. */
+                extern int settings_ui_is_open(void);
+                extern void gxb_pause_loop(void);
+                if (settings_ui_is_open()) gxb_pause_loop();
+            }
         }
     }
     /* Between frames, so a change doesn't lose the one being drawn. */
@@ -252,10 +259,25 @@ void gxb_pause_loop(void) {
     wp_clock_pause(1);
     while (settings_ui_wants_pause()) {
         int front = win_has_focus();
+        LONGLONG t0 = qpc(), t1, t2, t3;
         win_pump();
+        t1 = qpc();
         settings_ui_paused_tick();
         win_set_fullscreen(g_settings.fullscreen);
+        t2 = qpc();
         if (!sDev->present_last()) break;
+        t3 = qpc();
+        {
+            /* WONDERPARK_LOG=pause: iterations over 50 ms, by part. */
+            extern int wp_log_on(const char* cat);
+            LARGE_INTEGER f;
+            double ms;
+            QueryPerformanceFrequency(&f);
+            ms = 1000.0 / (double)f.QuadPart;
+            if ((t3 - t0) * ms > 50 && wp_log_on("pause"))
+                fprintf(stderr, "[pause] pump %.1f ms, tick %.1f ms, present %.1f ms\n", (t1 - t0) * ms, (t2 - t1) * ms,
+                        (t3 - t2) * ms);
+        }
         Sleep(front ? 15 : 100); /* in the background, rarely */
     }
     wp_clock_pause(0);
@@ -727,11 +749,11 @@ int gx_wanted_scale(int h) {
     int s = v && atoi(v) > 0 ? atoi(v) : g_settings.scale;
     if (!s) {
         s = (int)ceil(h / 456.0 - 0.25);
-#ifdef __ANDROID__
-        /* A phone's screen is small enough that more doesn't show, and
-         * its GPU and battery pay for every pixel. */
+        /* Wonderpark: at most 2x on its own for now. The one general TEV
+         * shader costs ~17-19 ms of GPU time a frame at 2x in the park
+         * (docs/handoff/PERFORMANCE.md, step 5); at 3x a 1440p window fell
+         * to 24 fps, at 4x to 14. Higher is still there to choose. */
         if (s > 2) s = 2;
-#endif
     }
     return s < 1 ? 1 : s > 8 ? 8 : s;
 }
