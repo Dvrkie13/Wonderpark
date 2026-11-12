@@ -183,12 +183,12 @@ static void report(void) {
                         sGlCalls[GLK_DRAW] / frames, g_cnt_gx_draws / frames, g_cnt_efb_copies / frames,
                         g_cnt_efb_copies_tex / frames);
             {
-                extern unsigned g_cnt_disc_reads;
+                extern unsigned g_cnt_disc_reads, g_cnt_disc_ram;
                 extern double g_disc_ms, g_disc_max_ms;
                 if (e && *e == '1' && g_cnt_disc_reads)
-                    fprintf(stderr, "disc: %u reads, %.1f ms, slowest %.1f ms\n", g_cnt_disc_reads, g_disc_ms,
-                            g_disc_max_ms);
-                g_cnt_disc_reads = 0;
+                    fprintf(stderr, "disc: %u reads, %.1f ms, slowest %.1f ms; %u from RAM\n", g_cnt_disc_reads, g_disc_ms,
+                            g_disc_max_ms, g_cnt_disc_ram);
+                g_cnt_disc_reads = g_cnt_disc_ram = 0;
                 g_disc_ms = g_disc_max_ms = 0;
             }
             {

@@ -126,7 +126,8 @@ also `WONDERPARK_<KEY>`, key in capitals, for example `WONDERPARK_WINDOW_MODE=1`
 | `[graphics] scaling_filter` | 0 smooth, 1 sharp | works |
 | `[graphics] widescreen` | 0, 1 | works, from the next start (`RECOMP_WIDESCREEN` still wins): the game's own 16:9 mode (it is told the TV is 16:9: `SCGetAspectRatio`, `runtime/hle/hle_os.c`). A window wider than 16:9 (up to 32:9) shows more of the world to the sides with menus and HUD kept in the middle; a narrower one (16:10) is cropped at the sides (`runtime/gpu/gx_fifo.c`, "Widescreen") |
 | `[graphics] hud_edges` | 0, 1 | works, with widescreen: in game, HUD items at the sides (the minimap) move out to the screen's edges; menus stay as they are |
-| `[graphics] bloom`, `fog`, `per_pixel_lighting`, `hdr`, `colors`, `shader_mode`, `fast_loading` | | not yet |
+| `[graphics] fast_loading` | 0, 1 (default 1) | works, from the next start: a thread reads the disc's files into RAM at start, all but movies and streamed music and voices (949 files, 284 MB), the game's own reads first (`runtime/ios/dvd.c`, "Fast loading") |
+| `[graphics] bloom`, `fog`, `per_pixel_lighting`, `hdr`, `colors`, `shader_mode` | | not yet |
 | `[controls] invert_x`, `right_stick`, `aim_assist`, `steer_sensitivity`, `aim_speed`, `rhythm_offset` | | not yet |
 | `[audio] volume_master` | 0-100 % | works |
 | `[audio] volume_music`, `volume_sfx`, `volume_voices`, `voice_language`, `audio_latency` | | not yet |
@@ -211,7 +212,7 @@ keys (f1 esc up down left right enter q e backspace, a letter or digit) or
 | `WONDERPARK_WATCH=lo-hi` | physical range for `memcpywatch`, or the store watch (CMake `-DWP_STORE_WATCH=ON`) |
 | `WONDERPARK_AUDIO_DUMP=file.wav` | also write the sound output to a file |
 | `WONDERPARK_AX_NOAUX`, `WONDERPARK_AX_SNAP`, `WONDERPARK_AX_WB` | AX mixer debugging |
-| `RECOMP_FPS=1` | print fps, the overlay's numbers (`stats:`), disc reads (`disc:`), the GPU's own time from timer queries and the share of draws by specialised shaders (`gputime:`) and GL timings every second |
+| `RECOMP_FPS=1` | print fps, the overlay's numbers (`stats:`), disc reads and how many came from RAM (`disc:`), the GPU's own time from timer queries and the share of draws by specialised shaders (`gputime:`) and GL timings every second |
 | `RECOMP_AUDIO=0` | no sound |
 | `RECOMP_GX_HIDDEN=1` | hidden window (`--headless` does this too) |
 | `RECOMP_GX_DUMP=dir`, `RECOMP_GX_DUMP_EVERY=N`, `RECOMP_GX_DUMP_FROM=N` | save presented frames as BMPs |
@@ -222,6 +223,7 @@ keys (f1 esc up down left right enter q e backspace, a letter or digit) or
 | `WONDERPARK_SHADERS=spec` | also a fragment program specialised for each TEV setup, compiled by the driver in the background (`=thread`: on a second GL context) while the ubershader draws, and the setups kept in `shadercache\`. Off by default: on AMD's GL driver the first draw with each new program blocks for 50-300 ms (`runtime/gpu/gl_backend.c`, "Specialised draw programs") |
 | `RECOMP_GL_SIMPLE_FS=1` | measurements only, the picture is wrong: a trivial fragment shader instead of TEV, to see what TEV costs the GPU |
 | `RECOMP_WIDESCREEN` | 16:9 |
+| `WONDERPARK_DISC_UNCACHED=1` | tests: read the disc's files past Windows' file cache, every read from the drive, as on a cold start |
 | `RECOMP_WINDOW_SIZE=WxH` | tests: the window's inside at start (a hidden `--headless` window keeps it), e.g. `2128x912` for 21:9 |
 
 (`RECOMP_*` names come from the reference runtime and still work.)

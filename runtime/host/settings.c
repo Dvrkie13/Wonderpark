@@ -87,7 +87,7 @@ static const struct {
     {"graphics", "hdr", 0, 0, 1, "not yet"},
     {"graphics", "colors", 0, 0, 1, "0 original, 1 vivid (not yet)"},
     {"graphics", "shader_mode", 0, 0, 2, "0 smooth, 1 fast, 2 precompile (not yet)"},
-    {"graphics", "fast_loading", 1, 0, 1, "not yet"},
+    {"graphics", "fast_loading", 1, 0, 1, "the disc's files into RAM at start (284 MB), from the next start"},
     {"controls", "invert_x", 0, 0, 1, "not yet"},
     {"controls", "right_stick", 2, 0, 2, "0 camera, 1 pointer, 2 auto (not yet)"},
     {"controls", "aim_assist", 1, 0, 1, "not yet"},

@@ -261,7 +261,8 @@ void build_rows() {
         c.rows.push_back(xrow(CHOICE, X_SHADER_MODE, L"Shader compilation",
                               L"Smooth never stutters. Precompile prepares every saved shader before the game starts.",
                               {L"Smooth", L"Fast", L"Precompile"}, true));
-        c.rows.push_back(xrow(TOGGLE, X_FAST_LOADING, L"Fast loading", L"Reads from your drive at full speed instead of Wii disc speed.", {}, true));
+        c.rows.push_back(xrow(TOGGLE, X_FAST_LOADING, L"Fast loading",
+                              L"Reads the game's files into RAM at start (about 280 MB), so areas load without waiting for the drive. From the next start."));
         g_cats.push_back(c);
     }
     // Controls

@@ -233,6 +233,11 @@ int main(int argc, char** argv) {
     fprintf(stderr, "wonderpark: %s loaded, entry %08X\n", dol, entry);
 
     settings_load();
+    {
+        /* Fast loading: the disc's files into RAM in the background (dvd.c). */
+        extern void hle_dvd_preload_start(void);
+        hle_dvd_preload_start();
+    }
     gx_init(); /* opens the window and the renderer (runtime/gpu) */
     input_init();
     if (!g_wp_headless) audio_init();

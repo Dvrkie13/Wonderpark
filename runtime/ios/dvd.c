@@ -9,15 +9,22 @@
 #include <string.h>
 
 #include "ref_compat.h"
+#include "host_settings.h"
 
 #ifndef _WIN32
 #define _strdup strdup
 #define _fseeki64 fseeko
 #endif
 
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#endif
+
 typedef struct Region {
     uint64_t offset, size; /* in the data partition */
     char* path;            /* host file */
+    uint8_t* volatile data; /* the whole file in RAM, once preloaded (fast loading) */
 } Region;
 
 static char sRoot[512];
@@ -47,6 +54,7 @@ static void add_region(uint64_t offset, uint64_t size, const char* path) {
     sRegions[sRegionCount].offset = offset;
     sRegions[sRegionCount].size = size;
     sRegions[sRegionCount].path = _strdup(path);
+    sRegions[sRegionCount].data = NULL;
     sRegionCount++;
 }
 
@@ -179,16 +187,183 @@ const char* wp_movie_playing(void) {
     return sMovie[0] && wp_host_time() - sMovieAt < 5 * TB_HZ ? sMovie : NULL;
 }
 
-/* Disc reads in the last second and their time (RECOMP_FPS's stats line). */
-unsigned g_cnt_disc_reads;
+/* Disc reads in the last second, their time, and how many came from RAM
+ * (RECOMP_FPS's stats line). */
+unsigned g_cnt_disc_reads, g_cnt_disc_ram;
 double g_disc_ms, g_disc_max_ms;
 
 static int read_regions(uint64_t offset, uint32_t len, uint32_t dst);
 
+#ifdef _WIN32
+/* ---- Reading the extracted files
+ *
+ * The game's reads (on the IOS thread) and the preloader's go through
+ * these. WONDERPARK_DISC_UNCACHED=1 (tests) reads past Windows' file cache,
+ * every read from the drive, as on a cold start: for timing loads on a hard
+ * drive without having to restart the PC. */
+static int uncached(void) {
+    static int v = -1;
+    if (v < 0) v = getenv("WONDERPARK_DISC_UNCACHED") != NULL;
+    return v;
+}
+
+static HANDLE open_file(const char* path) {
+    return CreateFileA(path, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING,
+                       uncached() ? FILE_FLAG_NO_BUFFERING : FILE_FLAG_SEQUENTIAL_SCAN, NULL);
+}
+
+/* len bytes at pos of an open file into out; 1 if all were read. */
+static int file_read(HANDLE h, uint64_t pos, uint8_t* out, uint32_t len) {
+    DWORD got;
+    if (!uncached()) {
+        LARGE_INTEGER p;
+        p.QuadPart = (LONGLONG)pos;
+        while (len) {
+            DWORD n = len > (1u << 30) ? (1u << 30) : len;
+            if (!SetFilePointerEx(h, p, NULL, FILE_BEGIN) || !ReadFile(h, out, n, &got, NULL) || got == 0) return 0;
+            out += got, len -= got, p.QuadPart += got;
+        }
+        return 1;
+    }
+    {
+        /* Unbuffered: whole aligned sectors into an aligned buffer (one a
+         * thread: the IOS thread's and the preloader's). */
+        static __declspec(thread) uint8_t* buf;
+        static __declspec(thread) uint32_t cap;
+        uint64_t a = pos & ~4095ull, b = (pos + len + 4095) & ~4095ull;
+        LARGE_INTEGER p;
+        if (b - a > cap) {
+            if (buf) VirtualFree(buf, 0, MEM_RELEASE);
+            cap = (uint32_t)(b - a);
+            buf = (uint8_t*)VirtualAlloc(NULL, cap, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+        }
+        p.QuadPart = (LONGLONG)a;
+        if (!SetFilePointerEx(h, p, NULL, FILE_BEGIN) || !ReadFile(h, buf, (DWORD)(b - a), &got, NULL) ||
+            got < pos + len - a)
+            return 0;
+        memcpy(out, buf + (pos - a), len);
+        return 1;
+    }
+}
+
+/* The IOS thread's open files, so a file streamed in small reads (music,
+ * movies) isn't opened again for each. */
+#define OPEN_FILES 8
+static struct { int region; HANDLE h; unsigned used; } sOpen[OPEN_FILES];
+static unsigned sOpenClock;
+
+static HANDLE region_handle(int i) {
+    int k, old = 0;
+    for (k = 0; k < OPEN_FILES; k++) {
+        if (sOpen[k].h && sOpen[k].region == i) {
+            sOpen[k].used = ++sOpenClock;
+            return sOpen[k].h;
+        }
+        if (!sOpen[k].h || sOpen[k].used < sOpen[old].used) old = k;
+    }
+    if (sOpen[old].h) CloseHandle(sOpen[old].h);
+    sOpen[old].h = open_file(sRegions[i].path);
+    if (sOpen[old].h == INVALID_HANDLE_VALUE) sOpen[old].h = NULL;
+    sOpen[old].region = i;
+    sOpen[old].used = ++sOpenClock;
+    return sOpen[old].h;
+}
+
+/* ---- Fast loading (the Fast loading setting)
+ *
+ * PokePark 2 reads each area's archives as it enters it, and on a hard
+ * drive (spinning, often busy) a cold read took 250 ms or more. With fast
+ * loading on, a thread reads the disc's files into RAM at start: all but
+ * the movies and the streamed music and voices (Movie/, *.awb), 949 files,
+ * 284 MB. First what every scene needs (Archive/, Common/, Message/, the
+ * sound banks and so on), then the areas' files (Field/, Pokemon/,
+ * Gimmick/, Attraction/), each group in disc order, so the drive mostly
+ * reads straight through. The game's own reads come first: the preloader
+ * waits while one is going on, reading 1 MB at a time, and a file not in
+ * RAM yet is read from the drive as before. Once a file is in RAM, its
+ * reads are copies from memory. */
+static volatile LONG sGameReading;
+
+static int preload_group(const char* path) {
+    static const char* const kAreas[] = {"/files/Field/", "/files/Pokemon/", "/files/Gimmick/", "/files/Attraction/"};
+    size_t k;
+    if (strstr(path, "/files/Movie/")) return -1;
+    if (strlen(path) > 4 && strcmp(path + strlen(path) - 4, ".awb") == 0) return -1;
+    for (k = 0; k < sizeof(kAreas) / sizeof(kAreas[0]); k++)
+        if (strstr(path, kAreas[k])) return 1;
+    return 0;
+}
+
+static int preload_order(const void* a, const void* b) {
+    const Region *x = &sRegions[*(const int*)a], *y = &sRegions[*(const int*)b];
+    int gx = preload_group(x->path), gy = preload_group(y->path);
+    if (gx != gy) return gx - gy;
+    return x->offset < y->offset ? -1 : x->offset > y->offset;
+}
+
+static DWORD WINAPI preload_thread(LPVOID arg) {
+    int* order = (int*)malloc((size_t)sRegionCount * sizeof(int));
+    int n = 0, i;
+    unsigned files = 0;
+    uint64_t bytes = 0;
+    double t0 = wp_wall_seconds();
+    (void)arg;
+    for (i = 0; i < sRegionCount; i++)
+        if (sRegions[i].size && preload_group(sRegions[i].path) >= 0) order[n++] = i;
+    qsort(order, (size_t)n, sizeof(int), preload_order);
+    for (i = 0; i < n; i++) {
+        Region* r = &sRegions[order[i]];
+        uint8_t* buf = (uint8_t*)malloc((size_t)r->size);
+        HANDLE h = open_file(r->path);
+        uint64_t at = 0;
+        int ok = buf && h != INVALID_HANDLE_VALUE;
+        while (ok && at < r->size) {
+            uint32_t chunk = r->size - at > (1u << 20) ? (1u << 20) : (uint32_t)(r->size - at);
+            while (sGameReading) Sleep(1); /* the game's reads first */
+            ok = file_read(h, at, buf + at, chunk);
+            at += chunk;
+        }
+        if (h != INVALID_HANDLE_VALUE) CloseHandle(h);
+        if (!ok) {
+            free(buf);
+            continue;
+        }
+        InterlockedExchangePointer((void* volatile*)&r->data, buf);
+        files++;
+        bytes += r->size;
+        if (i + 1 < n && preload_group(r->path) != preload_group(sRegions[order[i + 1]].path))
+            fprintf(stderr, "disc: fast loading: what every scene needs in RAM after %.1f s\n", wp_wall_seconds() - t0);
+    }
+    fprintf(stderr, "disc: fast loading: %u files, %.0f MB in RAM after %.1f s\n", files, bytes / 1048576.0,
+            wp_wall_seconds() - t0);
+    free(order);
+    return 0;
+}
+
+/* Starts fast loading (main.c, once the settings are read). */
+void hle_dvd_preload_start(void) {
+    HANDLE t;
+    if (sImageRead || !sRegionCount || !g_x[X_FAST_LOADING]) return;
+    t = CreateThread(NULL, 0, preload_thread, NULL, 0, NULL);
+    if (!t) return;
+    SetThreadPriority(t, THREAD_PRIORITY_BELOW_NORMAL);
+    CloseHandle(t);
+}
+#else
+void hle_dvd_preload_start(void) {}
+#endif
+
 /* Copies len bytes at a data-partition offset to guest memory. */
 int hle_dvd_read(uint64_t offset, uint32_t len, uint32_t dst) {
     double t0 = wp_wall_seconds(), ms;
-    int ok = read_regions(offset, len, dst);
+    int ok;
+#ifdef _WIN32
+    InterlockedIncrement(&sGameReading);
+#endif
+    ok = read_regions(offset, len, dst);
+#ifdef _WIN32
+    InterlockedDecrement(&sGameReading);
+#endif
     ms = (wp_wall_seconds() - t0) * 1000.0;
     g_cnt_disc_reads++;
     g_disc_ms += ms;
@@ -198,7 +373,7 @@ int hle_dvd_read(uint64_t offset, uint32_t len, uint32_t dst) {
 
 static int read_regions(uint64_t offset, uint32_t len, uint32_t dst) {
     uint64_t end = offset + len;
-    int i, ok = 1;
+    int i, ok = 1, ram = 1;
     if (sImageRead) {
         HLE_LOG("disc read %08llX+%X", (unsigned long long)offset, (unsigned)len);
         if (sImageRead(offset, MA(dst), len)) return 1;
@@ -211,20 +386,40 @@ static int read_regions(uint64_t offset, uint32_t len, uint32_t dst) {
         const Region* r = &sRegions[i];
         uint64_t lo = offset > r->offset ? offset : r->offset;
         uint64_t hi = end < r->offset + r->size ? end : r->offset + r->size;
-        FILE* f;
+        uint8_t* data;
         if (lo >= hi) continue;
-        f = fopen(r->path, "rb");
-        if (!f) {
-            HLE_WARN("disc read needs %s, which is missing", r->path);
-            ok = 0;
+        note_movie(r->path);
+        if ((data = r->data) != NULL) {
+            memcpy(MA(dst + (uint32_t)(lo - offset)), data + (lo - r->offset), (size_t)(hi - lo));
             continue;
         }
-        note_movie(r->path);
-        _fseeki64(f, (int64_t)(lo - r->offset), SEEK_SET);
-        if (fread(MA(dst + (uint32_t)(lo - offset)), 1, (size_t)(hi - lo), f) != hi - lo) ok = 0;
-        fclose(f);
+        ram = 0;
+#ifdef _WIN32
+        {
+            HANDLE h = region_handle(i);
+            if (!h) {
+                HLE_WARN("disc read needs %s, which is missing", r->path);
+                ok = 0;
+                continue;
+            }
+            if (!file_read(h, lo - r->offset, MA(dst + (uint32_t)(lo - offset)), (uint32_t)(hi - lo))) ok = 0;
+        }
+#else
+        {
+            FILE* f = fopen(r->path, "rb");
+            if (!f) {
+                HLE_WARN("disc read needs %s, which is missing", r->path);
+                ok = 0;
+                continue;
+            }
+            _fseeki64(f, (int64_t)(lo - r->offset), SEEK_SET);
+            if (fread(MA(dst + (uint32_t)(lo - offset)), 1, (size_t)(hi - lo), f) != hi - lo) ok = 0;
+            fclose(f);
+        }
+#endif
         HLE_LOG("disc read %08llX+%X: %s", (unsigned long long)lo, (unsigned)(hi - lo), r->path + strlen(sRoot) + 1);
     }
+    if (ram) g_cnt_disc_ram++;
     return ok;
 }
 
