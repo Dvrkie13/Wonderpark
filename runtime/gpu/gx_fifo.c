@@ -91,9 +91,14 @@ static void flush_batch(void);
  * reuse the state built last. */
 static int sStateDirty = 1;
 
+/* Writes of the projection's last register, even unchanged: a layout's
+ * drawing starts with one (gx_fifo.c "Widescreen"). */
+static unsigned sProjWrites;
+
 static void xf_write(uint32_t addr, uint32_t value) {
     int i;
     if (addr >= 0x1100) return;
+    if (addr == 0x1026) sProjWrites++;
     xf[addr] = value;
     if (addr < GX_XF_MEM_WORDS) i = (int)addr;
     else if (addr >= 0x1000 && addr < 0x1000 + GX_XF_REG_WORDS) i = GX_XF_MEM_WORDS + (int)(addr - 0x1000);
@@ -985,6 +990,197 @@ static void build_state(GXDrawState* st) {
 
 static unsigned sDrawCount, sVertexCount;
 
+/* Where n vertices land on screen: x0, y0, x1, y1 in EFB pixels (640 x
+ * 528, y down), as the vertex shader puts them (behind the camera: left
+ * out). */
+static void draw_box(const GXVertex* v, int n, const float vp[6], float box[4]) {
+    float p0 = xf_float(0x1020), p1 = xf_float(0x1021), p2 = xf_float(0x1022), p3 = xf_float(0x1023);
+    int i;
+    box[0] = box[1] = 1e30f;
+    box[2] = box[3] = -1e30f;
+    for (i = 0; i < n; i++) {
+        uint32_t mr = (uint32_t)v[i].mtx[0] * 4;
+        float vx = xf_float(mr) * v[i].pos[0] + xf_float(mr + 1) * v[i].pos[1] + xf_float(mr + 2) * v[i].pos[2] + xf_float(mr + 3);
+        float vy = xf_float(mr + 4) * v[i].pos[0] + xf_float(mr + 5) * v[i].pos[1] + xf_float(mr + 6) * v[i].pos[2] + xf_float(mr + 7);
+        float sx, sy;
+        if (xf[0x1026]) {
+            sx = ((p0 * vx + p1) * 0.5f + 0.5f) * vp[2] + vp[0];
+            sy = (0.5f - (p2 * vy + p3) * 0.5f) * vp[3] + vp[1];
+        } else {
+            float vz = xf_float(mr + 8) * v[i].pos[0] + xf_float(mr + 9) * v[i].pos[1] + xf_float(mr + 10) * v[i].pos[2] + xf_float(mr + 11);
+            float w = -vz;
+            if (w <= 1e-6f) continue;
+            sx = ((p0 * vx + p1 * vz) / w * 0.5f + 0.5f) * vp[2] + vp[0];
+            sy = (0.5f - (p2 * vy + p3 * vz) / w * 0.5f) * vp[3] + vp[1];
+        }
+        if (sx < box[0]) box[0] = sx;
+        if (sy < box[1]) box[1] = sy;
+        if (sx > box[2]) box[2] = sx;
+        if (sy > box[3]) box[3] = sy;
+    }
+}
+
+/* ------------------------------------------------------------------------ */
+/* Widescreen
+ *
+ * With the Widescreen setting on, the game runs in its own 16:9 mode
+ * (hle_os.c SCGetAspectRatio): a 16:9 camera, and its menus and HUD laid
+ * out for 16:9 (the layout's 720 units of 877 across). For other windows:
+ * - wider than 16:9 (21:9, 32:9): the EFB is as wide as the window
+ *   (gl_backend.c), and draws are narrowed by g_wide_r (the window's width
+ *   over 16:9's): the 3D world then shows more to the sides, and menus and
+ *   HUD keep their shape, in the middle. Not narrowed: effects drawn with
+ *   the EFB's own pixel projection (bloom, copies), draws into part of the
+ *   EFB (render to texture), and layout panes as wide as the screen
+ *   (backgrounds, fades), which stretch to fill it.
+ * - narrower (16:10, 4:3): the picture is cropped at the sides when shown
+ *   (g_wide_shown of its width); the HUD is well inside.
+ * "HUD at screen edges" (g_x[X_HUD_EDGES]): in game (frames that draw the
+ * world; menus stay as they are), an item narrower than 40% of the screen
+ * and more than half way out to one side (the minimap) moves out so the
+ * layout's edge is at the screen's. An item is the panes of one layout
+ * (the draws between two writes of the projection) whose boxes touch, as
+ * they were in the last frame (the same draws, in the same order): the
+ * minimap's parts move together, and a dialogue window's arrow, inside
+ * the window, stays with it. (Deciding pane by pane moved a menu row's
+ * icon away from its row, and a dialogue's arrow away from its window;
+ * deciding by whole layouts kept the minimap, in the same layout as other
+ * HUD pieces, from moving.)
+ *
+ * The layout is told apart from the world by its camera: GX's 2D layout
+ * draws use a 45-degree perspective camera with the layout's aspect (877 /
+ * 456, 1.829; the world's is 1.778), or an orthographic one 833 units
+ * across. */
+#include "host_settings.h"
+int hle_widescreen(void); /* nand.c */
+float g_wide_r = 1, g_wide_shown = 1;
+/* The last frame that drew the 3D world: HUD items move to the edges only
+ * in those (in game), not in the menus. */
+static uint64_t sWorldFrame = (uint64_t)-1;
+
+/* The layout's 16:9 width in clip x: its 720 units of 877. */
+#define WIDE_LAYOUT_EDGE (720.0f / 877.0f)
+#define WIDE_BLOCKS 64     /* layouts a frame, for "HUD at screen edges" */
+#define WIDE_PER_BLOCK 256 /* draws a layout */
+#define WIDE_DRAWS 2048    /* draws a frame */
+
+/* A layout draw of the frame: which layout, which draw in it, and where. */
+typedef struct WideDraw {
+    unsigned short block, index;
+    float box[4];
+} WideDraw;
+
+static int wide_find(int* parent, int i) {
+    while (parent[i] != i) i = parent[i] = parent[parent[i]];
+    return i;
+}
+
+/* From a frame's layout draws, which side each moves to in the next: in
+ * each layout, draws whose boxes touch make one item; an item narrower
+ * than 40% of the screen and more than half way out to a side moves. */
+static void wide_sides(const WideDraw* d, int n, signed char side[WIDE_BLOCKS][WIDE_PER_BLOCK]) {
+    static int parent[WIDE_DRAWS];
+    static float item[WIDE_DRAWS][4];
+    int s = 0, e, i, j;
+    memset(side, 0, sizeof(signed char) * WIDE_BLOCKS * WIDE_PER_BLOCK);
+    while (s < n) {
+        for (e = s; e < n && d[e].block == d[s].block; e++) {}
+        for (i = s; i < e; i++) parent[i] = i;
+        for (i = s; i < e; i++)
+            for (j = s; j < i; j++)
+                /* Overlapping or touching (not merely near: a row of quads 2
+                 * pixels apart ran into the minimap). */
+                if (d[i].box[0] <= d[j].box[2] + 0.5f && d[j].box[0] <= d[i].box[2] + 0.5f &&
+                    d[i].box[1] <= d[j].box[3] + 0.5f && d[j].box[1] <= d[i].box[3] + 0.5f)
+                    parent[wide_find(parent, i)] = wide_find(parent, j);
+        for (i = s; i < e; i++) item[i][0] = item[i][1] = 1e30f, item[i][2] = item[i][3] = -1e30f;
+        for (i = s; i < e; i++) {
+            int r = wide_find(parent, i);
+            if (d[i].box[0] < item[r][0]) item[r][0] = d[i].box[0];
+            if (d[i].box[2] > item[r][2]) item[r][2] = d[i].box[2];
+        }
+        for (i = s; i < e; i++) {
+            int r = wide_find(parent, i);
+            float w = item[r][2] - item[r][0], c = (item[r][0] + item[r][2]) / 2.0f / 320.0f - 1.0f;
+            if (w > 0 && w < 0.4f * 640.0f && d[i].block < WIDE_BLOCKS && d[i].index < WIDE_PER_BLOCK)
+                side[d[i].block][d[i].index] = c < -WIDE_LAYOUT_EDGE / 2 ? -1 : c > WIDE_LAYOUT_EDGE / 2 ? 1 : 0;
+        }
+        s = e;
+    }
+}
+
+static int is_layout_camera(void) {
+    float p0 = xf_float(0x1020), p2 = xf_float(0x1022);
+    if (xf[0x1026]) return fabsf(p0 * 833.333f / 2.0f - 1.0f) < 0.01f; /* orthographic, 833 across */
+    return fabsf(p2 - 2.414214f) < 0.001f && p0 > 0 && fabsf(p2 / p0 - 1.8292f) < 0.01f;
+}
+
+/* The transform for this draw (count vertices of format f at p). */
+static void wide_for_draw(const uint8_t* p, const VtxFormat* f, int count, float* sx, float* ox) {
+    static GXVertex* scratch;
+    static int cap;
+    GXVertex tpl;
+    float vp[6], box[4], wd = xf_float(0x101A), ht = xf_float(0x101B);
+    int i, layout;
+    *sx = 1;
+    *ox = 0;
+    if (!hle_widescreen() || (g_wide_r == 1 && g_wide_shown == 1 && !g_x[X_HUD_EDGES])) return;
+    if (fabsf(2.0f * wd - 640.0f) > 1.0f) return; /* into part of the EFB */
+    layout = is_layout_camera();
+    if (!layout) {
+        if (!xf[0x1026]) *sx = 1.0f / g_wide_r, sWorldFrame = sFrame; /* the world */
+        return;                                                       /* effects, copies */
+    }
+    if (count > cap) {
+        cap = count * 2;
+        scratch = (GXVertex*)realloc(scratch, (size_t)cap * sizeof(GXVertex));
+    }
+    vertex_template(&tpl);
+    for (i = 0; i < count; i++) scratch[i] = tpl;
+    read_vertices(p, f, scratch, count);
+    vp[0] = xf_float(0x101D) - 342.0f - wd;
+    vp[1] = xf_float(0x101E) - 342.0f + ht;
+    vp[2] = 2.0f * wd;
+    vp[3] = -2.0f * ht;
+    vp[4] = vp[5] = 0;
+    draw_box(scratch, count, vp, box);
+    if (box[2] - box[0] >= 0.9f * 640.0f) return; /* as wide as the screen: stretched */
+    *sx = 1.0f / g_wide_r;
+    if (g_x[X_HUD_EDGES] && count > 0 && sWorldFrame == sFrame) {
+        /* A layout moves as a whole: the draws since a projection write
+         * (each layout's drawing starts with one), as the same layout's
+         * extent in the last frame says. The minimap is narrow and at the
+         * side; a dialogue window is wide and in the middle (its arrow, at
+         * the side, stays with it). */
+        static uint64_t frameAt = ~0ull;
+        static unsigned firstWrite, lastBlock, inBlock;
+        static WideDraw draws[WIDE_DRAWS];
+        static int ndraws;
+        static signed char side[WIDE_BLOCKS][WIDE_PER_BLOCK];
+        unsigned b;
+        if (frameAt != sFrame) {
+            wide_sides(draws, ndraws, side);
+            ndraws = 0;
+            frameAt = sFrame;
+            firstWrite = sProjWrites;
+            lastBlock = ~0u;
+        }
+        b = sProjWrites - firstWrite;
+        if (b != lastBlock) lastBlock = b, inBlock = 0;
+        if (b < WIDE_BLOCKS && inBlock < WIDE_PER_BLOCK) {
+            float d = 0.97f * g_wide_shown - WIDE_LAYOUT_EDGE * *sx;
+            if (ndraws < WIDE_DRAWS) {
+                WideDraw* w = &draws[ndraws++];
+                w->block = (unsigned short)b;
+                w->index = (unsigned short)inBlock;
+                memcpy(w->box, box, sizeof(w->box));
+            }
+            if (d > 0) *ox = (float)side[b][inBlock] * d;
+            inBlock++;
+        }
+    }
+}
+
 /* RECOMP_GX_DEBUG_FRAME=n prints every draw of frame n. */
 static long sDebugFrame = -1;
 static unsigned sOpCount[256];
@@ -1100,7 +1296,7 @@ static void flush_batch(void) {
 
 /* Makes the batch one drawn with the current state, drawing the pending
  * one first if its state differs. */
-static void use_current_state(int mtx_per_vertex) {
+static void use_current_state(int mtx_per_vertex, float wide_sx, float wide_ox) {
     int rebuilt = sStateDirty;
     if (rebuilt) {
         build_state(&sState); /* may draw the pending batch, if a texture changes */
@@ -1108,6 +1304,11 @@ static void use_current_state(int mtx_per_vertex) {
     }
     if (sState.mtx_per_vertex != mtx_per_vertex) {
         sState.mtx_per_vertex = mtx_per_vertex;
+        rebuilt = 1;
+    }
+    if (sState.wide_sx != wide_sx || sState.wide_ox != wide_ox) {
+        sState.wide_sx = wide_sx;
+        sState.wide_ox = wide_ox;
         rebuilt = 1;
     }
     /* Everything but the XF fields, which build_state leaves zero. A
@@ -1474,7 +1675,11 @@ static void draw(int prim, const uint8_t* p, const VtxFormat* f, int count, int 
         sDrawCount++;
         return;
     }
-    use_current_state(f->pnmtx | (f->texmtx_mask ? 2 : 0));
+    {
+        float wsx, wox;
+        wide_for_draw(p, f, count, &wsx, &wox);
+        use_current_state(f->pnmtx | (f->texmtx_mask ? 2 : 0), wsx, wox);
+    }
     if ((sArena ? 0 : sBatchVerts) + count > sBatchCap) {
         sBatchCap = ((sArena ? 0 : sBatchVerts) + count) * 2;
         sBatch = (GXVertex*)realloc(sBatch, (size_t)sBatchCap * sizeof(GXVertex));

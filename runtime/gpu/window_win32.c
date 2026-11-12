@@ -53,6 +53,11 @@ void win_create(void) {
         sPixelAspect = 16.0 / 9.0 * 456.0 / 640.0;
         r.right = (LONG)(r.right * sPixelAspect + 0.5);
     }
+    if ((v = getenv("RECOMP_WINDOW_SIZE")) != NULL) {
+        /* Tests: the window's inside, WxH (hidden windows keep it). */
+        int ww, hh;
+        if (sscanf(v, "%dx%d", &ww, &hh) == 2 && ww > 0 && hh > 0) r.right = ww, r.bottom = hh;
+    }
     sThread = GetCurrentThreadId();
     InitializeCriticalSection(&sTitleLock);
     memset(&wc, 0, sizeof(wc));

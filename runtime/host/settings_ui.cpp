@@ -52,6 +52,7 @@ extern "C" {
 char g_dump_next[512];  // a frame for gl_backend.c to save as shown (test shots)
 extern int g_picture_rect[4];  // gl_backend.c: where the game's picture is in the window
 int win_has_focus(void);
+int hle_widescreen(void);  // nand.c: the game runs in its 16:9 mode
 extern int g_wp_headless;
 void input_release_mouse(void);          /* input_win32.c */
 unsigned gxb_game_frames(void);          /* gx_frames.c */
@@ -248,8 +249,9 @@ void build_rows() {
         c.rows.push_back(xrow(CHOICE, X_SCALING_FILTER, L"Scaling filter", nullptr, {L"Smooth", L"Sharp"}));
         c.rows.push_back(head(L"Effects"));
         c.rows.push_back(xrow(TOGGLE, X_WIDESCREEN, L"Widescreen",
-                              L"Fills a 16:9 screen; the HUD stays 4:3 in the middle. From the next start."));
-        c.rows.push_back(xrow(TOGGLE, X_HUD_EDGES, L"HUD at screen edges", L"Moves HUD items out to the edges in widescreen.", {}, true));
+                              L"The game's own 16:9 mode; wider screens see more to the sides. From the next start."));
+        c.rows.push_back(xrow(TOGGLE, X_HUD_EDGES, L"HUD at screen edges",
+                              L"In game, moves HUD items at the sides (the minimap) out to the screen's edges, in widescreen."));
         c.rows.push_back(xrow(TOGGLE, X_BLOOM, L"Bloom", L"The soft glow around bright lights.", {}, true));
         c.rows.push_back(xrow(TOGGLE, X_FOG, L"Fog", nullptr, {}, true));
         c.rows.push_back(xrow(TOGGLE, X_PER_PIXEL_LIGHTING, L"Per-pixel lighting", L"Smoother lighting on Pokémon and the park.", {}, true));
@@ -1716,8 +1718,8 @@ void pc_step(PcRow& r, int d) {
 // ---- Drawing
 
 // Layout units (the game's 720x480 menu layout, centred) to window pixels,
-// over the picture the game shows (gl_backend.c g_picture_rect). Measured
-// in 16:9 on the Options page: 659 units across, 480 down.
+// over the picture the game shows (gl_backend.c g_picture_rect): 877 units
+// across in the game's 16:9 mode, 640 in 4:3, 480 down (render_options).
 struct Map {
     float x0, y0, sx, sy;
     D2D1_RECT_F rect(float cx, float cy, float w, float h) const {
@@ -1829,7 +1831,11 @@ void render_options(int w, int h) {
     g_optHits.clear();
     int px = g_picture_rect[0], py = g_picture_rect[1], pw = g_picture_rect[2], ph = g_picture_rect[3];
     if (pw <= 0 || ph <= 0) px = 0, py = 0, pw = w, ph = h;
-    float across = (float)pw / ph > 1.5f ? 659.f : 640.f;  // 4:3: not measured yet
+    // The game's own layout width: its 2D projection is 833 units across in
+    // 16:9 mode (608 in 4:3) and 456 down, for 480 layout units: 877 / 640.
+    // In a window of another shape the layout keeps its shape (narrowed in
+    // a wider one, cropped in a narrower one: gx_fifo.c "Widescreen").
+    float across = hle_widescreen() ? 877.f * ((float)pw / ph) / (16.f / 9.f) : 640.f;
     Map m{px + pw / 2.f, py + ph / 2.f, pw / across, ph / 480.f};
     G.rt->BeginDraw();
     G.rt->Clear(ColorF(0, 0, 0, 0));

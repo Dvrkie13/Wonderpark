@@ -3,7 +3,7 @@
 High-level replacements for Nintendo SDK functions (`WP_HOOK`), where
 emulating the hardware underneath isn't worth it.
 
-- `hle_os.c`: audio-system and interrupt-enable functions.
+- `hle_os.c`: audio-system and interrupt-enable functions; `SCGetAspectRatio`, which tells the game the TV is 16:9 when the Widescreen setting is on (the game then runs in its own 16:9 mode).
 - `hle_bt.c`: Bluetooth stack start-up (no real Bluetooth).
 - `hle_cache.c`: cache flush and invalidate (no-ops: there is no cache to keep coherent).
 - `hle_wpad.c`: the Wii Remote (WPAD): buttons from the keyboard and controller, the pointer from the mouse.

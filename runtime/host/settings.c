@@ -80,7 +80,7 @@ static const struct {
     {"display", "brightness", 100, 50, 150, "percent (not yet)"},
     {"graphics", "scaling_filter", 0, 0, 1, "0 smooth, 1 sharp (pixels as squares)"},
     {"graphics", "widescreen", 1, 0, 1, "16:9, from the next start"},
-    {"graphics", "hud_edges", 0, 0, 1, "not yet"},
+    {"graphics", "hud_edges", 0, 0, 1, "in game, HUD items at the sides out at the screen's edges (widescreen)"},
     {"graphics", "bloom", 1, 0, 1, "not yet"},
     {"graphics", "fog", 1, 0, 1, "not yet"},
     {"graphics", "per_pixel_lighting", 0, 0, 1, "not yet"},

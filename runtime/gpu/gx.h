@@ -83,6 +83,10 @@ typedef struct GXDrawState {
      * texture coordinates'); the rest are XF's MATINDEX registers' alike
      * for every vertex. */
     int mtx_per_vertex;
+    /* Widescreen (gx_fifo.c wide_for_draw): clip x becomes
+     * x * wide_sx + wide_ox * w, to fit a window wider than 16:9 and to
+     * move HUD items to the screen's edges. 1 and 0 leave it. */
+    float wide_sx, wide_ox;
     const uint32_t* xf;    /* GX_XF_WORDS words, laid out as above */
     int xf_dirty_lo, xf_dirty_hi; /* words changed since the last draw (lo >= hi: none) */
     /* What the batch draws, the same from frame to frame (its display

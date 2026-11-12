@@ -201,6 +201,7 @@ static const char* kVertexShader =
     "layout(std140) uniform XF { uvec4 xfm[" GX_XF_WORDS_STR " / 4]; };\n"
     "in vec4 a_mtx0, a_mtx1, a_mtx2; in vec3 a_pos, a_nrm; in vec4 a_col0, a_col1;\n"
     "in vec4 a_tex01, a_tex23, a_tex45, a_tex67;\n"
+    "uniform vec4 u_wide;\n"
     "out vec4 v_col0; out vec4 v_col1; out vec3 v_tex[8];\n"
     "uint xw(int a) { int i = a < 0x1000 ? a : a - 0x1000 + " GX_XF_MEM_WORDS_STR "; return xfm[i >> 2][i & 3]; }\n"
     "float xfl(int a) { return uintBitsToFloat(xw(a)); }\n"
@@ -264,7 +265,8 @@ static const char* kVertexShader =
     /* GX depth runs from -w (near) to 0 (far). The EFB depth is stored
      * reversed (see gxd_init), so the far plane, where GX scenes keep
      * nearly everything, gets the float precision: 0..w, far to near. */
-    "  gl_Position = vec4(clip.x, clip.y, -clip.z, clip.w);\n"
+    /* u_wide: the widescreen transform of clip x (gx_fifo.c wide_for_draw). */
+    "  gl_Position = vec4(clip.x * u_wide.x + u_wide.y * clip.w, clip.y, -clip.z, clip.w);\n"
     "  v_col0 = channel(0, a_col0, world, n);\n"
     "  v_col1 = channel(1, a_col1, world, n);\n"
     "  int ntex = int(xw(0x103F) & 15u);\n"
@@ -524,7 +526,8 @@ static const char* kFragmentShader =
 typedef struct DrawProg {
     GLuint id;
     GLint uNumStages, uCin, uAin, uCop, uAop, uMap, uSel, uReg, uKonst, uSwap, uAlpha, uAlphaRef, uFog, uFogF,
-        uFogColor, uInd, uIndCmd, uIndStage, uIndMtx, uTcSize, uFogRange;
+        uFogColor, uInd, uIndCmd, uIndStage, uIndMtx, uTcSize, uFogRange, uWide;
+    GLfloat lWide[4];
     GLint lCin[64], lAin[64], lCop[64], lAop[64], lMap[64], lSel[64], lSwap[16], lAlpha[4], lFog[4];
     GLfloat lReg[16], lKonst[16], lAlphaRef[4], lFogF[4], lFogColor[4], lFogRange[16];
     GLint lInd[4], lIndCmd[16], lIndStage[16], lIndMtx[24], lTcSize[16];
@@ -597,6 +600,7 @@ static void prog_locate(DrawProg* p) {
     LOC(uIndMtx, "u_ind_mtx");
     LOC(uTcSize, "u_tc_size");
     LOC(uFogRange, "u_fog_range");
+    LOC(uWide, "u_wide");
 #undef LOC
     block = p_glGetUniformBlockIndex(p->id, "XF");
     if (block != 0xFFFFFFFFu) p_glUniformBlockBinding(p->id, block, 0);
@@ -1316,12 +1320,30 @@ static int gl_msaa(void) {
 static void alloc_efb(void);
 
 static void gl_apply_settings(void) {
+    extern int hle_widescreen(void);
+    extern float g_wide_r, g_wide_shown; /* gx_fifo.c, "Widescreen" */
     int w, h, s, m;
+    double pa = win_pixel_aspect();
     win_size(&w, &h);
     if (h <= 0) return; /* minimized */
     s = gx_wanted_scale(h);
+    {
+        /* In the game's 16:9 mode, a wider window (up to 32:9) gets an EFB
+         * as wide as it, and the draws are narrowed to fit; a narrower one
+         * sees the picture cropped at the sides (gl_present). */
+        float r = 1, shown = 1;
+        if (hle_widescreen() && w > 0) {
+            double a = (double)w / h, base = 16.0 / 9.0;
+            if (a > 32.0 / 9.0) a = 32.0 / 9.0;
+            if (a > base * 1.005) r = (float)(a / base), pa = a * 456.0 / 640.0;
+            else if (a < base * 0.995) shown = (float)(a / base);
+        }
+        g_wide_r = r;
+        g_wide_shown = shown;
+    }
     for (m = g_settings.msaa; m > sMaxSamples; m /= 2) {}
-    if (s == sScale && m == sMsaa) return;
+    if (s == sScale && m == sMsaa && pa == sPixelAspect) return;
+    sPixelAspect = pa;
     sScale = s;
     sMsaa = m;
     sScaleY = s;
@@ -1959,6 +1981,10 @@ static void apply_draw_state(const GXDrawState* st) {
         }
         UNIFORM_IF_CHANGED(p_glUniform4fv, P, FogRange, 4, range);
     }
+    {
+        GLfloat wide[4] = {st->wide_sx, st->wide_ox, 0, 0};
+        UNIFORM_IF_CHANGED(p_glUniform4fv, P, Wide, 1, wide);
+    }
     UNIFORM_IF_CHANGED(p_glUniform4iv, P, Ind, 1, ind);
     if (st->ind_any) {
         UNIFORM_IF_CHANGED(p_glUniform4iv, P, IndCmd, 4, cmd);
@@ -2560,6 +2586,15 @@ static int gl_present(int x, int y, int cw, int ch, int may_drop) {
     double aspect;
     gl_forget();
     win_size(&w, &h);
+    {
+        /* Widescreen, a window narrower than 16:9: the sides cropped. */
+        extern float g_wide_shown;
+        if (g_wide_shown < 1) {
+            int keep = (int)(cw * g_wide_shown + 0.5f);
+            x += (cw - keep) / 2;
+            cw = keep;
+        }
+    }
     /* The copied rectangle of the EFB, as large as fits in the window at
      * the shape it has on a TV (an EFB pixel is square in 4:3, wider in
      * 16:9), with black bars on the sides left over. */

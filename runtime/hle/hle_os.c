@@ -9,6 +9,16 @@ WP_HOOK(0x8028DD40, __OSInitAudioSystem) {
     return 1;
 }
 
+/* u8 SCGetAspectRatio(void): the system menu's TV shape, 1 for 16:9. The
+ * game reads it once at start (0x800300FC) into its 16:9 flag. Answered
+ * from the Widescreen setting rather than SYSCONF, which says 4:3. */
+WP_HOOK(0x802C9A70, SCGetAspectRatio) {
+    extern int hle_widescreen(void);
+    c->gpr[3] = hle_widescreen() ? 1u : 0u;
+    wp_return(c);
+    return 1;
+}
+
 /* static void __AI_SRC_INIT(void): times how long the audio interface's
  * sample-rate converter takes to start, by watching its sample counter, and
  * retries until the timing looks like hardware's. There is no converter to

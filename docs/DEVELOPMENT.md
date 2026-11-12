@@ -124,8 +124,9 @@ also `WONDERPARK_<KEY>`, key in capitals, for example `WONDERPARK_WINDOW_MODE=1`
 | `[display] resolution` | window size: 0 1280x720, 1 1600x900, 2 1920x1080, 3 2560x1440, 4 match screen (maximized) | works, in a window |
 | `[display] vsync`, `brightness` | 0/1; 50-150 % | not yet |
 | `[graphics] scaling_filter` | 0 smooth, 1 sharp | works |
-| `[graphics] widescreen` | 0, 1 | works, from the next start (`RECOMP_WIDESCREEN` still wins) |
-| `[graphics] hud_edges`, `bloom`, `fog`, `per_pixel_lighting`, `hdr`, `colors`, `shader_mode`, `fast_loading` | | not yet |
+| `[graphics] widescreen` | 0, 1 | works, from the next start (`RECOMP_WIDESCREEN` still wins): the game's own 16:9 mode (it is told the TV is 16:9: `SCGetAspectRatio`, `runtime/hle/hle_os.c`). A window wider than 16:9 (up to 32:9) shows more of the world to the sides with menus and HUD kept in the middle; a narrower one (16:10) is cropped at the sides (`runtime/gpu/gx_fifo.c`, "Widescreen") |
+| `[graphics] hud_edges` | 0, 1 | works, with widescreen: in game, HUD items at the sides (the minimap) move out to the screen's edges; menus stay as they are |
+| `[graphics] bloom`, `fog`, `per_pixel_lighting`, `hdr`, `colors`, `shader_mode`, `fast_loading` | | not yet |
 | `[controls] invert_x`, `right_stick`, `aim_assist`, `steer_sensitivity`, `aim_speed`, `rhythm_offset` | | not yet |
 | `[audio] volume_master` | 0-100 % | works |
 | `[audio] volume_music`, `volume_sfx`, `volume_voices`, `voice_language`, `audio_latency` | | not yet |
@@ -221,6 +222,7 @@ keys (f1 esc up down left right enter q e backspace, a letter or digit) or
 | `WONDERPARK_SHADERS=spec` | also a fragment program specialised for each TEV setup, compiled by the driver in the background (`=thread`: on a second GL context) while the ubershader draws, and the setups kept in `shadercache\`. Off by default: on AMD's GL driver the first draw with each new program blocks for 50-300 ms (`runtime/gpu/gl_backend.c`, "Specialised draw programs") |
 | `RECOMP_GL_SIMPLE_FS=1` | measurements only, the picture is wrong: a trivial fragment shader instead of TEV, to see what TEV costs the GPU |
 | `RECOMP_WIDESCREEN` | 16:9 |
+| `RECOMP_WINDOW_SIZE=WxH` | tests: the window's inside at start (a hidden `--headless` window keeps it), e.g. `2128x912` for 21:9 |
 
 (`RECOMP_*` names come from the reference runtime and still work.)
 
