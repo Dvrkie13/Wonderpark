@@ -389,6 +389,15 @@ bring that frame to about 200 ms (dev build) with no dropped blocks. The
 frames where Pikachu seemed to be missing there (with a yellow shape at
 the top) were jumps: the script presses ② 20 frames before each.
 
+Owner's saves (2026-11-12, five saves in slot 2, each copied into a test
+NAND; the owner's files untouched): first battle and story movie (the
+opening cave), second battle and the chase (Seasong Beach, the chase one
+as Oshawott), attractions (the Cake Contraption area). All load and play
+with sound: walking, jumping, Thunderbolt, attacks, talking, going into a
+building. A fixed script of presses (talk, walk, Thunderbolt, attack, ②)
+didn't start the battles, the chase, the story movie or an attraction;
+the owner chose to skip this check for now. Still not covered by a test.
+
 Not reached (no save near them, and they're hours into the story):
 - a battle after the Timburr tutorial, a chase, the other three
   attractions, a story movie with its own sound (the Seasong Beach arrival
