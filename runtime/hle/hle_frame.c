@@ -13,6 +13,8 @@
  * while a movie plays it stays 30 (below).
  * (As the community's 60 FPS Gecko code does, but in memory and only while
  * the setting says so.) */
+#include <string.h>
+
 #include "hle.h"
 #include "host_settings.h"
 
@@ -21,6 +23,39 @@
 
 static u32 sGameAsked;   /* the period the scene asked for */
 static u32 sWeWrote = ~0u; /* what we last put there instead */
+
+/* When the PC can't keep up at 60 (another program busy, the heaviest
+ * areas; Seasong Beach keeps the game thread ~80% busy at 60), frames come
+ * late and the game also gets behind on its 60 Hz steps: stutter, slowdown,
+ * sound trouble. So at 60, if over a third of the last ~2 s of frames took
+ * over 20 ms, it goes back to 30 for 15 s, then tries 60 again. Frames over
+ * 60 ms (loading) don't count either way. WONDERPARK_LOG=framerate logs
+ * each change. */
+#define LATE_MS 20.0
+#define IGNORE_MS 60.0
+#define WINDOW 120
+#define HOLD_SECONDS 15.0
+static unsigned char sLate[WINDOW];
+static int sAt, sCount, sLateCount;
+static double sLastFrame, sHoldUntil;
+
+/* 1 if the frames at 60 have been late too often (and resets the window). */
+static int falling_behind(void) {
+    double now = wp_wall_seconds(), ms = (now - sLastFrame) * 1000.0;
+    int late;
+    sLastFrame = now;
+    if (sWeWrote != PERIOD_60 || ms > IGNORE_MS) return 0;
+    late = ms > LATE_MS;
+    if (sCount == WINDOW) sLateCount -= sLate[sAt];
+    else sCount++;
+    sLate[sAt] = (unsigned char)late;
+    sLateCount += late;
+    sAt = (sAt + 1) % WINDOW;
+    if (sCount < WINDOW || sLateCount * 3 < WINDOW) return 0;
+    memset(sLate, 0, sizeof(sLate));
+    sAt = sCount = sLateCount = 0;
+    return 1;
+}
 
 /* (settings.c calls it when the setting changes; the hook reads the
  * setting itself each frame, so a change from F1 or the Options page takes
@@ -37,7 +72,14 @@ WP_HOOK(0x8000F190, frame_timers) {
     /* Movies (Movie/*.mo, the title's and the story's) play one picture a
      * drawn frame: at 60 they ran twice as fast (the title's was read 1.8x
      * as fast). While one is being read (and 5 s after), 30. */
-    want = g_settings.frame_rate >= 60 && sGameAsked == PERIOD_30 && !wp_movie_playing() ? PERIOD_60 : sGameAsked;
+    if (falling_behind()) {
+        sHoldUntil = wp_wall_seconds() + HOLD_SECONDS;
+        WP_LOG("framerate", "%.1f s: frames late at 60; 30 for %.0f s", wp_wall_seconds(), HOLD_SECONDS);
+    }
+    want = g_settings.frame_rate >= 60 && sGameAsked == PERIOD_30 && !wp_movie_playing() &&
+                   wp_wall_seconds() >= sHoldUntil
+               ? PERIOD_60
+               : sGameAsked;
     if (hi == 0 && lo != want) ST32(t1 + 0x44, want);
     sWeWrote = want == sGameAsked ? ~0u : want;
     return 0; /* the game's own code then applies it */
