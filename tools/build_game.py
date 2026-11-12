@@ -114,6 +114,8 @@ def main() -> int:
     ap.add_argument("--pgo-use", metavar="PROFDATA",
                     help="optimise with a merged profile (default: build/pgo/wonderpark.profdata when it exists)")
     ap.add_argument("--no-pgo", action="store_true", help="don't use a profile even if there is one")
+    ap.add_argument("--watch", action="store_true",
+                    help="a debugging build: loads and stores in WONDERPARK_WATCH=lo-hi are reported (slower)")
     a = ap.parse_args()
     build = REPO / "build" / a.build_dir
     default_prof = REPO / "build" / "pgo" / "wonderpark.profdata"
@@ -128,7 +130,8 @@ def main() -> int:
         if a.clean and build.exists():
             shutil.rmtree(build)
         progress(0, "Configuring")
-        opts = [f"-DWP_DEBUG_INFO_GENERATED={'ON' if a.debug_info else 'OFF'}"]
+        opts = [f"-DWP_DEBUG_INFO_GENERATED={'ON' if a.debug_info else 'OFF'}",
+                f"-DWP_STORE_WATCH={'ON' if a.watch else 'OFF'}"]
         if clang and ninja:
             path, extra = clang
             print(f"compiler: clang-cl ({path})", flush=True)

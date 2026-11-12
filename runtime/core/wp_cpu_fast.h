@@ -42,9 +42,19 @@ WPF_INLINE u8* wpf_ptr(CPUState* c, u32 a, u32 n) {
     return NULL;
 }
 
+#ifdef WPF_WATCH
+/* Debug builds (CMake WP_STORE_WATCH): loads from the watched range too. */
+extern u32 wpf_watch_lo, wpf_watch_hi;
+void wpf_watch_load(CPUState* c, u32 a, u32 n);
+#define WPF_RCHECK(c, a, n) do { if (((a) & 0x3FFFFFFFu) - wpf_watch_lo < wpf_watch_hi - wpf_watch_lo) wpf_watch_load(c, a, n); } while (0)
+#else
+#define WPF_RCHECK(c, a, n) ((void)0)
+#endif
+
 WPF_INLINE u32 wpf_read32(CPUState* c, u32 a) {
     u8* h = wpf_ptr(c, a, 4);
     u32 v;
+    WPF_RCHECK(c, a, 4);
     if (!h) return mem_read32(c, a);
     memcpy(&v, h, 4);
     return WPF_BSWAP32(v);
@@ -52,17 +62,20 @@ WPF_INLINE u32 wpf_read32(CPUState* c, u32 a) {
 WPF_INLINE u16 wpf_read16(CPUState* c, u32 a) {
     u8* h = wpf_ptr(c, a, 2);
     u16 v;
+    WPF_RCHECK(c, a, 2);
     if (!h) return mem_read16(c, a);
     memcpy(&v, h, 2);
     return WPF_BSWAP16(v);
 }
 WPF_INLINE u8 wpf_read8(CPUState* c, u32 a) {
     u8* h = wpf_ptr(c, a, 1);
+    WPF_RCHECK(c, a, 1);
     return h ? *h : mem_read8(c, a);
 }
 WPF_INLINE u64 wpf_read64(CPUState* c, u32 a) {
     u8* h = wpf_ptr(c, a, 8);
     u64 v;
+    WPF_RCHECK(c, a, 8);
     if (!h) return mem_read64(c, a);
     memcpy(&v, h, 8);
     return WPF_BSWAP64(v);

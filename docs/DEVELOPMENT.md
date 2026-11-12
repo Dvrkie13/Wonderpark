@@ -209,7 +209,7 @@ keys (f1 esc up down left right enter q e backspace, a letter or digit) or
 | `WONDERPARK_NO_HIDE` | don't hide GPU/DSP time from the game's clock (for comparisons) |
 | `WONDERPARK_VI_HZ` | retrace rate (default 60) |
 | `WONDERPARK_MQ=addr` | message queue for the `mqwatch` log |
-| `WONDERPARK_WATCH=lo-hi` | physical range for `memcpywatch`, or the store watch (CMake `-DWP_STORE_WATCH=ON`) |
+| `WONDERPARK_WATCH=lo-hi` | physical range for `memcpywatch`, or the load and store watch: a build made with `python tools/build_game.py --build-dir game-watch --no-lto --no-pgo --watch` reports each guest block that loads from or stores into the range, once, with the value and the caller |
 | `WONDERPARK_AUDIO_DUMP=file.wav` | also write the sound output to a file |
 | `WONDERPARK_AX_NOAUX`, `WONDERPARK_AX_SNAP`, `WONDERPARK_AX_WB` | AX mixer debugging |
 | `RECOMP_FPS=1` | print fps, the overlay's numbers (`stats:`), disc reads and how many came from RAM (`disc:`), the GPU's own time from timer queries and the share of draws by specialised shaders (`gputime:`) and GL timings every second |
