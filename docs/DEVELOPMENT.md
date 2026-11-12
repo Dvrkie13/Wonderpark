@@ -90,6 +90,7 @@ them every frame was most of its CPU time.
 | `settings.ini` | `%APPDATA%\Wonderpark` | options |
 | `bindings.ini` | `%APPDATA%\Wonderpark` | keyboard and controller bindings, two each per Wii Remote button |
 | `nand\` | `%APPDATA%\Wonderpark` | the emulated NAND: saves (`title\00010000\53324c45\data`) and system settings |
+| `shadercache\gl.bin` | `%APPDATA%\Wonderpark` | only with `WONDERPARK_SHADERS=spec`: the TEV setups seen, compiled again in the background at each start (numbers, made on the player's PC; starts over when the shader source changes; safe to delete) |
 | `cache\nandtmp\` | beside `Wonderpark.exe` | the NAND's `/tmp` (the game copies ~41 MB there at each start; emptied at start) |
 
 ## Settings
@@ -101,7 +102,7 @@ the file).
 | settings.ini | Environment | Values | Status |
 | --- | --- | --- | --- |
 | `[display] fullscreen` | `WONDERPARK_FULLSCREEN` | 0, 1 (borderless; Alt+Enter toggles) | works |
-| `[display] scale` | `WONDERPARK_SCALE` | 0 (Auto: fits the window, at most 2x for now: higher costs too much GPU time until the TEV shader is faster), 1-6 internal resolution | works |
+| `[display] scale` | `WONDERPARK_SCALE` | 0 (Auto: fits the window, at most 4x, the highest measured; a 1440p window gets 3x), 1-6 internal resolution | works |
 | `[display] msaa` | `WONDERPARK_MSAA` | 1, 2, 4, 8 | works |
 | `[display] aniso` | `WONDERPARK_ANISO` | 1, 2, 4, 8, 16 | works |
 | `[display] renderer` | `WONDERPARK_RENDERER` | opengl, vulkan | only OpenGL is built |
@@ -209,7 +210,7 @@ keys (f1 esc up down left right enter q e backspace, a letter or digit) or
 | `WONDERPARK_WATCH=lo-hi` | physical range for `memcpywatch`, or the store watch (CMake `-DWP_STORE_WATCH=ON`) |
 | `WONDERPARK_AUDIO_DUMP=file.wav` | also write the sound output to a file |
 | `WONDERPARK_AX_NOAUX`, `WONDERPARK_AX_SNAP`, `WONDERPARK_AX_WB` | AX mixer debugging |
-| `RECOMP_FPS=1` | print fps, the overlay's numbers (`stats:`), disc reads (`disc:`) and GL timings every second |
+| `RECOMP_FPS=1` | print fps, the overlay's numbers (`stats:`), disc reads (`disc:`), the GPU's own time from timer queries and the share of draws by specialised shaders (`gputime:`) and GL timings every second |
 | `RECOMP_AUDIO=0` | no sound |
 | `RECOMP_GX_HIDDEN=1` | hidden window (`--headless` does this too) |
 | `RECOMP_GX_DUMP=dir`, `RECOMP_GX_DUMP_EVERY=N`, `RECOMP_GX_DUMP_FROM=N` | save presented frames as BMPs |
@@ -217,6 +218,8 @@ keys (f1 esc up down left right enter q e backspace, a letter or digit) or
 | `RECOMP_GX_CACHE_LOG=1` | every 30 frames: draws from kept display lists, lists decoded, other draws; and vertex arena growth |
 | `RECOMP_GX_LOG`, `RECOMP_GX_DEBUG_FRAME`, `RECOMP_GX_COPY_LOG`, `RECOMP_GX_SKIP`, `RECOMP_GX_DUMP_TEX(TURES)` | GX decoder debugging |
 | `RECOMP_GL_DEBUG`, `RECOMP_GL_PRESENT`, `RECOMP_GPU` | OpenGL debugging and presenting path |
+| `WONDERPARK_SHADERS=spec` | also a fragment program specialised for each TEV setup, compiled by the driver in the background (`=thread`: on a second GL context) while the ubershader draws, and the setups kept in `shadercache\`. Off by default: on AMD's GL driver the first draw with each new program blocks for 50-300 ms (`runtime/gpu/gl_backend.c`, "Specialised draw programs") |
+| `RECOMP_GL_SIMPLE_FS=1` | measurements only, the picture is wrong: a trivial fragment shader instead of TEV, to see what TEV costs the GPU |
 | `RECOMP_WIDESCREEN` | 16:9 |
 
 (`RECOMP_*` names come from the reference runtime and still work.)

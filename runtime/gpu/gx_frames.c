@@ -191,6 +191,26 @@ static void report(void) {
                 g_cnt_disc_reads = 0;
                 g_disc_ms = g_disc_max_ms = 0;
             }
+            {
+                /* The GPU's own time (timer queries, gl_backend.c): per
+                 * present measured, and per game frame (presents of the
+                 * second times that, over the game's frames). */
+                extern double g_gl_gpu_ms;
+                extern unsigned g_gl_gpu_n;
+                extern unsigned g_spec_draws, g_uber_draws, g_spec_compiled, g_spec_loaded, g_spec_waiting;
+                if (e && *e == '1' && g_gl_gpu_n && frames > 0) {
+                    double per = g_gl_gpu_ms / g_gl_gpu_n;
+                    unsigned draws = g_spec_draws + g_uber_draws;
+                    fprintf(stderr,
+                            "gputime: %.2f ms per present, %.2f ms per game frame; specialised draws %.0f%%, "
+                            "programs %u compiled %u loaded %u waiting\n",
+                            per, per * fps * secs / frames, draws ? 100.0 * g_spec_draws / draws : 0.0,
+                            g_spec_compiled, g_spec_loaded, g_spec_waiting);
+                }
+                g_gl_gpu_ms = 0;
+                g_gl_gpu_n = 0;
+                g_spec_draws = g_uber_draws = 0;
+            }
             g_cnt_shader_compiles = g_cnt_readbacks = g_cnt_vertices = g_cnt_gx_draws = 0;
             g_cnt_efb_copies = g_cnt_efb_copies_tex = 0;
             lastGpu = g_gpu_tb;
@@ -749,11 +769,11 @@ int gx_wanted_scale(int h) {
     int s = v && atoi(v) > 0 ? atoi(v) : g_settings.scale;
     if (!s) {
         s = (int)ceil(h / 456.0 - 0.25);
-        /* Wonderpark: at most 2x on its own for now. The one general TEV
-         * shader costs ~17-19 ms of GPU time a frame at 2x in the park
-         * (docs/handoff/PERFORMANCE.md, step 5); at 3x a 1440p window fell
-         * to 24 fps, at 4x to 14. Higher is still there to choose. */
-        if (s > 2) s = 2;
+        /* Wonderpark: at most 4x on its own, the highest measured (Wish
+         * Park and Seasong Beach at 4x: 12 ms of GPU time a frame on an RX
+         * 9060 XT, docs/handoff/PERFORMANCE.md). A 1440p window gets 3x.
+         * Higher is still there to choose. */
+        if (s > 4) s = 4;
     }
     return s < 1 ? 1 : s > 8 ? 8 : s;
 }

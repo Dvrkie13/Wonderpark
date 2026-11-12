@@ -20,7 +20,9 @@
  *   RECOMP_GX_DUMP_FROM=n      ...from the nth on (default 0)
  *   RECOMP_GL_PRESENT=swapbuffers|dxgi  how frames are presented (default: DXGI on NVIDIA, SwapBuffers elsewhere; see "Presenting")
  *   RECOMP_GL_DEBUG=1          debug context, printing the driver's error messages */
+#include <io.h>
 #include <math.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -125,8 +127,35 @@ typedef ptrdiff_t GLintptr;
     X(void, glClipControl, (GLenum, GLenum)) \
     X(void, glDrawElementsBaseVertex, (GLenum, GLsizei, GLenum, const void*, GLint))
 
+/* Entry points that may be missing (GL 3.3/4.1/ARB): NULL if so, and what
+ * needs them is left out. */
+#define GL_TIME_ELAPSED 0x88BF
+#define GL_QUERY_RESULT 0x8866
+#define GL_QUERY_RESULT_AVAILABLE 0x8867
+#define GL_PROGRAM_BINARY_LENGTH 0x8741
+#define GL_PROGRAM_BINARY_RETRIEVABLE_HINT 0x8257
+#define GL_SYNC_GPU_COMMANDS_COMPLETE 0x9117
+#define GL_SYNC_FLUSH_COMMANDS_BIT 0x00000001
+typedef struct __GLsync* GLsync;
+typedef uint64_t GLuint64;
+#define GL_OPT_FUNCS(X) \
+    X(void, glGenQueries, (GLsizei, GLuint*)) \
+    X(void, glBeginQuery, (GLenum, GLuint)) \
+    X(void, glEndQuery, (GLenum)) \
+    X(void, glGetQueryObjectiv, (GLuint, GLenum, GLint*)) \
+    X(void, glGetQueryObjectui64v, (GLuint, GLenum, GLuint64*)) \
+    X(void, glGetProgramBinary, (GLuint, GLsizei, GLsizei*, GLenum*, void*)) \
+    X(void, glProgramBinary, (GLuint, GLenum, const void*, GLsizei)) \
+    X(void, glProgramParameteri, (GLuint, GLenum, GLint)) \
+    X(void, glDeleteProgram, (GLuint)) \
+    X(void, glDeleteShader, (GLuint)) \
+    X(GLsync, glFenceSync, (GLenum, GLbitfield)) \
+    X(GLenum, glClientWaitSync, (GLsync, GLbitfield, GLuint64)) \
+    X(void, glDeleteSync, (GLsync))
+
 #define DECLARE(ret, name, args) typedef ret(APIENTRY* PFN_##name) args; static PFN_##name p_##name;
 GL_FUNCS(DECLARE)
+GL_OPT_FUNCS(DECLARE)
 #undef DECLARE
 
 static void gl_forget(void);
@@ -144,6 +173,9 @@ static void load_gl(void) {
     if (!p_##name) { fprintf(stderr, "gl: missing %s\n", #name); exit(1); }
     GL_FUNCS(LOAD)
 #undef LOAD
+#define LOAD_OPT(ret, name, args) p_##name = (PFN_##name)wglGetProcAddress(#name);
+    GL_OPT_FUNCS(LOAD_OPT)
+#undef LOAD_OPT
 }
 
 /* ------------------------------------------------------------------------ */
@@ -266,8 +298,14 @@ static const char* kVertexShader =
  * optionally clamped, into one of four registers; or, with bias 3, a
  * comparison of a and b selecting c or 0. Inputs are registers, the
  * texture, the rasterized color, constants and "konst" colors. */
+/* Compiled as is, it is the ubershader: every setup from uniforms. With
+ * SPEC defined and the S_ constants before it (spec_source), the setup
+ * that decides the code's shape (stages, inputs, operations, swaps, alpha
+ * test, fog kind, indirect commands) is constant: the stage loop unrolls
+ * and the branches fold away. Values that change often (colors, konst,
+ * fog distances, texture sizes, indirect matrices) stay uniforms. */
+static const char* kFsVersion = "#version 330 compatibility\n";
 static const char* kFragmentShader =
-    "#version 330 compatibility\n"
     "in vec4 v_col0; in vec4 v_col1; in vec3 v_tex[8];\n"
     "out vec4 o_color;\n"
     "uniform sampler2D u_tex0, u_tex1, u_tex2, u_tex3, u_tex4, u_tex5, u_tex6, u_tex7;\n"
@@ -286,6 +324,25 @@ static const char* kFragmentShader =
     " * and scales; the matrices' rows, each with its shift; the coordinates'\n"
     " * sizes, two to a vector. */\n"
     "uniform ivec4 u_ind, u_ind_cmd[4], u_ind_stage[4], u_ind_mtx[6], u_tc_size[4];\n"
+    "#ifdef SPEC\n"
+    "#define u_num_stages S_N\n"
+    "#define u_cin S_CIN\n"
+    "#define u_ain S_AIN\n"
+    "#define u_cop S_COP\n"
+    "#define u_aop S_AOP\n"
+    "#define u_map S_MAP\n"
+    "#define u_sel S_SEL\n"
+    "#define u_swap S_SWAP\n"
+    "#define u_alpha S_ALPHA\n"
+    "#define u_ind S_IND\n"
+    "#define u_ind_cmd S_IND_CMD\n"
+    "#define u_ind_stage S_IND_STAGE\n"
+    "#define FOG_KIND S_FOG.x\n"
+    "#define FOG_ORTHO S_FOG.y\n"
+    "#else\n"
+    "#define FOG_KIND u_fog.x\n"
+    "#define FOG_ORTHO u_fog.y\n"
+    "#endif\n"
     "vec4 sample_map(int m, vec2 uv) {\n"
     "  if (m == 0) return texture(u_tex0, uv); if (m == 1) return texture(u_tex1, uv);\n"
     "  if (m == 2) return texture(u_tex2, uv); if (m == 3) return texture(u_tex3, uv);\n"
@@ -300,12 +357,32 @@ static const char* kFragmentShader =
     "}\n"
     "/* A map sampled at a coordinate in texels with 7 fractional bits. */\n"
     "vec4 sample_at(int m, ivec2 c) { return sample_map(m, vec2(c) / (vec2(map_size(m)) * 128.0)); }\n"
+    "vec3 texc(int n) {\n"
+    "  if (n < 4) return n == 0 ? v_tex[0] : (n == 1 ? v_tex[1] : (n == 2 ? v_tex[2] : v_tex[3]));\n"
+    "  return n == 4 ? v_tex[4] : (n == 5 ? v_tex[5] : (n == 6 ? v_tex[6] : v_tex[7]));\n"
+    "}\n"
     "ivec2 fixpoint_uv(int n) {\n"
-    "  vec3 tc = v_tex[n]; ivec4 sz = u_tc_size[n >> 1];\n"
+    "  vec3 tc = texc(n); ivec4 sz = u_tc_size[n >> 1];\n"
     "  return ivec2(tc.xy / (tc.z == 0.0 ? 1.0 : tc.z) * vec2((n & 1) != 0 ? sz.zw : sz.xy) * 128.0);\n"
     "}\n"
     "int wrap(int v, int w) { return w == 0 ? v : (w == 6 ? 0 : v & ((256 >> (w - 1)) * 128 - 1)); }\n"
-    "vec4 swizzle(vec4 c, int t) { ivec4 s = u_swap[t]; return vec4(c[s.x], c[s.y], c[s.z], c[s.w]); }\n"
+    /* No local array or vector is indexed with a value known only when the
+     * shader runs: a GPU keeps such arrays in memory rather than registers
+     * (scratch), for every pixel. Selects and branches on the draw's own
+     * (uniform) setup instead. */
+    "float comp(vec4 c, int i) { return i == 0 ? c.x : (i == 1 ? c.y : (i == 2 ? c.z : c.w)); }\n"
+    "vec4 swizzle(vec4 c, int t) { ivec4 s = u_swap[t]; return vec4(comp(c, s.x), comp(c, s.y), comp(c, s.z), comp(c, s.w)); }\n"
+    "vec4 regsel(int r, vec4 r0, vec4 r1, vec4 r2, vec4 r3) { return r == 0 ? r0 : (r == 1 ? r1 : (r == 2 ? r2 : r3)); }\n"
+    "vec3 csel(int s, vec4 r0, vec4 r1, vec4 r2, vec4 r3, vec4 tex, vec4 ras, vec3 kc) {\n"
+    "  if (s < 8) { vec4 r = regsel(s >> 1, r0, r1, r2, r3); return (s & 1) != 0 ? vec3(r.a) : r.rgb; }\n"
+    "  if (s < 10) return s == 8 ? tex.rgb : vec3(tex.a);\n"
+    "  if (s < 12) return s == 10 ? ras.rgb : vec3(ras.a);\n"
+    "  return s == 12 ? vec3(1.0) : (s == 13 ? vec3(0.5) : (s == 14 ? kc : vec3(0.0)));\n"
+    "}\n"
+    "float asel(int s, vec4 r0, vec4 r1, vec4 r2, vec4 r3, vec4 tex, vec4 ras, float ka) {\n"
+    "  if (s < 4) return regsel(s, r0, r1, r2, r3).a;\n"
+    "  return s == 4 ? tex.a : (s == 5 ? ras.a : (s == 6 ? ka : 0.0));\n"
+    "}\n"
     "float kfrac(int s) { return s < 8 ? float(8 - s) / 8.0 : 0.0; }\n"
     "vec3 kcolor(int s) {\n"
     "  if (s < 8) return vec3(kfrac(s));\n"
@@ -326,13 +403,14 @@ static const char* kFragmentShader =
     "float q8(float x) { return floor(x * 255.0 + 0.5) / 255.0; }\n"
     "vec3 q8(vec3 x) { return floor(x * 255.0 + 0.5) / 255.0; }\n"
     "void main() {\n"
-    "  vec4 reg[4]; reg[0] = u_reg[0]; reg[1] = u_reg[1]; reg[2] = u_reg[2]; reg[3] = u_reg[3];\n"
-    "  vec4 last = reg[0];\n"
-    "  ivec3 ind_tex[4]; ivec2 ind_coord = ivec2(0);\n"
+    "  vec4 r0 = u_reg[0], r1 = u_reg[1], r2 = u_reg[2], r3 = u_reg[3];\n"
+    "  vec4 last = r0;\n"
+    "  ivec3 it0 = ivec3(0), it1 = ivec3(0), it2 = ivec3(0), it3 = ivec3(0); ivec2 ind_coord = ivec2(0);\n"
     "  if (u_ind.y != 0) {\n"
     "    for (int k = 0; k < u_ind.x && k < 4; k++) {\n"
     "      ivec4 is = u_ind_stage[k];\n"
-    "      ind_tex[k] = ivec3(floor(sample_at(is.x, fixpoint_uv(is.y) >> is.zw).abg * 255.0 + 0.5));\n"
+    "      ivec3 t = ivec3(floor(sample_at(is.x, fixpoint_uv(is.y) >> is.zw).abg * 255.0 + 0.5));\n"
+    "      if (k == 0) it0 = t; else if (k == 1) it1 = t; else if (k == 2) it2 = t; else it3 = t;\n"
     "    }\n"
     "  }\n"
     "  for (int i = 0; i < u_num_stages; i++) {\n"
@@ -343,8 +421,8 @@ static const char* kFragmentShader =
     "      int bt = cmd & 3, fmt = (cmd >> 2) & 3, bias = (cmd >> 4) & 7, bs = (cmd >> 7) & 3, mid = (cmd >> 9) & 15;\n"
     "      ivec2 uv = fixpoint_uv(map.y), trans = ivec2(0);\n"
     "      if (bt < u_ind.x && (bs != 0 || mid != 0)) {\n"
-    "        ivec3 crd = ind_tex[bt];\n"
-    "        if (bs != 0) bump = crd[bs - 1] & (fmt == 1 ? 0xE0 : (fmt == 2 ? 0xF0 : 0xF8));\n"
+    "        ivec3 crd = bt == 0 ? it0 : (bt == 1 ? it1 : (bt == 2 ? it2 : it3));\n"
+    "        if (bs != 0) bump = (bs == 1 ? crd.x : (bs == 2 ? crd.y : crd.z)) & (fmt == 1 ? 0xE0 : (fmt == 2 ? 0xF0 : 0xF8));\n"
     "        crd &= ivec3(fmt == 0 ? 255 : (fmt == 1 ? 31 : (fmt == 2 ? 15 : 7)));\n"
     "        int add = fmt == 0 ? -128 : 1;\n"
     "        crd += ivec3((bias & 1) != 0 ? add : 0, (bias & 2) != 0 ? add : 0, (bias & 4) != 0 ? add : 0);\n"
@@ -364,7 +442,7 @@ static const char* kFragmentShader =
     "    vec4 tex = vec4(1.0);\n"
     "    if (map.z != 0) {\n"
     "      if (cmd != 0) tex = sample_at(map.x, ind_coord);\n"
-    "      else { vec3 tc = v_tex[map.y]; tex = sample_map(map.x, tc.xy / (tc.z == 0.0 ? 1.0 : tc.z)); }\n"
+    "      else { vec3 tc = texc(map.y); tex = sample_map(map.x, tc.xy / (tc.z == 0.0 ? 1.0 : tc.z)); }\n"
     "    }\n"
     "    tex = swizzle(tex, sel.w & 3);\n"
     "    vec4 ras = map.w == 0 ? v_col0 : (map.w == 1 ? v_col1 : vec4(0.0));\n"
@@ -372,16 +450,11 @@ static const char* kFragmentShader =
     "    else if (map.w == 6) ras = vec4(0.0, 0.0, 0.0, float(bump | (bump >> 5)) / 255.0);\n"
     "    ras = swizzle(ras, sel.w >> 2);\n"
     "    vec3 kc = kcolor(sel.z & 31); float ka = kalpha(sel.z >> 5);\n"
-    "    vec3 cin[16];\n"
-    "    cin[0] = reg[0].rgb; cin[1] = vec3(reg[0].a); cin[2] = reg[1].rgb; cin[3] = vec3(reg[1].a);\n"
-    "    cin[4] = reg[2].rgb; cin[5] = vec3(reg[2].a); cin[6] = reg[3].rgb; cin[7] = vec3(reg[3].a);\n"
-    "    cin[8] = tex.rgb; cin[9] = vec3(tex.a); cin[10] = ras.rgb; cin[11] = vec3(ras.a);\n"
-    "    cin[12] = vec3(1.0); cin[13] = vec3(0.5); cin[14] = kc; cin[15] = vec3(0.0);\n"
-    "    float ain[8];\n"
-    "    ain[0] = reg[0].a; ain[1] = reg[1].a; ain[2] = reg[2].a; ain[3] = reg[3].a;\n"
-    "    ain[4] = tex.a; ain[5] = ras.a; ain[6] = ka; ain[7] = 0.0;\n"
     "    ivec4 ci = u_cin[i]; ivec4 co = u_cop[i];\n"
-    "    vec3 a = clamp(cin[ci.x], 0.0, 1.0), b = clamp(cin[ci.y], 0.0, 1.0), c = clamp(cin[ci.z], 0.0, 1.0), d = cin[ci.w];\n"
+    "    vec3 a = clamp(csel(ci.x, r0, r1, r2, r3, tex, ras, kc), 0.0, 1.0);\n"
+    "    vec3 b = clamp(csel(ci.y, r0, r1, r2, r3, tex, ras, kc), 0.0, 1.0);\n"
+    "    vec3 c = clamp(csel(ci.z, r0, r1, r2, r3, tex, ras, kc), 0.0, 1.0);\n"
+    "    vec3 d = csel(ci.w, r0, r1, r2, r3, tex, ras, kc);\n"
     "    vec3 rc;\n"
     "    if (co.y == 3) {\n"
     "      vec3 r;\n"
@@ -400,7 +473,10 @@ static const char* kFragmentShader =
     "    }\n"
     "    rc = co.w != 0 ? clamp(rc, 0.0, 1.0) : clamp(rc, -1024.0 / 255.0, 1023.0 / 255.0);\n"
     "    ivec4 ai = u_ain[i]; ivec4 ao = u_aop[i];\n"
-    "    float aa = clamp(ain[ai.x], 0.0, 1.0), ab = clamp(ain[ai.y], 0.0, 1.0), ac = clamp(ain[ai.z], 0.0, 1.0), ad = ain[ai.w];\n"
+    "    float aa = clamp(asel(ai.x, r0, r1, r2, r3, tex, ras, ka), 0.0, 1.0);\n"
+    "    float ab = clamp(asel(ai.y, r0, r1, r2, r3, tex, ras, ka), 0.0, 1.0);\n"
+    "    float ac = clamp(asel(ai.z, r0, r1, r2, r3, tex, ras, ka), 0.0, 1.0);\n"
+    "    float ad = asel(ai.w, r0, r1, r2, r3, tex, ras, ka);\n"
     "    float ra;\n"
     "    if (ao.y == 3) {\n"
     "      float r = ao.x == 0 ? float(q8(aa) > q8(ab)) : float(q8(aa) == q8(ab));\n"
@@ -412,7 +488,8 @@ static const char* kFragmentShader =
     "      ra *= ao.z == 1 ? 2.0 : (ao.z == 2 ? 4.0 : (ao.z == 3 ? 0.5 : 1.0));\n"
     "    }\n"
     "    ra = ao.w != 0 ? clamp(ra, 0.0, 1.0) : clamp(ra, -1024.0 / 255.0, 1023.0 / 255.0);\n"
-    "    reg[sel.x].rgb = rc; reg[sel.y].a = ra;\n"
+    "    if (sel.x == 0) r0.rgb = rc; else if (sel.x == 1) r1.rgb = rc; else if (sel.x == 2) r2.rgb = rc; else r3.rgb = rc;\n"
+    "    if (sel.y == 0) r0.a = ra; else if (sel.y == 1) r1.a = ra; else if (sel.y == 2) r2.a = ra; else r3.a = ra;\n"
     "    last = vec4(rc, ra);\n"
     "  }\n"
     "  last = clamp(last, 0.0, 1.0);\n"
@@ -420,9 +497,9 @@ static const char* kFragmentShader =
     "  bool p0 = acmp(u_alpha.x, a8, u_alpha_ref.x), p1 = acmp(u_alpha.y, a8, u_alpha_ref.y);\n"
     "  bool pass = u_alpha.z == 0 ? (p0 && p1) : (u_alpha.z == 1 ? (p0 || p1) : (u_alpha.z == 2 ? (p0 != p1) : (p0 == p1)));\n"
     "  if (!pass) discard;\n"
-    "  if (u_fog.x != 0) {\n"
+    "  if (FOG_KIND != 0) {\n"
     "    int z = int(clamp((1.0 - gl_FragCoord.z) * 16777216.0, 0.0, 16777215.0));\n"
-    "    float ze = u_fog.y == 0 ? u_fogf.x * 16777216.0 / float(u_fog.z - (z >> u_fog.w)) : u_fogf.x * float(z) / 16777216.0;\n"
+    "    float ze = FOG_ORTHO == 0 ? u_fogf.x * 16777216.0 / float(u_fog.z - (z >> u_fog.w)) : u_fogf.x * float(z) / 16777216.0;\n"
     "    if (u_fog_range[0].z != 0.0) {\n"
     "      float t = clamp(abs(gl_FragCoord.x * u_fog_range[0].x + u_fog_range[0].y) / 32.0 - 1.0, -1.0, 9.0);\n"
     "      int lo = int(floor(t)), hi = min(lo + 1, 9);\n"
@@ -431,36 +508,120 @@ static const char* kFragmentShader =
     "      ze /= max(mix(kl, kh, t - float(lo)), 1.0 / 256.0);\n"
     "    }\n"
     "    float f = clamp(ze - u_fogf.y, 0.0, 1.0);\n"
-    "    if (u_fog.x == 4) f = 1.0 - exp2(-8.0 * f);\n"
-    "    else if (u_fog.x == 5) f = 1.0 - exp2(-8.0 * f * f);\n"
-    "    else if (u_fog.x == 6) f = exp2(-8.0 * (1.0 - f));\n"
-    "    else if (u_fog.x == 7) f = exp2(-8.0 * (1.0 - f) * (1.0 - f));\n"
+    "    if (FOG_KIND == 4) f = 1.0 - exp2(-8.0 * f);\n"
+    "    else if (FOG_KIND == 5) f = 1.0 - exp2(-8.0 * f * f);\n"
+    "    else if (FOG_KIND == 6) f = exp2(-8.0 * (1.0 - f));\n"
+    "    else if (FOG_KIND == 7) f = exp2(-8.0 * (1.0 - f) * (1.0 - f));\n"
     "    last.rgb = mix(last.rgb, u_fog_color.rgb, floor(f * 256.0 + 0.5) / 256.0);\n"
     "  }\n"
     "  o_color = last;\n"
     "}\n";
 
-static GLuint sProgram, sVao, sVbo, sIbo, sXfUbo;
+/* A draw program (the ubershader, or one specialised for a TEV setup):
+ * where its uniforms are (-1 for those a specialised one has made
+ * constant) and the values last sent to each, so a draw sends only what
+ * changed for the program it uses. */
+typedef struct DrawProg {
+    GLuint id;
+    GLint uNumStages, uCin, uAin, uCop, uAop, uMap, uSel, uReg, uKonst, uSwap, uAlpha, uAlphaRef, uFog, uFogF,
+        uFogColor, uInd, uIndCmd, uIndStage, uIndMtx, uTcSize, uFogRange;
+    GLint lCin[64], lAin[64], lCop[64], lAop[64], lMap[64], lSel[64], lSwap[16], lAlpha[4], lFog[4];
+    GLfloat lReg[16], lKonst[16], lAlphaRef[4], lFogF[4], lFogColor[4], lFogRange[16];
+    GLint lInd[4], lIndCmd[16], lIndStage[16], lIndMtx[24], lTcSize[16];
+    int set, stages;
+} DrawProg;
+
+static DrawProg sUber;
+static GLuint sProgram; /* the draw program in use */
+static GLuint sVs;      /* the vertex shader, shared by all draw programs */
+static GLuint sVao, sVbo, sIbo, sXfUbo;
 static GLuint sArenaVao, sArenaVbo; /* the vertex arena (gl_arena_alloc) */
 static GLuint sBoundVao; /* the vertex array bound: the per-draw one or the arena's */
-static GLint uNumStages, uCin, uAin, uCop, uAop, uMap, uSel, uReg, uKonst, uSwap, uAlpha, uAlphaRef, uFog, uFogF, uFogColor;
-static GLint uInd, uIndCmd, uIndStage, uIndMtx, uTcSize, uFogRange;
 
-static GLuint compile(GLenum type, const char* src) {
+/* Compiles a shader from n strings; 0 (and the log printed) if it fails. */
+static GLuint compile_n(GLenum type, int n, const char* const* src) {
     extern unsigned g_cnt_shader_compiles; /* debug overlay */
-    g_cnt_shader_compiles++;
     GLuint s = p_glCreateShader(type);
     GLint ok;
-    p_glShaderSource(s, 1, &src, NULL);
+    g_cnt_shader_compiles++;
+    p_glShaderSource(s, n, src, NULL);
     p_glCompileShader(s);
     p_glGetShaderiv(s, GL_COMPILE_STATUS, &ok);
     if (!ok) {
         char log[4096];
         p_glGetShaderInfoLog(s, sizeof(log), NULL, log);
         fprintf(stderr, "gl: shader error:\n%s\n", log);
-        exit(1);
+        return 0;
     }
     return s;
+}
+
+static GLuint compile(GLenum type, const char* src) {
+    GLuint s = compile_n(type, 1, &src);
+    if (!s) exit(1);
+    return s;
+}
+
+static const char* const kAttribs[] = {"a_mtx0", "a_mtx1", "a_mtx2", "a_pos", "a_nrm", "a_col0",
+                                       "a_col1", "a_tex01", "a_tex23", "a_tex45", "a_tex67"};
+
+/* With the program in use: its samplers and XF block bound, and where its
+ * uniforms are. Called on whichever context made it. */
+static void prog_locate(DrawProg* p) {
+    int i;
+    GLuint block;
+    for (i = 0; i < 8; i++) {
+        char name[16];
+        snprintf(name, sizeof(name), "u_tex%d", i);
+        p_glUniform1i(p_glGetUniformLocation(p->id, name), i);
+    }
+#define LOC(field, name) p->field = p_glGetUniformLocation(p->id, name)
+    LOC(uNumStages, "u_num_stages");
+    LOC(uCin, "u_cin");
+    LOC(uAin, "u_ain");
+    LOC(uCop, "u_cop");
+    LOC(uAop, "u_aop");
+    LOC(uMap, "u_map");
+    LOC(uSel, "u_sel");
+    LOC(uReg, "u_reg");
+    LOC(uKonst, "u_konst");
+    LOC(uSwap, "u_swap");
+    LOC(uAlpha, "u_alpha");
+    LOC(uAlphaRef, "u_alpha_ref");
+    LOC(uFog, "u_fog");
+    LOC(uFogF, "u_fogf");
+    LOC(uFogColor, "u_fog_color");
+    LOC(uInd, "u_ind");
+    LOC(uIndCmd, "u_ind_cmd");
+    LOC(uIndStage, "u_ind_stage");
+    LOC(uIndMtx, "u_ind_mtx");
+    LOC(uTcSize, "u_tc_size");
+    LOC(uFogRange, "u_fog_range");
+#undef LOC
+    block = p_glGetUniformBlockIndex(p->id, "XF");
+    if (block != 0xFFFFFFFFu) p_glUniformBlockBinding(p->id, block, 0);
+    p->set = 0;
+}
+
+/* Links the shared vertex shader with fragment shader fs; 0 if it fails. */
+static GLuint link_draw_program(GLuint fs, int retrievable) {
+    GLuint p = p_glCreateProgram();
+    GLint ok;
+    int i;
+    p_glAttachShader(p, sVs);
+    p_glAttachShader(p, fs);
+    for (i = 0; i < 11; i++) p_glBindAttribLocation(p, (GLuint)i, kAttribs[i]);
+    if (retrievable && p_glProgramParameteri) p_glProgramParameteri(p, GL_PROGRAM_BINARY_RETRIEVABLE_HINT, 1);
+    p_glLinkProgram(p);
+    p_glGetProgramiv(p, GL_LINK_STATUS, &ok);
+    if (!ok) {
+        char log[4096];
+        p_glGetProgramInfoLog(p, sizeof(log), NULL, log);
+        fprintf(stderr, "gl: link error:\n%s\n", log);
+        if (p_glDeleteProgram) p_glDeleteProgram(p);
+        return 0;
+    }
+    return p;
 }
 
 /* Points the arena's vertex array at buffer b. */
@@ -489,50 +650,30 @@ static void arena_vao(GLuint b) {
     p_glBindBuffer(GL_ARRAY_BUFFER, sVbo);
 }
 
+static int sSimpleFs; /* RECOMP_GL_SIMPLE_FS */
+
 static void build_program(void) {
-    static const char* attribs[] = {"a_mtx0", "a_mtx1", "a_mtx2", "a_pos", "a_nrm", "a_col0",
-                                    "a_col1", "a_tex01", "a_tex23", "a_tex45", "a_tex67"};
-    GLint ok;
+    GLuint fs;
     int i;
-    sProgram = p_glCreateProgram();
-    p_glAttachShader(sProgram, compile(GL_VERTEX_SHADER, kVertexShader));
-    p_glAttachShader(sProgram, compile(GL_FRAGMENT_SHADER, kFragmentShader));
-    for (i = 0; i < 11; i++) p_glBindAttribLocation(sProgram, (GLuint)i, attribs[i]);
-    p_glLinkProgram(sProgram);
-    p_glGetProgramiv(sProgram, GL_LINK_STATUS, &ok);
-    if (!ok) {
-        char log[4096];
-        p_glGetProgramInfoLog(sProgram, sizeof(log), NULL, log);
-        fprintf(stderr, "gl: link error:\n%s\n", log);
-        exit(1);
+    const char* e = getenv("RECOMP_GL_SIMPLE_FS");
+    sVs = compile(GL_VERTEX_SHADER, kVertexShader);
+    if (e && *e == '1') {
+        /* RECOMP_GL_SIMPLE_FS=1 (measurements only; the picture is wrong):
+         * a trivial fragment shader, to see what the TEV shader costs. */
+        static const char* kSimple =
+            "#version 330 compatibility\n"
+            "in vec4 v_col0; in vec4 v_col1; in vec3 v_tex[8]; out vec4 o_color; uniform sampler2D u_tex0;\n"
+            "void main() { vec3 t = v_tex[0]; o_color = texture(u_tex0, t.xy / (t.z == 0.0 ? 1.0 : t.z)) * v_col0; }\n";
+        fs = compile(GL_FRAGMENT_SHADER, kSimple);
+        sSimpleFs = 1;
+    } else {
+        const char* src[2] = {kFsVersion, kFragmentShader};
+        if (!(fs = compile_n(GL_FRAGMENT_SHADER, 2, src))) exit(1);
     }
+    if (!(sUber.id = link_draw_program(fs, 0))) exit(1);
+    sProgram = sUber.id;
     p_glUseProgram(sProgram);
-    for (i = 0; i < 8; i++) {
-        char name[16];
-        snprintf(name, sizeof(name), "u_tex%d", i);
-        p_glUniform1i(p_glGetUniformLocation(sProgram, name), i);
-    }
-    uNumStages = p_glGetUniformLocation(sProgram, "u_num_stages");
-    uCin = p_glGetUniformLocation(sProgram, "u_cin");
-    uAin = p_glGetUniformLocation(sProgram, "u_ain");
-    uCop = p_glGetUniformLocation(sProgram, "u_cop");
-    uAop = p_glGetUniformLocation(sProgram, "u_aop");
-    uMap = p_glGetUniformLocation(sProgram, "u_map");
-    uSel = p_glGetUniformLocation(sProgram, "u_sel");
-    uReg = p_glGetUniformLocation(sProgram, "u_reg");
-    uKonst = p_glGetUniformLocation(sProgram, "u_konst");
-    uSwap = p_glGetUniformLocation(sProgram, "u_swap");
-    uAlpha = p_glGetUniformLocation(sProgram, "u_alpha");
-    uAlphaRef = p_glGetUniformLocation(sProgram, "u_alpha_ref");
-    uFog = p_glGetUniformLocation(sProgram, "u_fog");
-    uFogF = p_glGetUniformLocation(sProgram, "u_fogf");
-    uFogColor = p_glGetUniformLocation(sProgram, "u_fog_color");
-    uInd = p_glGetUniformLocation(sProgram, "u_ind");
-    uIndCmd = p_glGetUniformLocation(sProgram, "u_ind_cmd");
-    uIndStage = p_glGetUniformLocation(sProgram, "u_ind_stage");
-    uIndMtx = p_glGetUniformLocation(sProgram, "u_ind_mtx");
-    uTcSize = p_glGetUniformLocation(sProgram, "u_tc_size");
-    uFogRange = p_glGetUniformLocation(sProgram, "u_fog_range");
+    prog_locate(&sUber);
 
     p_glGenVertexArrays(1, &sVao);
     p_glBindVertexArray(sVao);
@@ -568,8 +709,453 @@ static void build_program(void) {
     p_glGenBuffers(1, &sXfUbo);
     p_glBindBuffer(GL_UNIFORM_BUFFER, sXfUbo);
     p_glBufferData(GL_UNIFORM_BUFFER, GX_XF_WORDS * 4, NULL, GL_DYNAMIC_DRAW);
-    p_glUniformBlockBinding(sProgram, p_glGetUniformBlockIndex(sProgram, "XF"), 0);
     p_glBindBufferBase(GL_UNIFORM_BUFFER, 0, sXfUbo);
+}
+
+/* ------------------------------------------------------------------------ */
+/* Specialised draw programs (off by default: WONDERPARK_SHADERS=spec)
+ *
+ * Each TEV setup a draw uses (its "key": the stages' inputs, operations
+ * and destinations, swaps, alpha test, fog kind and indirect commands) can
+ * get a program of its own, the ubershader with the key as constants.
+ * Until it is ready the ubershader draws it, so a new setup never waits
+ * for a compile.
+ *
+ * Why it is off: on AMD's OpenGL driver (RX 9060 XT, 26.10) the first draw
+ * with any new program blocks the calling thread for 50-300 ms (the driver
+ * compiles the GPU code then), however it was made: compiled in parallel
+ * by the driver, made from a program binary, or compiled and drawn once on
+ * a second context (which blocks the main context meanwhile). So it can't
+ * be done without stutter there. The ubershader without indexed local
+ * arrays (kFragmentShader) is fast enough on its own: Wish Park at 4x takes
+ * 12 ms of GPU time a frame (63 ms before; 5 ms with these).
+ *
+ * Compiling never holds up the game thread:
+ * - With KHR/ARB_parallel_shader_compile (AMD, NVIDIA, Mesa), the main
+ *   thread hands new programs to the driver, which compiles them on
+ *   threads of its own, and only asks whether they are done. At most
+ *   SPEC_IN_FLIGHT at a time: with dozens queued, the first draw with a
+ *   finished one waited behind them inside the driver (AMD, up to 850 ms).
+ * - Without it, a worker thread compiles them on a GL context of its own
+ *   that shares objects with the main one. (Not where the extension is: on
+ *   AMD, a compile there blocked the main context's calls for up to 900 ms.)
+ *
+ * The keys seen are kept in <data dir>/shadercache/gl.bin (by default
+ * %APPDATA%\Wonderpark\shadercache), and at start all of them are compiled
+ * again in the background, so a setup seen before is specialised within the
+ * first seconds. Not the driver's program binaries: on AMD, the first draw
+ * with a program made from one took ~300 ms. A worker thread reads and
+ * writes the file, so no disk access happens on the game thread. The file
+ * starts over when the shader source changes. WONDERPARK_SHADERS=spec
+ * turns it on; =thread uses the worker context even where the extension
+ * is. */
+
+#define SPEC_MAX_KEY (1 + 16 * 24 + 16 + 3 + 4 + 16 + 16)
+#define SPEC_SLOTS 8192
+#define SPEC_IN_FLIGHT 2
+#define GL_COMPLETION_STATUS 0x91B1
+enum { SPEC_WAITING, SPEC_READY, SPEC_FAILED };
+
+typedef struct SpecEntry {
+    uint64_t hash;
+    int len;
+    GLint* key;
+    volatile LONG state;
+    DrawProg prog;
+    char* src;     /* the key as GLSL constants, until compiled */
+    GLuint fs;     /* its fragment shader, while compiling */
+    int saved;     /* in the file already */
+    struct SpecEntry* next;  /* the main thread's lists */
+    struct SpecEntry* qnext; /* the worker's queue */
+} SpecEntry;
+
+static int sSpecOn, sSpecParallel;
+/* The main thread's: the table, setups waiting to be handed to the driver
+ * and those it is compiling (parallel mode). */
+static SpecEntry* sSpecTable[SPEC_SLOTS];
+static int sSpecCount, sSpecInFlight;
+static SpecEntry *sSpecNew, *sSpecNewTail, *sSpecCompiling;
+/* Shared with the worker, under sSpecLock: its queue (keys to write, and
+ * in worker-context mode setups to compile) and the keys read from the
+ * file. */
+static CRITICAL_SECTION sSpecLock;
+static CONDITION_VARIABLE sSpecWake;
+static SpecEntry *sSpecHead, *sSpecTail, *sSpecLoaded;
+static HDC sSpecDC;
+static HGLRC sSpecRC;
+static FILE* sSpecFile;
+static uint64_t sSpecStamp; /* the shader source */
+/* Draws by a specialised program and by the ubershader, programs compiled,
+ * keys read from the file, and setups waiting, for the RECOMP_FPS report. */
+unsigned g_spec_draws, g_uber_draws, g_spec_compiled, g_spec_loaded, g_spec_waiting;
+
+static uint64_t spec_hash(const void* data, size_t n, uint64_t h) {
+    const uint8_t* p = (const uint8_t*)data;
+    size_t i;
+    for (i = 0; i < n; i++) h = (h ^ p[i]) * 0x100000001B3ull;
+    return h;
+}
+
+/* The key as GLSL constants (kFragmentShader's SPEC block). */
+static char* spec_source(const GLint* k) {
+    static const char* const kArr[6] = {"S_CIN", "S_AIN", "S_COP", "S_AOP", "S_MAP", "S_SEL"};
+    size_t cap = 16384, at = 0;
+    char* s = (char*)malloc(cap);
+    int n = k[0], size = n > 0 ? n : 1, a, i, j;
+    const GLint* rest = k + 1 + 24 * n;
+#define PUT(...) (at += (size_t)snprintf(s + at, cap - at, __VA_ARGS__))
+    PUT("#define SPEC 1\nconst int S_N = %d;\n", n);
+    for (a = 0; a < 6; a++) {
+        PUT("const ivec4 %s[%d] = ivec4[%d](", kArr[a], size, size);
+        for (i = 0; i < size; i++) {
+            const GLint* v = i < n ? k + 1 + 24 * i + 4 * a : NULL;
+            PUT("%sivec4(%d,%d,%d,%d)", i ? "," : "", v ? v[0] : 0, v ? v[1] : 0, v ? v[2] : 0, v ? v[3] : 0);
+        }
+        PUT(");\n");
+    }
+    PUT("const ivec4 S_SWAP[4] = ivec4[4](");
+    for (i = 0; i < 4; i++) PUT("%sivec4(%d,%d,%d,%d)", i ? "," : "", rest[4 * i], rest[4 * i + 1], rest[4 * i + 2], rest[4 * i + 3]);
+    rest += 16;
+    PUT(");\nconst ivec4 S_ALPHA = ivec4(%d,%d,%d,0);\n", rest[0], rest[1], rest[2]);
+    rest += 3;
+    PUT("const ivec4 S_FOG = ivec4(%d,%d,0,0);\nconst ivec4 S_IND = ivec4(%d,%d,0,0);\n", rest[0], rest[1], rest[2], rest[3]);
+    {
+        int ind = rest[3];
+        rest += 4;
+        for (j = 0; j < 2; j++) {
+            PUT("const ivec4 %s[4] = ivec4[4](", j ? "S_IND_STAGE" : "S_IND_CMD");
+            for (i = 0; i < 4; i++) {
+                const GLint* v = ind ? rest + 16 * j + 4 * i : NULL;
+                PUT("%sivec4(%d,%d,%d,%d)", i ? "," : "", v ? v[0] : 0, v ? v[1] : 0, v ? v[2] : 0, v ? v[3] : 0);
+            }
+            PUT(");\n");
+        }
+    }
+#undef PUT
+    return s;
+}
+
+/* To the worker's queue. */
+static void spec_post(SpecEntry* e) {
+    EnterCriticalSection(&sSpecLock);
+    e->qnext = NULL;
+    if (sSpecTail) sSpecTail->qnext = e;
+    else sSpecHead = e;
+    sSpecTail = e;
+    LeaveCriticalSection(&sSpecLock);
+    WakeConditionVariable(&sSpecWake);
+}
+
+static SpecEntry** spec_slot(const GLint* k, int n, uint64_t h) {
+    unsigned i = (unsigned)h & (SPEC_SLOTS - 1);
+    while (sSpecTable[i]) {
+        SpecEntry* e = sSpecTable[i];
+        if (e->hash == h && e->len == n && memcmp(e->key, k, (size_t)n * sizeof(GLint)) == 0) return &sSpecTable[i];
+        i = (i + 1) & (SPEC_SLOTS - 1);
+    }
+    return &sSpecTable[i];
+}
+
+static SpecEntry* spec_new(const GLint* k, int n) {
+    SpecEntry* e = (SpecEntry*)calloc(1, sizeof(SpecEntry));
+    e->hash = spec_hash(k, (size_t)n * sizeof(GLint), 0xCBF29CE484222325ull);
+    e->len = n;
+    e->key = (GLint*)malloc((size_t)n * sizeof(GLint));
+    memcpy(e->key, k, (size_t)n * sizeof(GLint));
+    return e;
+}
+
+/* A new setup (key k, n ints) into the table and on its way to being
+ * compiled (and written to the file, unless it came from there). */
+static SpecEntry* spec_add(SpecEntry** slot, SpecEntry* e) {
+    e->src = spec_source(e->key);
+    *slot = e;
+    sSpecCount++;
+    g_spec_waiting++;
+    if (sSpecParallel) {
+        e->next = NULL;
+        if (sSpecNewTail) sSpecNewTail->next = e;
+        else sSpecNew = e;
+        sSpecNewTail = e;
+        if (!e->saved) spec_post(e); /* only to write the key */
+    } else {
+        spec_post(e); /* to compile, and write the key */
+    }
+    return e;
+}
+
+/* The program for key k (n ints): a specialised one if it is ready, else
+ * NULL (the ubershader draws); a key not seen before is queued. */
+static DrawProg* spec_get(const GLint* k, int n) {
+    static GLint last[SPEC_MAX_KEY];
+    static int lastN = -1;
+    static SpecEntry* lastE;
+    SpecEntry** slot;
+    SpecEntry* e;
+    if (!sSpecOn) return NULL;
+    if (n == lastN && memcmp(k, last, (size_t)n * sizeof(GLint)) == 0) {
+        e = lastE;
+    } else {
+        slot = spec_slot(k, n, spec_hash(k, (size_t)n * sizeof(GLint), 0xCBF29CE484222325ull));
+        if (*slot) e = *slot;
+        else if (sSpecCount >= SPEC_SLOTS * 3 / 4) return NULL;
+        else e = spec_add(slot, spec_new(k, n));
+        memcpy(last, k, (size_t)n * sizeof(GLint));
+        lastN = n;
+        lastE = e;
+    }
+    return e->state == SPEC_READY ? &e->prog : NULL;
+}
+
+/* Appends a key to the file (the worker's). */
+static void spec_write(const SpecEntry* e) {
+    uint32_t n = (uint32_t)e->len;
+    if (!sSpecFile) return;
+    fwrite(&n, 4, 1, sSpecFile);
+    fwrite(e->key, sizeof(GLint), (size_t)e->len, sSpecFile);
+    fflush(sSpecFile);
+}
+
+/* The worker: opens the file and hands the keys in it to the main thread
+ * (if it was made for this shader source), leaving it open for appending. */
+static void spec_load(void) {
+    extern const char* wp_data_dir(void);
+    char path[1100];
+    uint64_t stamp = 0;
+    long good = 16;
+    unsigned count = 0;
+    FILE* f;
+    snprintf(path, sizeof(path), "%s/shadercache", wp_data_dir());
+    CreateDirectoryA(path, NULL);
+    snprintf(path, sizeof(path), "%s/shadercache/gl.bin", wp_data_dir());
+    f = fopen(path, "r+b");
+    if (f) {
+        char magic[8];
+        if (fread(magic, 1, 8, f) != 8 || memcmp(magic, "WPSHADK1", 8) != 0 || fread(&stamp, 8, 1, f) != 1 ||
+            stamp != sSpecStamp) {
+            fclose(f);
+            f = NULL;
+        }
+    }
+    if (f) {
+        SpecEntry *list = NULL, *tail = NULL;
+        for (;;) {
+            uint32_t n;
+            GLint key[SPEC_MAX_KEY];
+            SpecEntry* e;
+            if (fread(&n, 4, 1, f) != 1 || n == 0 || n > SPEC_MAX_KEY || fread(key, sizeof(GLint), n, f) != n) break;
+            good = ftell(f);
+            e = spec_new(key, (int)n);
+            e->saved = 1;
+            if (tail) tail->next = e; /* kept in file order: first seen, first compiled */
+            else list = e;
+            tail = e;
+            count++;
+        }
+        EnterCriticalSection(&sSpecLock);
+        sSpecLoaded = list;
+        LeaveCriticalSection(&sSpecLock);
+        /* Anything after the last whole record is cut off. */
+        fflush(f);
+        _chsize(_fileno(f), good);
+        fseek(f, good, SEEK_SET);
+    } else {
+        f = fopen(path, "wb");
+        if (f) {
+            fwrite("WPSHADK1", 1, 8, f);
+            fwrite(&sSpecStamp, 8, 1, f);
+            fflush(f);
+        }
+    }
+    sSpecFile = f;
+    if (getenv("RECOMP_FPS")) fprintf(stderr, "gl: %u shader setups in %s\n", count, path);
+}
+
+/* The worker's own context: one setup compiled, waiting for it. */
+static void spec_build(SpecEntry* e) {
+    const char* src[3] = {kFsVersion, e->src, kFragmentShader};
+    GLuint fs = compile_n(GL_FRAGMENT_SHADER, 3, src), p = 0;
+    if (fs) {
+        p = link_draw_program(fs, 0);
+        if (p_glDeleteShader) p_glDeleteShader(fs);
+    }
+    free(e->src);
+    e->src = NULL;
+    g_spec_waiting--;
+    if (!p) {
+        InterlockedExchange(&e->state, SPEC_FAILED);
+        return;
+    }
+    e->prog.id = p;
+    p_glUseProgram(p);
+    prog_locate(&e->prog);
+    {
+        /* One draw with it, into a pixel of this context's own, so the
+         * driver finishes compiling it here (AMD compiles the GPU code at
+         * a program's first draw) rather than at the game's first use. */
+        static GLuint fbo, tex, vao;
+        if (!fbo) {
+            glGenTextures(1, &tex);
+            glBindTexture(GL_TEXTURE_2D, tex);
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+            p_glGenFramebuffers(1, &fbo);
+            p_glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+            p_glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tex, 0);
+            p_glGenVertexArrays(1, &vao);
+        }
+        p_glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+        p_glBindVertexArray(vao);
+        glViewport(0, 0, 1, 1);
+        glDrawArrays(GL_TRIANGLES, 0, 3);
+    }
+    glFinish(); /* all of it done before the main context uses it */
+    InterlockedExchange(&e->state, SPEC_READY);
+    g_spec_compiled++;
+}
+
+static DWORD WINAPI spec_worker(LPVOID arg) {
+    (void)arg;
+    if (!sSpecParallel && !wglMakeCurrent(sSpecDC, sSpecRC)) {
+        fprintf(stderr, "gl: the shader thread's context failed; ubershader only\n");
+        sSpecOn = 0;
+        return 0;
+    }
+    spec_load();
+    for (;;) {
+        SpecEntry* e;
+        EnterCriticalSection(&sSpecLock);
+        while (!sSpecHead) SleepConditionVariableCS(&sSpecWake, &sSpecLock, INFINITE);
+        e = sSpecHead;
+        sSpecHead = e->qnext;
+        if (!sSpecHead) sSpecTail = NULL;
+        LeaveCriticalSection(&sSpecLock);
+        if (!e->saved) spec_write(e);
+        if (!sSpecParallel) spec_build(e);
+    }
+    return 0;
+}
+
+/* The main thread, once a frame (after presenting): keys from the file
+ * added, finished compiles taken, and new ones handed to the driver. */
+static void spec_frame(void) {
+    SpecEntry* e;
+    int touched = 0;
+    if (!sSpecOn) return;
+    if (sSpecLoaded) {
+        SpecEntry* list;
+        EnterCriticalSection(&sSpecLock);
+        list = sSpecLoaded;
+        sSpecLoaded = NULL;
+        LeaveCriticalSection(&sSpecLock);
+        while ((e = list) != NULL) {
+            SpecEntry** slot = spec_slot(e->key, e->len, e->hash);
+            list = e->next;
+            if (*slot || sSpecCount >= SPEC_SLOTS * 3 / 4) {
+                free(e->key);
+                free(e);
+                continue;
+            }
+            spec_add(slot, e);
+            g_spec_loaded++;
+        }
+    }
+    if (!sSpecParallel) return;
+    {
+        SpecEntry** pp = &sSpecCompiling;
+        while ((e = *pp) != NULL) {
+            GLint done = 0, ok = 0;
+            p_glGetProgramiv(e->prog.id, GL_COMPLETION_STATUS, &done);
+            if (!done) {
+                pp = &e->next;
+                continue;
+            }
+            *pp = e->next;
+            sSpecInFlight--;
+            g_spec_waiting--;
+            p_glGetProgramiv(e->prog.id, GL_LINK_STATUS, &ok);
+            if (p_glDeleteShader) p_glDeleteShader(e->fs);
+            e->fs = 0;
+            if (!ok) {
+                char log[4096];
+                p_glGetProgramInfoLog(e->prog.id, sizeof(log), NULL, log);
+                fprintf(stderr, "gl: specialised program failed:\n%s\n", log);
+                if (p_glDeleteProgram) p_glDeleteProgram(e->prog.id);
+                e->prog.id = 0;
+                e->state = SPEC_FAILED;
+                continue;
+            }
+            p_glUseProgram(e->prog.id);
+            prog_locate(&e->prog);
+            touched = 1;
+            g_spec_compiled++;
+            e->state = SPEC_READY;
+        }
+    }
+    while (sSpecInFlight < SPEC_IN_FLIGHT && (e = sSpecNew) != NULL) {
+        const char* src[3];
+        int k;
+        extern unsigned g_cnt_shader_compiles; /* debug overlay */
+        sSpecNew = e->next;
+        if (!sSpecNew) sSpecNewTail = NULL;
+        src[0] = kFsVersion, src[1] = e->src, src[2] = kFragmentShader;
+        e->fs = p_glCreateShader(GL_FRAGMENT_SHADER);
+        p_glShaderSource(e->fs, 3, src, NULL);
+        p_glCompileShader(e->fs);
+        e->prog.id = p_glCreateProgram();
+        p_glAttachShader(e->prog.id, sVs);
+        p_glAttachShader(e->prog.id, e->fs);
+        for (k = 0; k < 11; k++) p_glBindAttribLocation(e->prog.id, (GLuint)k, kAttribs[k]);
+        p_glLinkProgram(e->prog.id);
+        free(e->src);
+        e->src = NULL;
+        e->next = sSpecCompiling;
+        sSpecCompiling = e;
+        sSpecInFlight++;
+        g_cnt_shader_compiles++;
+    }
+    if (touched) {
+        /* prog_locate changed the program in use. */
+        p_glUseProgram(sProgram);
+        gl_forget();
+    }
+}
+
+/* Starts it: the driver's parallel compiling if it has it, else a worker
+ * context sharing objects with main_rc. */
+static void spec_init(HGLRC main_rc, int pixel_format, PIXELFORMATDESCRIPTOR* pfd) {
+    typedef void(APIENTRY * PFN_threads)(GLuint);
+    const char* e = getenv("WONDERPARK_SHADERS");
+    PFN_threads threads;
+    HANDLE t;
+    if (sSimpleFs || !e || (strcmp(e, "spec") != 0 && strcmp(e, "thread") != 0)) return;
+    threads = (PFN_threads)(void*)wglGetProcAddress("glMaxShaderCompilerThreadsKHR");
+    if (!threads) threads = (PFN_threads)(void*)wglGetProcAddress("glMaxShaderCompilerThreadsARB");
+    if (threads && !(e && strcmp(e, "thread") == 0)) {
+        threads(0xFFFFFFFFu); /* as many as the driver likes */
+        sSpecParallel = 1;
+    } else {
+        HWND w = CreateWindowA("WonderparkGL", "", WS_POPUP, 0, 0, 16, 16, NULL, NULL, GetModuleHandleA(NULL), NULL);
+        sSpecDC = w ? GetDC(w) : NULL;
+        if (!sSpecDC || !SetPixelFormat(sSpecDC, pixel_format, pfd) || !(sSpecRC = wglCreateContext(sSpecDC)) ||
+            !wglShareLists(main_rc, sSpecRC)) {
+            fprintf(stderr, "gl: no shared context for compiling shaders; ubershader only\n");
+            return;
+        }
+    }
+    sSpecStamp = spec_hash(kVertexShader, strlen(kVertexShader), 0xCBF29CE484222325ull);
+    sSpecStamp = spec_hash(kFragmentShader, strlen(kFragmentShader), sSpecStamp);
+    InitializeCriticalSection(&sSpecLock);
+    InitializeConditionVariable(&sSpecWake);
+    sSpecOn = 1;
+    t = CreateThread(NULL, 0, spec_worker, NULL, 0, NULL);
+    if (!t) {
+        sSpecOn = 0;
+        return;
+    }
+    SetThreadPriority(t, THREAD_PRIORITY_BELOW_NORMAL);
+    CloseHandle(t);
+    fprintf(stderr, "gl: specialised shaders, compiled %s\n",
+            sSpecParallel ? "by the driver in parallel" : "on a shader thread");
 }
 
 /* EFB copies: a full-screen triangle that samples the EFB rectangle and
@@ -1102,6 +1688,7 @@ static int gl_init(void) {
     build_program();
     build_copy_program();
     build_overlay_program();
+    spec_init(rc, GetPixelFormat(sGlDC), &pfd);
     pSwapInterval = (BOOL(WINAPI*)(int))(void*)wglGetProcAddress("wglSwapIntervalEXT");
     if (pSwapInterval) pSwapInterval(0);
 
@@ -1209,12 +1796,15 @@ static struct {
 
 static void gl_forget(void) { sGl.valid = 0; }
 
-/* Uploads a uniform array only when it differs from what was uploaded. */
-#define UNIFORM_IF_CHANGED(fn, loc, n, values, last)                                                          \
+/* Uploads a uniform array to program p only when it differs from what was
+ * uploaded to it (and only if p has it: a specialised program has made
+ * some constant). */
+#define UNIFORM_IF_CHANGED(fn, p, name, n, values)                                                            \
     do {                                                                                                     \
-        if (!sUniformsSet || memcmp(values, last, (size_t)(n) * 4 * sizeof(values[0])) != 0) {               \
-            memcpy(last, values, (size_t)(n) * 4 * sizeof(values[0]));                                       \
-            fn(loc, n, values);                                                                              \
+        if ((p)->u##name >= 0 &&                                                                             \
+            (!(p)->set || memcmp(values, (p)->l##name, (size_t)(n) * 4 * sizeof(values[0])) != 0)) {        \
+            memcpy((p)->l##name, values, (size_t)(n) * 4 * sizeof(values[0]));                              \
+            fn((p)->u##name, n, values);                                                                     \
         }                                                                                                    \
     } while (0)
 
@@ -1223,18 +1813,16 @@ static const GLenum kDepthFunc[8] = {GL_NEVER, GL_GREATER, GL_EQUAL, GL_GEQUAL, 
 
 /* Sets everything a draw needs but its XF state and vertices. */
 static void apply_draw_state(const GXDrawState* st) {
-    static GLint lcin[64], lain[64], lcop[64], laop[64], lmap[64], lsel[64], lswap[16], lalpha[4];
-    static GLfloat lreg[16], lkonst[16], laref[4], lfogf[4], lfogc[4];
-    static GLint lfog[4];
-    static int sUniformsSet, lstages;
     GLint cin[64], ain[64], cop[64], aop[64], map[64], sel[64], swap[16], alpha[4];
     GLfloat reg[16], konst[16], aref[4], fogf[4], fogc[4];
     GLint fog[4];
-    int i, all = !sGl.valid;
+    GLint ind[4] = {0}, cmd[16] = {0}, istage[16] = {0}, mtx[24] = {0}, size[16] = {0};
+    GLint key[SPEC_MAX_KEY];
+    DrawProg* P;
+    int i, n, all = !sGl.valid;
     sMsDirty = 1;
     if (all) {
         p_glBindFramebuffer(GL_FRAMEBUFFER, sDrawFbo);
-        p_glUseProgram(sProgram);
         p_glBindVertexArray(sVao);
         p_glBindBuffer(GL_ARRAY_BUFFER, sVbo);
         p_glBindBuffer(GL_UNIFORM_BUFFER, sXfUbo);
@@ -1291,28 +1879,77 @@ static void apply_draw_state(const GXDrawState* st) {
     fogc[1] = st->fog_color[1];
     fogc[2] = st->fog_color[2];
     fogc[3] = 1;
-
-    if (!sUniformsSet || lstages != st->num_stages) {
-        p_glUniform1i(uNumStages, st->num_stages);
-        lstages = st->num_stages;
-        sUniformsSet = 0; /* the arrays' lengths changed: upload them all */
+    if (st->ind_any) {
+        int k;
+        ind[0] = st->ind_stages;
+        ind[1] = 1;
+        for (i = 0; i < st->num_stages; i++) cmd[i] = (GLint)st->ind_cmd[i];
+        for (i = 0; i < 4; i++) {
+            istage[4 * i] = st->ind_map[i];
+            istage[4 * i + 1] = st->ind_coord[i];
+            istage[4 * i + 2] = st->ind_scale[i][0];
+            istage[4 * i + 3] = st->ind_scale[i][1];
+        }
+        for (i = 0; i < 3; i++) {
+            for (k = 0; k < 3; k++) {
+                mtx[8 * i + k] = st->ind_mtx[i][0][k];
+                mtx[8 * i + 4 + k] = st->ind_mtx[i][1][k];
+            }
+            mtx[8 * i + 3] = mtx[8 * i + 7] = 17 - st->ind_mtx_scale[i];
+        }
+        for (i = 0; i < 8; i++) {
+            size[2 * i] = st->tc_size[i][0];
+            size[2 * i + 1] = st->tc_size[i][1];
+        }
     }
-    UNIFORM_IF_CHANGED(p_glUniform4iv, uCin, st->num_stages, cin, lcin);
-    UNIFORM_IF_CHANGED(p_glUniform4iv, uAin, st->num_stages, ain, lain);
-    UNIFORM_IF_CHANGED(p_glUniform4iv, uCop, st->num_stages, cop, lcop);
-    UNIFORM_IF_CHANGED(p_glUniform4iv, uAop, st->num_stages, aop, laop);
-    UNIFORM_IF_CHANGED(p_glUniform4iv, uMap, st->num_stages, map, lmap);
-    UNIFORM_IF_CHANGED(p_glUniform4iv, uSel, st->num_stages, sel, lsel);
-    UNIFORM_IF_CHANGED(p_glUniform4fv, uReg, 4, reg, lreg);
-    UNIFORM_IF_CHANGED(p_glUniform4fv, uKonst, 4, konst, lkonst);
-    UNIFORM_IF_CHANGED(p_glUniform4iv, uSwap, 4, swap, lswap);
-    UNIFORM_IF_CHANGED(p_glUniform4iv, uAlpha, 1, alpha, lalpha);
-    UNIFORM_IF_CHANGED(p_glUniform4fv, uAlphaRef, 1, aref, laref);
-    UNIFORM_IF_CHANGED(p_glUniform4iv, uFog, 1, fog, lfog);
-    UNIFORM_IF_CHANGED(p_glUniform4fv, uFogF, 1, fogf, lfogf);
-    UNIFORM_IF_CHANGED(p_glUniform4fv, uFogColor, 1, fogc, lfogc);
+
+    /* The program: the one specialised for this TEV setup once it's
+     * compiled, else the ubershader. The key's layout is spec_source's. */
+    P = NULL;
+    if (sSpecOn) {
+        n = 0;
+        key[n++] = st->num_stages;
+        for (i = 0; i < st->num_stages; i++) {
+            memcpy(key + n, cin + 4 * i, 16), n += 4;
+            memcpy(key + n, ain + 4 * i, 16), n += 4;
+            memcpy(key + n, cop + 4 * i, 16), n += 4;
+            memcpy(key + n, aop + 4 * i, 16), n += 4;
+            memcpy(key + n, map + 4 * i, 16), n += 4;
+            memcpy(key + n, sel + 4 * i, 16), n += 4;
+        }
+        memcpy(key + n, swap, 64), n += 16;
+        key[n++] = alpha[0], key[n++] = alpha[1], key[n++] = alpha[2];
+        key[n++] = fog[0], key[n++] = fog[1], key[n++] = ind[0], key[n++] = ind[1];
+        if (ind[1]) memcpy(key + n, cmd, 64), n += 16, memcpy(key + n, istage, 64), n += 16;
+        P = spec_get(key, n);
+    }
+    if (P) g_spec_draws++;
+    else P = &sUber, g_uber_draws++;
+    if (all || sProgram != P->id) {
+        sProgram = P->id;
+        p_glUseProgram(sProgram);
+    }
+
+    if (P->uNumStages >= 0 && (!P->set || P->stages != st->num_stages)) {
+        p_glUniform1i(P->uNumStages, st->num_stages);
+        P->stages = st->num_stages;
+        P->set = 0; /* the arrays' lengths changed: upload them all */
+    }
+    UNIFORM_IF_CHANGED(p_glUniform4iv, P, Cin, st->num_stages, cin);
+    UNIFORM_IF_CHANGED(p_glUniform4iv, P, Ain, st->num_stages, ain);
+    UNIFORM_IF_CHANGED(p_glUniform4iv, P, Cop, st->num_stages, cop);
+    UNIFORM_IF_CHANGED(p_glUniform4iv, P, Aop, st->num_stages, aop);
+    UNIFORM_IF_CHANGED(p_glUniform4iv, P, Map, st->num_stages, map);
+    UNIFORM_IF_CHANGED(p_glUniform4iv, P, Sel, st->num_stages, sel);
+    UNIFORM_IF_CHANGED(p_glUniform4fv, P, Reg, 4, reg);
+    UNIFORM_IF_CHANGED(p_glUniform4fv, P, Konst, 4, konst);
+    UNIFORM_IF_CHANGED(p_glUniform4iv, P, Swap, 4, swap);
+    UNIFORM_IF_CHANGED(p_glUniform4iv, P, Alpha, 1, alpha);
+    UNIFORM_IF_CHANGED(p_glUniform4fv, P, AlphaRef, 1, aref);
+    UNIFORM_IF_CHANGED(p_glUniform4iv, P, Fog, 1, fog);
+    UNIFORM_IF_CHANGED(p_glUniform4fv, P, FogF, 1, fogf);
+    UNIFORM_IF_CHANGED(p_glUniform4fv, P, FogColor, 1, fogc);
     {
-        static GLfloat lrange[16];
         GLfloat range[16] = {0};
         if (st->fog_range) {
             range[0] = (GLfloat)(1.0 / sScaleX);
@@ -1320,43 +1957,16 @@ static void apply_draw_state(const GXDrawState* st) {
             range[2] = 1;
             for (i = 0; i < 10; i++) range[4 + i] = st->fog_k[i];
         }
-        UNIFORM_IF_CHANGED(p_glUniform4fv, uFogRange, 4, range, lrange);
+        UNIFORM_IF_CHANGED(p_glUniform4fv, P, FogRange, 4, range);
     }
-    {
-        static GLint lind[4], lcmd[16], lstage[16], lmtx[24], lsize[16];
-        GLint ind[4] = {0}, cmd[16] = {0}, istage[16] = {0}, mtx[24] = {0}, size[16] = {0};
-        if (st->ind_any) {
-            int k;
-            ind[0] = st->ind_stages;
-            ind[1] = 1;
-            for (i = 0; i < st->num_stages; i++) cmd[i] = (GLint)st->ind_cmd[i];
-            for (i = 0; i < 4; i++) {
-                istage[4 * i] = st->ind_map[i];
-                istage[4 * i + 1] = st->ind_coord[i];
-                istage[4 * i + 2] = st->ind_scale[i][0];
-                istage[4 * i + 3] = st->ind_scale[i][1];
-            }
-            for (i = 0; i < 3; i++) {
-                for (k = 0; k < 3; k++) {
-                    mtx[8 * i + k] = st->ind_mtx[i][0][k];
-                    mtx[8 * i + 4 + k] = st->ind_mtx[i][1][k];
-                }
-                mtx[8 * i + 3] = mtx[8 * i + 7] = 17 - st->ind_mtx_scale[i];
-            }
-            for (i = 0; i < 8; i++) {
-                size[2 * i] = st->tc_size[i][0];
-                size[2 * i + 1] = st->tc_size[i][1];
-            }
-        }
-        UNIFORM_IF_CHANGED(p_glUniform4iv, uInd, 1, ind, lind);
-        if (st->ind_any) {
-            UNIFORM_IF_CHANGED(p_glUniform4iv, uIndCmd, 4, cmd, lcmd);
-            UNIFORM_IF_CHANGED(p_glUniform4iv, uIndStage, 4, istage, lstage);
-            UNIFORM_IF_CHANGED(p_glUniform4iv, uIndMtx, 6, mtx, lmtx);
-            UNIFORM_IF_CHANGED(p_glUniform4iv, uTcSize, 4, size, lsize);
-        }
+    UNIFORM_IF_CHANGED(p_glUniform4iv, P, Ind, 1, ind);
+    if (st->ind_any) {
+        UNIFORM_IF_CHANGED(p_glUniform4iv, P, IndCmd, 4, cmd);
+        UNIFORM_IF_CHANGED(p_glUniform4iv, P, IndStage, 4, istage);
+        UNIFORM_IF_CHANGED(p_glUniform4iv, P, IndMtx, 6, mtx);
+        UNIFORM_IF_CHANGED(p_glUniform4iv, P, TcSize, 4, size);
     }
-    sUniformsSet = 1;
+    P->set = 1;
 
     for (i = 0; i < 8; i++) {
         GLuint t = st->texture[i] ? st->texture[i] : sWhite;
@@ -1884,6 +2494,44 @@ static void keep_last(int w, int h) {
     sHaveLast = 1;
 }
 
+/* The GPU's own time for everything between two presents, measured with
+ * timer queries and read back a few presents later (never waited for):
+ * g_gl_gpu_ms sums it, for the RECOMP_FPS report (gx_frames.c). */
+double g_gl_gpu_ms;
+unsigned g_gl_gpu_n; /* presents measured */
+#define GPU_TIMERS 4
+static GLuint sGpuQuery[GPU_TIMERS];
+static unsigned sGpuQueryAt, sGpuQueryOpen;
+
+static void gpu_timer_end(void) {
+    if (!sGpuQueryOpen) return;
+    p_glEndQuery(GL_TIME_ELAPSED);
+    sGpuQueryOpen = 0;
+    sGpuQueryAt++;
+}
+
+static void gpu_timer_begin(void) {
+    GLuint q;
+    if (!p_glGenQueries || !p_glGetQueryObjectui64v) return;
+    if (!sGpuQuery[0]) p_glGenQueries(GPU_TIMERS, sGpuQuery);
+    q = sGpuQuery[sGpuQueryAt % GPU_TIMERS];
+    if (sGpuQueryAt >= GPU_TIMERS) {
+        /* The oldest one, ended GPU_TIMERS - 1 presents ago. */
+        GLint ready = 0;
+        p_glGetQueryObjectiv(q, GL_QUERY_RESULT_AVAILABLE, &ready);
+        if (ready) {
+            GLuint64 ns = 0;
+            p_glGetQueryObjectui64v(q, GL_QUERY_RESULT, &ns);
+            g_gl_gpu_ms += (double)ns / 1e6;
+            g_gl_gpu_n++;
+        } else {
+            return; /* still running: skip a frame rather than wait */
+        }
+    }
+    p_glBeginQuery(GL_TIME_ELAPSED, q);
+    sGpuQueryOpen = 1;
+}
+
 /* After the picture is in the window's framebuffer: the overlay (debug panel,
  * F1 tab) over it, frame dumps, and presenting. 1 if left out. */
 static int finish_present(int w, int h, int may_drop);
@@ -1991,7 +2639,10 @@ static int finish_present(int w, int h, int may_drop) {
             g_dump_next[0] = 0;
         }
     }
+    gpu_timer_end();
     dropped = window_present(w, h, may_drop);
+    gpu_timer_begin();
+    spec_frame();
     {
         extern char g_dump_next[512];
         if (g_dump_next[0] && sChain) {
