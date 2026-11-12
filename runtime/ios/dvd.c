@@ -21,6 +21,10 @@ typedef struct Region {
 } Region;
 
 static char sRoot[512];
+
+/* The extracted disc's folder (game/), for reading the game's own menu art
+ * at run time (the Options page's PC rows, settings_ui.cpp). */
+const char* dvd_root(void) { return sRoot; }
 static Region* sRegions;
 static int sRegionCount, sRegionCap;
 static uint8_t sBootBin[0x440];

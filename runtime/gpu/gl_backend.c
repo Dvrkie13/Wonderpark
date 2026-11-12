@@ -1857,6 +1857,9 @@ static void dump_bmp(const char* path, int w, int h) {
     free(px);
 }
 
+/* Where the game's picture is in the window: x, y, width, height. */
+int g_picture_rect[4];
+
 /* The last picture shown, before the overlay (the F1 tab's pause shows it
  * again: gl_present_last). One blit a frame. */
 static GLuint sLastFbo, sLastTex;
@@ -1920,6 +1923,13 @@ static int gl_present(int x, int y, int cw, int ch, int may_drop) {
         dw = (int)(h * aspect + 0.5);
     }
     if (sChain && w > 0 && h > 0) dx_size(w, h);
+    {
+        /* Where the game's picture is in the window (the Options page's PC
+         * rows line up with it: settings_ui.cpp). */
+        extern int g_picture_rect[4];
+        g_picture_rect[0] = (w - dw) / 2, g_picture_rect[1] = (h - dh) / 2;
+        g_picture_rect[2] = dw, g_picture_rect[3] = dh;
+    }
     resolve();
     p_glBindFramebuffer(GL_READ_FRAMEBUFFER, sEfbFbo);
     p_glBindFramebuffer(GL_DRAW_FRAMEBUFFER, sWinFbo);

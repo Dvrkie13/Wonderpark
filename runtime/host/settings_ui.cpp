@@ -36,7 +36,9 @@
 #include <wincodec.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
+#include <thread>
 #include <cstdio>
 #include <cstring>
 #include <functional>
@@ -45,8 +47,10 @@
 #include <vector>
 
 extern "C" {
+#include "host_input.h"
 #include "host_settings.h"
 char g_dump_next[512];  // a frame for gl_backend.c to save as shown (test shots)
+extern int g_picture_rect[4];  // gl_backend.c: where the game's picture is in the window
 int win_has_focus(void);
 extern int g_wp_headless;
 int hle_game_text_speed(void);           /* hle_options.c: 0 Normal, 1 Fast, -1 no save loaded */
@@ -1323,7 +1327,545 @@ std::string g_shotPrefix;
 int g_shotStep = -1;
 double g_shotAt = 0;
 
+// ========================================================================
+// The game's own Options page: a "PC Settings" row (docs/settings/
+// options-page-pc-settings.html, approach B). Below the game's three
+// items the runtime draws a fourth in the game's own style, with the
+// game's art and font read at run time from the player's extracted disc
+// (game/files/Archive; never in the repo). Down from "Delete a Saved Game"
+// moves to it; pressing it shows the seven PC settings in the same rows,
+// with the line "In game, press F1 for every setting". The game sees none
+// of the buttons while one of these rows has the focus.
+
+// ---- Reading the game's files (LZ11, U8, TPL, BRFNT)
+
+std::vector<uint8_t> lz11(const std::vector<uint8_t>& d) {
+    if (d.size() < 4 || d[0] != 0x11) return d;
+    size_t size = d[1] | d[2] << 8 | d[3] << 16, p = 4;
+    if (!size && d.size() >= 8) size = d[4] | d[5] << 8 | d[6] << 16 | (size_t)d[7] << 24, p = 8;
+    std::vector<uint8_t> out;
+    out.reserve(size);
+    while (out.size() < size && p < d.size()) {
+        uint8_t flags = d[p++];
+        for (int bit = 0; bit < 8 && out.size() < size && p < d.size(); bit++) {
+            if (!(flags & (0x80 >> bit))) {
+                out.push_back(d[p++]);
+                continue;
+            }
+            size_t n, disp;
+            int ind = d[p] >> 4;
+            if (p + 3 >= d.size()) return out;
+            if (ind == 0) {
+                n = (((d[p] & 0xF) << 4) | (d[p + 1] >> 4)) + 0x11;
+                disp = (((d[p + 1] & 0xF) << 8) | d[p + 2]) + 1;
+                p += 3;
+            } else if (ind == 1) {
+                n = (((d[p] & 0xF) << 12) | (d[p + 1] << 4) | (d[p + 2] >> 4)) + 0x111;
+                disp = (((d[p + 2] & 0xF) << 8) | d[p + 3]) + 1;
+                p += 4;
+            } else {
+                n = ind + 1;
+                disp = (((d[p] & 0xF) << 8) | d[p + 1]) + 1;
+                p += 2;
+            }
+            if (disp > out.size()) return out;
+            for (size_t k = 0; k < n; k++) out.push_back(out[out.size() - disp]);
+        }
+    }
+    return out;
+}
+uint32_t be32(const uint8_t* p) { return (uint32_t)p[0] << 24 | p[1] << 16 | p[2] << 8 | p[3]; }
+uint16_t be16(const uint8_t* p) { return (uint16_t)(p[0] << 8 | p[1]); }
+
+// The files of a U8 archive whose names end with any of `want`.
+std::map<std::string, std::vector<uint8_t>> u8_pick(const std::vector<uint8_t>& a, std::vector<std::string> want) {
+    std::map<std::string, std::vector<uint8_t>> out;
+    if (a.size() < 0x20 || be32(&a[0]) != 0x55AA382D) return out;
+    uint32_t root = be32(&a[4]);
+    if (root + 12 > a.size()) return out;
+    uint32_t n = be32(&a[root + 8]), strs = root + n * 12;
+    for (uint32_t i = 1; i < n && root + i * 12 + 12 <= a.size(); i++) {
+        const uint8_t* e = &a[root + i * 12];
+        if (e[0] == 1) continue;  // a folder
+        uint32_t no = be32(e) & 0xFFFFFF, off = be32(e + 4), size = be32(e + 8);
+        if (strs + no >= a.size() || off + size > a.size()) continue;
+        std::string name((const char*)&a[strs + no]);
+        for (auto& w : want)
+            if (name == w) out[w].assign(a.begin() + off, a.begin() + off + size);
+    }
+    return out;
+}
+
+extern "C" {
+void gx_decode_texture(uint8_t* out, const uint8_t* src, int fmt, int width, int height, const uint8_t* tlut,
+                       int tlut_fmt);
+const char* dvd_root(void);
+int hle_options_page_shown(void);
+int hle_options_cursor(void);
+}
+
+struct Img {
+    int w = 0, h = 0;
+    std::vector<uint32_t> px;  // BGRA, premultiplied
+    ComPtr<ID2D1Bitmap> bmp;   // made for the render target below
+    void* rtFor = nullptr;
+};
+
+// RGBA (straight) to premultiplied BGRA.
+void to_bgra(Img& img, const std::vector<uint8_t>& rgba) {
+    img.px.resize((size_t)img.w * img.h);
+    for (size_t i = 0; i < img.px.size(); i++) {
+        uint32_t r = rgba[i * 4], g = rgba[i * 4 + 1], b = rgba[i * 4 + 2], a = rgba[i * 4 + 3];
+        img.px[i] = a << 24 | (r * a / 255) << 16 | (g * a / 255) << 8 | (b * a / 255);
+    }
+}
+
+// A TPL's first image (any GX format; CI formats with their palette).
+bool tpl(const std::vector<uint8_t>& d, Img& img, std::vector<uint8_t>* rgbaOut = nullptr) {
+    if (d.size() < 12) return false;
+    uint32_t tab = be32(&d[8]);
+    if (tab + 8 > d.size()) return false;
+    uint32_t ih = be32(&d[tab]), ph = be32(&d[tab + 4]);
+    if (ih + 12 > d.size()) return false;
+    int h = be16(&d[ih]), w = be16(&d[ih + 2]), fmt = (int)be32(&d[ih + 4]);
+    uint32_t off = be32(&d[ih + 8]);
+    const uint8_t* tlut = nullptr;
+    int tfmt = 0;
+    if (ph && ph + 12 <= d.size()) {
+        tfmt = (int)be32(&d[ph + 4]);
+        tlut = &d[be32(&d[ph + 8])];
+    }
+    std::vector<uint8_t> rgba((size_t)w * h * 4);
+    gx_decode_texture(rgba.data(), &d[off], fmt, w, h, tlut, tfmt);
+    img.w = w, img.h = h;
+    to_bgra(img, rgba);
+    if (rgbaOut) *rgbaOut = rgba;
+    return true;
+}
+
+// The game's font (Standerd_US_EU.brfnt): I4 glyph sheets, widths, code map.
+struct GameFont {
+    int cellW = 0, cellH = 0, baseline = 0, cols = 0, rows = 0, sheetW = 0, sheetH = 0, alter = 0, lineFeed = 0;
+    std::vector<Img> sheets;
+    struct Width { int8_t left; uint8_t glyph; int8_t adv; };
+    std::map<int, Width> widths;    // by glyph index
+    std::map<uint32_t, int> cmap;  // code point -> glyph index
+    bool ok = false;
+};
+
+bool brfnt(const std::vector<uint8_t>& f, GameFont& font) {
+    if (f.size() < 16 || memcmp(f.data(), "RFNT", 4)) return false;
+    size_t p = be16(&f[12]);
+    while (p + 8 <= f.size()) {
+        const uint8_t* s = &f[p];
+        uint32_t size = be32(s + 4);
+        if (!size || p + size > f.size()) break;
+        if (!memcmp(s, "FINF", 4)) {
+            font.lineFeed = (int8_t)s[9];
+            font.alter = be16(s + 10);
+        } else if (!memcmp(s, "TGLP", 4)) {
+            font.cellW = s[8], font.cellH = s[9], font.baseline = s[10];
+            uint32_t sheetSize = be32(s + 12);
+            int n = be16(s + 16), fmt = be16(s + 18);
+            font.cols = be16(s + 20), font.rows = be16(s + 22), font.sheetW = be16(s + 24), font.sheetH = be16(s + 26);
+            uint32_t data = be32(s + 28);
+            for (int i = 0; i < n && data + (i + 1) * (size_t)sheetSize <= f.size(); i++) {
+                std::vector<uint8_t> rgba((size_t)font.sheetW * font.sheetH * 4);
+                gx_decode_texture(rgba.data(), &f[data + i * (size_t)sheetSize], fmt, font.sheetW, font.sheetH, nullptr, 0);
+                Img img;
+                img.w = font.sheetW, img.h = font.sheetH;
+                img.px.resize((size_t)img.w * img.h);
+                for (size_t k = 0; k < img.px.size(); k++) {
+                    uint32_t a = rgba[k * 4 + 3];
+                    img.px[k] = a << 24 | a << 16 | a << 8 | a;  // white, alpha = the glyph
+                }
+                font.sheets.push_back(std::move(img));
+            }
+        } else if (!memcmp(s, "CWDH", 4)) {
+            int first = be16(s + 8), last = be16(s + 10);
+            for (int i = first; i <= last && p + 16 + (size_t)(i - first) * 3 + 3 <= f.size(); i++) {
+                const uint8_t* e = s + 16 + (i - first) * 3;
+                font.widths[i] = {(int8_t)e[0], e[1], (int8_t)e[2]};
+            }
+        } else if (!memcmp(s, "CMAP", 4)) {
+            int begin = be16(s + 8), end = be16(s + 10), method = be16(s + 12);
+            const uint8_t* m = s + 20;
+            if (method == 0) {
+                int base = be16(m);
+                for (int c = begin; c <= end; c++) font.cmap[c] = base + (c - begin);
+            } else if (method == 1) {
+                for (int c = begin; c <= end; c++) {
+                    int g = be16(m + (c - begin) * 2);
+                    if (g != 0xFFFF) font.cmap[c] = g;
+                }
+            } else if (method == 2) {
+                int n = be16(m);
+                for (int i = 0; i < n; i++) font.cmap[be16(m + 2 + i * 4)] = be16(m + 4 + i * 4);
+            }
+        }
+        p += size;
+    }
+    font.ok = !font.sheets.empty() && font.cellW && font.cols && font.rows;
+    return font.ok;
+}
+
+// What the Options rows are drawn with, read once on a thread of its own
+// (the disc folder is on a hard drive: never on the game thread).
+struct OptionsArt {
+    Img bgOrange, bgGreen, iconDelete, textDelete, iconPc;
+    GameFont font;
+};
+OptionsArt* g_art;               // set once the thread is done
+std::atomic<int> g_artState{0};  // 0 not started, 1 loading, 2 ready, 3 failed
+
+std::vector<uint8_t> read_file(const std::string& path) {
+    std::vector<uint8_t> d;
+    FILE* f = fopen(path.c_str(), "rb");
+    if (!f) return d;
+    fseek(f, 0, SEEK_END);
+    long n = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    if (n > 0) {
+        d.resize((size_t)n);
+        if (fread(d.data(), 1, d.size(), f) != d.size()) d.clear();
+    }
+    fclose(f);
+    return d;
+}
+
+// The orange "selected" row as the game's green one: hue turned from
+// orange to green, the same lightness (the game tints it by material).
+void to_green(const Img& from, Img& to) {
+    to.w = from.w, to.h = from.h;
+    to.px.resize(from.px.size());
+    for (size_t i = 0; i < from.px.size(); i++) {
+        uint32_t c = from.px[i], a = c >> 24;
+        if (!a) {
+            to.px[i] = 0;
+            continue;
+        }
+        // Premultiplied: back to straight colour first.
+        float r = (c >> 16 & 255) * 255.f / a, g = (c >> 8 & 255) * 255.f / a, b = (c & 255) * 255.f / a;
+        float nr, ng, nb;
+        if (g > r * .82f && b < 110) {
+            // The yellow glow of the selected row: the game's unselected
+            // rows have none. It becomes the board's light wood, so it also
+            // hides the glow of the game's own selected row under ours.
+            nr = 0xEC, ng = 0xDF, nb = 0xCC;
+        } else {
+            // The orange body and its light band, by brightness, to the
+            // game's green (sampled from its own unselected rows).
+            float l = (r + g) / 2 + b * .25f;
+            nr = l * .42f, ng = std::min(255.f, l * .98f + 12), nb = l * .30f + b * .2f;
+        }
+        auto pm = [a](float v) { return (uint32_t)std::min(255.f, std::max(0.f, v)) * a / 255; };
+        to.px[i] = a << 24 | pm(nr) << 16 | pm(ng) << 8 | pm(nb);
+    }
+}
+
+// A white-on-black label image as the game's unselected rows show it: the
+// letters dark red-brown, their outline light (the menu's material swaps
+// them; selected rows show it white on dark red).
+void tint_unselected(Img& img) {
+    for (auto& c : img.px) {
+        uint32_t a = c >> 24;
+        if (!a) continue;
+        float l = (c >> 16 & 255) / (float)a;  // 1 = letter, 0 = outline
+        float r = 0x5A * l + 0xFA * (1 - l), g = 0x1E * l + 0xF2 * (1 - l), b = 0x14 * l + 0xE6 * (1 - l);
+        c = a << 24 | (uint32_t)(r * a / 255) << 16 | (uint32_t)(g * a / 255) << 8 | (uint32_t)(b * a / 255);
+    }
+}
+
+void load_options_art() {
+    int expected = 0;
+    if (!g_artState.compare_exchange_strong(expected, 1)) return;
+    std::thread([] {
+        auto* art = new OptionsArt();
+        std::string root = dvd_root() ? dvd_root() : "";
+        auto menu = u8_pick(lz11(read_file(root + "/files/Archive/MenuStartMenu.dac")),
+                            {"ListBg03.tpl", "ListIcon08.tpl", "ListText06.tpl"});
+        auto msg = u8_pick(lz11(read_file(root + "/files/Archive/PrepareMessageRes.dac")), {"Standerd_US_EU.brfnt"});
+        bool ok = tpl(menu["ListBg03.tpl"], art->bgOrange) && tpl(menu["ListIcon08.tpl"], art->iconDelete) &&
+                  tpl(menu["ListText06.tpl"], art->textDelete) && brfnt(msg["Standerd_US_EU.brfnt"], art->font);
+        if (ok) {
+            to_green(art->bgOrange, art->bgGreen);
+            tint_unselected(art->textDelete);
+            // Our icon: the "!" icon's blue frame with its middle cleared
+            // (a "PC" is written in it when drawn).
+            art->iconPc = art->iconDelete;
+            int w = art->iconPc.w, h = art->iconPc.h;
+            for (int y = h / 4; y < h * 3 / 4; y++)
+                for (int x = w / 4; x < w * 3 / 4; x++) art->iconPc.px[(size_t)y * w + x] = 0;
+            g_art = art;
+        } else {
+            fprintf(stderr, "options: the game's menu art couldn't be read from %s/files/Archive\n", root.c_str());
+            delete art;
+        }
+        g_artState = ok ? 2 : 3;
+    }).detach();
+}
+
+// ---- State and input
+
+enum OptState { OPT_GAME, OPT_ROW, OPT_SUB };
+struct Opt {
+    OptState st = OPT_GAME;
+    int sub = 0, top = 0;  // the PC page's focused row and first row shown
+    uint32_t prev = 0;
+    uint32_t swallow = 0;  // buttons we used: kept from the game until let go
+    bool shown = false;
+} O;
+
+struct PcRow {
+    const wchar_t* label;
+    std::vector<std::wstring> opts;
+    unsigned soon;  // choices not available yet (bit per choice)
+    std::function<int()> get;
+    std::function<void(int)> set;
+};
+std::vector<PcRow> g_pcRows;
+
+void build_pc_rows() {
+    if (!g_pcRows.empty()) return;
+    auto x = [](int which) {
+        return std::make_pair(std::function<int()>([which] { return g_x[which]; }),
+                              std::function<void(int)>([which](int v) { settings_set_x(which, v); }));
+    };
+    auto field = [](int* f, std::vector<int> values) {
+        return std::make_pair(std::function<int()>([f, values] {
+                                  for (size_t i = 0; i < values.size(); i++)
+                                      if (values[i] == *f) return (int)i;
+                                  return -1;
+                              }),
+                              std::function<void(int)>([f, values](int i) {
+                                  *f = values[i];
+                                  settings_save();
+                              }));
+    };
+    auto add = [](const wchar_t* label, std::vector<std::wstring> opts, unsigned soon,
+                  std::pair<std::function<int()>, std::function<void(int)>> gs) {
+        g_pcRows.push_back({label, opts, soon, gs.first, gs.second});
+    };
+    add(L"Display mode", {L"Windowed", L"Borderless", L"Fullscreen"}, 4, x(X_WINDOW_MODE));
+    add(L"Resolution", {L"1280×720", L"1600×900", L"1920×1080", L"2560×1440", L"Match screen"}, 0, x(X_RESOLUTION));
+    add(L"Frame rate", {L"30 (original)", L"60"}, 2, field(&g_settings.frame_rate, {30, 60}));
+    add(L"Anti-aliasing", {L"Off", L"2×", L"4×", L"8×"}, 0, field(&g_settings.msaa, {1, 2, 4, 8}));
+    add(L"Graphics quality", {L"Original", L"2×", L"3×", L"4×"}, 0, field(&g_settings.scale, {1, 2, 3, 4}));
+    add(L"Widescreen", {L"Off", L"On"}, 0, x(X_WIDESCREEN));
+    add(L"V-Sync", {L"Off", L"On"}, 3, x(X_VSYNC));
+}
+
+void pc_step(PcRow& r, int d) {
+    int n = (int)r.opts.size(), v = r.get();
+    if (v < 0) v = d > 0 ? -1 : n;  // "Auto" internal resolution: start from an end
+    for (int k = 1; k <= n; k++) {
+        int o = v + d * k;
+        if (o < 0 || o >= n) return;
+        if (!(r.soon >> o & 1)) {
+            r.set(o);
+            changed();
+            return;
+        }
+    }
+}
+
+// ---- Drawing
+
+// Layout units (the game's 720x480 menu layout, centred) to window pixels,
+// over the picture the game shows (gl_backend.c g_picture_rect). Measured
+// in 16:9 on the Options page: 659 units across, 480 down.
+struct Map {
+    float x0, y0, sx, sy;
+    D2D1_RECT_F rect(float cx, float cy, float w, float h) const {
+        return RectF(x0 + (cx - w / 2) * sx, y0 - (cy + h / 2) * sy, x0 + (cx + w / 2) * sx, y0 - (cy - h / 2) * sy);
+    }
+};
+
+ID2D1Bitmap* bitmap(Img& img) {
+    if (img.rtFor != G.rt.Get()) img.bmp.Reset(), img.rtFor = G.rt.Get();  // the window was resized
+    if (!img.bmp && !img.px.empty()) {
+        D2D1_BITMAP_PROPERTIES p = D2D1::BitmapProperties(D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED));
+        G.rt->CreateBitmap(D2D1::SizeU(img.w, img.h), img.px.data(), img.w * 4, p, &img.bmp);
+    }
+    return img.bmp.Get();
+}
+
+// Text in the game's font: white with the menu's dark red outline, `h`
+// pixels for the font's cell height. Returns the width drawn.
+float game_text(const std::wstring& s, float x, float y, float h, float opacity = 1, bool measureOnly = false,
+                bool light = true) {
+    GameFont& f = g_art->font;
+    float k = h / f.cellH, w = 0;
+    auto each = [&](auto fn) {
+        float pen = 0;
+        for (wchar_t ch : s) {
+            auto it = f.cmap.find((uint32_t)ch);
+            int gi = it != f.cmap.end() ? it->second : f.alter;
+            auto wi = f.widths.find(gi);
+            GameFont::Width gw = wi != f.widths.end() ? wi->second : GameFont::Width{0, (uint8_t)f.cellW, (int8_t)f.cellW};
+            fn(gi, pen + gw.left * k, gw);
+            pen += gw.adv * k;
+        }
+        return pen;
+    };
+    w = each([](int, float, GameFont::Width) {});
+    if (measureOnly) return w;
+    G.rt->SetAntialiasMode(D2D1_ANTIALIAS_MODE_ALIASED);
+    int per = f.cols * f.rows;
+    auto draw = [&](float dx, float dy, D2D1_COLOR_F c) {
+        each([&](int gi, float gx, GameFont::Width gw) {
+            int sheet = gi / per, cell = gi % per;
+            if (sheet >= (int)f.sheets.size()) return;
+            float sxp = (float)(cell % f.cols) * (f.cellW + 1), syp = (float)(cell / f.cols) * (f.cellH + 1);
+            D2D1_RECT_F src = RectF(sxp, syp, sxp + gw.glyph, syp + f.cellH);
+            D2D1_RECT_F dst = RectF(x + gx + dx, y + dy, x + gx + dx + gw.glyph * k, y + dy + f.cellH * k);
+            G.rt->FillOpacityMask(bitmap(f.sheets[sheet]), brush(c), D2D1_OPACITY_MASK_CONTENT_GRAPHICS, dst, src);
+        });
+    };
+    // Light: white letters, dark red outline (selected rows, the board);
+    // dark: the reverse, as the game's unselected rows.
+    float o = std::max(1.f, h * .07f);
+    D2D1_COLOR_F edge = light ? rgb(0x5a1616, opacity) : rgb(0xfaf2e6, opacity);
+    D2D1_COLOR_F fill = light ? ColorF(1, 1, 1, opacity) : rgb(0x5a1e14, opacity);
+    for (int i = 0; i < 8; i++) draw(o * std::cos(i * PI / 4), o * std::sin(i * PI / 4), edge);
+    draw(0, 0, fill);
+    G.rt->SetAntialiasMode(D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+    return w;
+}
+
+// The board's light wood, a little larger than a row: under our row where
+// the game still draws its own selected row (its glow pulses wider than
+// the texture we cover it with).
+void board_wash(const Map& m, float cx, float cy) {
+    for (int i = 0; i < 3; i++) {
+        float gw = 352 + i * 10, gh = 62 + i * 8;
+        D2D1_RECT_F r = m.rect(cx, cy, gw, gh);
+        float rad = (r.bottom - r.top) / 2;
+        G.rt->FillRoundedRectangle(D2D1::RoundedRect(r, rad, rad), brush(rgb(0xECDFCC, i == 0 ? .95f : .35f)));
+    }
+}
+
+// One row in the game's list style, at layout row position (cx, cy).
+void list_row(const Map& m, float cx, float cy, bool selected, Img* icon, Img* textImg, const std::wstring& label,
+              const std::wstring& value = L"", bool valueSoon = false, bool arrows = false) {
+    OptionsArt& a = *g_art;
+    G.rt->DrawBitmap(bitmap(selected ? a.bgOrange : a.bgGreen), m.rect(cx, cy, 340, 55));
+    float textH = 28 * m.sy;
+    if (icon) {
+        G.rt->DrawBitmap(bitmap(*icon), m.rect(cx - 128, cy + 1, 44, 44));
+        if (icon == &a.iconPc) {
+            float tw = game_text(L"PC", 0, 0, 16 * m.sy, 1, true);
+            game_text(L"PC", m.x0 + (cx - 128) * m.sx - tw / 2, m.y0 - (cy + 1) * m.sy - 8.5f * m.sy, 16 * m.sy);
+        }
+    }
+    if (textImg) {
+        G.rt->DrawBitmap(bitmap(*textImg), m.rect(cx + 26, cy - 1, 253, 28));
+    } else {
+        float lx = icon ? cx - 98 : cx - 150;
+        game_text(label, m.x0 + lx * m.sx, m.y0 - (cy + 1) * m.sy - textH * .62f, textH * 1.05f, 1, false, selected);
+    }
+    if (!value.empty()) {
+        // The value, centred in the right part, with < > when it can change.
+        float vh = textH * .82f, vw = game_text(value, 0, 0, vh, 1, true);
+        float vx = m.x0 + (cx + 92) * m.sx, vy = m.y0 - (cy + 1) * m.sy - vh * .58f;
+        game_text(value, vx - vw / 2, vy, vh, valueSoon ? .55f : 1, false, selected);
+        if (arrows) {
+            float aw = game_text(L"<", 0, 0, vh, 1, true);
+            game_text(L"<", vx - 76 * m.sx - aw / 2, vy, vh, 1, false, selected);
+            game_text(L">", vx + 76 * m.sx - aw / 2, vy, vh, 1, false, selected);
+        }
+    }
+}
+
+void render_options(int w, int h) {
+    int px = g_picture_rect[0], py = g_picture_rect[1], pw = g_picture_rect[2], ph = g_picture_rect[3];
+    if (pw <= 0 || ph <= 0) px = 0, py = 0, pw = w, ph = h;
+    float across = (float)pw / ph > 1.5f ? 659.f : 640.f;  // 4:3: not measured yet
+    Map m{px + pw / 2.f, py + ph / 2.f, pw / across, ph / 480.f};
+    G.rt->BeginDraw();
+    G.rt->Clear(ColorF(0, 0, 0, 0));
+    G.rt->SetTransform(Matrix3x2F::Identity());
+    OptionsArt& a = *g_art;
+    // The game's rows: x 8, 4, 0 at y 50, -15, -80; ours follows on.
+    const float rowX[4] = {8, 4, 0, -4}, rowY[4] = {50, -15, -80, -145};
+    if (O.st != OPT_SUB) {
+        if (O.st == OPT_ROW) {  // the game's last row, drawn again unselected
+            board_wash(m, rowX[2], rowY[2]);
+            list_row(m, rowX[2], rowY[2], false, &a.iconDelete, &a.textDelete, L"");
+        }
+        list_row(m, rowX[3], rowY[3], O.st == OPT_ROW, &a.iconPc, nullptr, L"PC Settings");
+    } else {
+        build_pc_rows();
+        for (int i = 0; i < 4 && O.top + i < (int)g_pcRows.size(); i++) {
+            PcRow& r = g_pcRows[O.top + i];
+            int v = r.get();
+            if (i == 2) board_wash(m, rowX[i], rowY[i]);  // the game's selected row is under this one
+            std::wstring value = v < 0 ? L"Auto" : r.opts[v];
+            list_row(m, rowX[i], rowY[i], O.top + i == O.sub, nullptr, nullptr, r.label, value,
+                     v >= 0 && (r.soon >> v & 1), O.top + i == O.sub);
+        }
+        // More rows above or below, and the line about F1.
+        float lh = 20 * m.sy;
+        if (O.top > 0) game_text(L"▲", m.x0 + 170 * m.sx, m.y0 - 82 * m.sy, lh);
+        if (O.top + 4 < (int)g_pcRows.size()) game_text(L"▼", m.x0 + 170 * m.sx, m.y0 + 168 * m.sy, lh);
+        std::wstring line = L"In game, press F1 for every setting";
+        float lw = game_text(line, 0, 0, lh, 1, true);
+        game_text(line, m.x0 - lw / 2, m.y0 + 178 * m.sy, lh);
+    }
+    G.rt->EndDraw();
+}
+
 }  // namespace
+
+// The game's buttons each time it reads the Wii Remote (hle_wpad.c
+// WPADRead): on the Options page, moving to and working the PC rows. While
+// one of them has the focus the game gets no buttons (0 returned in *held).
+extern "C" void options_rows_filter(uint32_t* held) {
+    if (!hle_options_page_shown()) {
+        if (O.st != OPT_GAME || O.shown) O.st = OPT_GAME, O.shown = false, changed();
+        O.prev = *held;
+        return;
+    }
+    load_options_art();
+    if (!O.shown) O.shown = true, changed();
+    uint32_t b = *held, down = b & ~O.prev;
+    O.prev = b;
+    // The game reads the remote more than once a frame: a press we used
+    // stays hidden from it until it's let go.
+    O.swallow &= b;
+    const uint32_t ok = HOST_PAD_2 | HOST_PAD_A, back = HOST_PAD_1 | HOST_PAD_B;
+    switch (O.st) {
+    case OPT_GAME:
+        if ((down & HOST_PAD_SCREEN_DOWN) && hle_options_cursor() == 2 && g_artState == 2) {
+            O.st = OPT_ROW;
+            changed();
+            O.swallow |= b;
+        }
+        *held &= ~O.swallow;
+        return;
+    case OPT_ROW:
+        if (down & HOST_PAD_SCREEN_UP) O.st = OPT_GAME, changed();
+        else if (down & ok) O.st = OPT_SUB, O.sub = 0, O.top = 0, build_pc_rows(), changed();
+        else if (down & back) O.st = OPT_GAME, changed();
+        O.swallow |= b;
+        *held = 0;
+        return;
+    case OPT_SUB: {
+        int n = (int)g_pcRows.size();
+        if (down & HOST_PAD_SCREEN_UP) O.sub = std::max(0, O.sub - 1);
+        if (down & HOST_PAD_SCREEN_DOWN) O.sub = std::min(n - 1, O.sub + 1);
+        if (O.sub < O.top) O.top = O.sub;
+        if (O.sub >= O.top + 4) O.top = O.sub - 3;
+        if (down & HOST_PAD_SCREEN_LEFT) pc_step(g_pcRows[O.sub], -1);
+        if (down & HOST_PAD_SCREEN_RIGHT) pc_step(g_pcRows[O.sub], 1);
+        if (down & back) O.st = OPT_ROW;
+        if (down) changed();
+        O.swallow |= b;
+        *held = 0;
+        return;
+    }
+    }
+}
 
 // ------------------------------------------------------------------------
 // The C interface (overlay_win32.c, gx_frames.c)
@@ -1353,6 +1895,47 @@ extern "C" int settings_ui_wants_pause(void) {
     return g_x[X_PAUSE_BACKGROUND] && !win_has_focus();
 }
 
+// The drawn image to straight alpha in G.image, as the overlay is blended
+// (gl_backend.c).
+static void copy_out(int w, int h) {
+    WICRect r = {0, 0, w, h};
+    ComPtr<IWICBitmapLock> lock;
+    if (FAILED(G.bmp->Lock(&r, WICBitmapLockRead, &lock))) return;
+    UINT size = 0, stride = 0;
+    BYTE* px = nullptr;
+    lock->GetDataPointer(&size, &px);
+    lock->GetStride(&stride);
+    for (int y = 0; y < h; y++) {
+        const uint32_t* src = (const uint32_t*)(px + (size_t)y * stride);
+        uint32_t* dst = &G.image[(size_t)y * w];
+        for (int x = 0; x < w; x++) {
+            uint32_t c = src[x], a = c >> 24;
+            if (a == 0 || a == 255) dst[x] = c;
+            else {
+                uint32_t rr2 = ((c >> 16 & 255) * 255 + a / 2) / a, gg = ((c >> 8 & 255) * 255 + a / 2) / a,
+                         bb = ((c & 255) * 255 + a / 2) / a;
+                dst[x] = a << 24 | std::min(255u, rr2) << 16 | std::min(255u, gg) << 8 | std::min(255u, bb);
+            }
+        }
+    }
+}
+
+// The Options page's PC rows over the game's frame, when it shows them
+// (overlay_win32.c menu_draw); NULL otherwise.
+extern "C" const uint32_t* options_rows_draw(int w, int h) {
+    static unsigned drawnGen = ~0u;
+    static int dw, dh;
+    if (!O.shown || g_artState != 2 || w <= 0 || h <= 0 || U.open) return nullptr;
+    if (!ensure_target(w, h)) return nullptr;
+    if (drawnGen != U.gen || dw != w || dh != h) {
+        render_options(w, h);
+        copy_out(w, h);
+        drawnGen = U.gen;
+        dw = w, dh = h;
+    }
+    return G.image.data();
+}
+
 extern "C" const uint32_t* settings_ui_draw(int w, int h) {
     static unsigned drawnGen = 0;
     static int dw, dh;
@@ -1369,28 +1952,7 @@ extern "C" const uint32_t* settings_ui_draw(int w, int h) {
     bool animating = !U.reduced && (t - U.openT < .5 || U.listenRow >= 0);
     if (drawnGen != U.gen || dw != w || dh != h || animating) {
         render((float)t);
-        // To straight alpha, as the overlay is blended (gl_backend.c).
-        WICRect r = {0, 0, w, h};
-        ComPtr<IWICBitmapLock> lock;
-        if (SUCCEEDED(G.bmp->Lock(&r, WICBitmapLockRead, &lock))) {
-            UINT size = 0, stride = 0;
-            BYTE* px = nullptr;
-            lock->GetDataPointer(&size, &px);
-            lock->GetStride(&stride);
-            for (int y = 0; y < h; y++) {
-                const uint32_t* src = (const uint32_t*)(px + (size_t)y * stride);
-                uint32_t* dst = &G.image[(size_t)y * w];
-                for (int x = 0; x < w; x++) {
-                    uint32_t c = src[x], a = c >> 24;
-                    if (a == 0 || a == 255) dst[x] = c;
-                    else {
-                        uint32_t rr2 = ((c >> 16 & 255) * 255 + a / 2) / a, gg = ((c >> 8 & 255) * 255 + a / 2) / a,
-                                 bb = ((c & 255) * 255 + a / 2) / a;
-                        dst[x] = a << 24 | std::min(255u, rr2) << 16 | std::min(255u, gg) << 8 | std::min(255u, bb);
-                    }
-                }
-            }
-        }
+        copy_out(w, h);
         if (drawnGen != U.gen || animating) U.gen += animating ? 1 : 0;
         drawnGen = U.gen;
         dw = w, dh = h;

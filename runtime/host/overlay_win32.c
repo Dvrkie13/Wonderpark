@@ -161,6 +161,12 @@ const uint32_t* menu_draw(int w, int h) {
     }
     if (w <= 0 || h <= 0) return NULL;
     if (settings_ui_is_open()) return settings_ui_draw(w, h);
+    {
+        /* The game's Options page with its PC Settings row (settings_ui.cpp). */
+        extern const uint32_t* options_rows_draw(int w, int h);
+        const uint32_t* o = options_rows_draw(w, h);
+        if (o) return o;
+    }
     if (!sOpen) return NULL;
     if (w != sW || h != sH) {
         free(sImage);

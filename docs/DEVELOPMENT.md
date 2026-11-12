@@ -156,6 +156,24 @@ available yet is a dimmed pill). Text speed is the game's own value, read
 and written in its loaded save (`runtime/hle/hle_options.c`; greyed "Load
 a save first" before one is loaded).
 
+### The game's Options page: PC Settings
+
+On the game's own Options page (main menu > save file > Options) the
+runtime adds a fourth row, **PC Settings**, under "Delete a Saved Game",
+in the game's own style: its row texture, icon frame and font, read at run
+time from the player's extracted disc (`game/files/Archive/MenuStartMenu.dac`,
+`PrepareMessageRes.dac`) on a thread of its own, never copied into the
+repo. Down from the last game item moves to it (the game's own row is drawn
+again unselected); pressing ② (or A) shows the seven PC settings in the
+same rows (display mode, resolution, frame rate, anti-aliasing, graphics
+quality, widescreen, V-Sync; left/right change them, up/down scroll), with
+"In game, press F1 for every setting" under them; ① (or B) goes back. While
+one of these rows has the focus the game gets no buttons
+(`options_rows_filter`, called from `hle_wpad.c` WPADRead). The page, cursor
+and dialog state come from the game's memory (`runtime/hle/hle_options.c`,
+addresses in `docs/handoff/SETTINGS.md`). Values the game can't show yet
+(frame rate 60, V-Sync, exclusive fullscreen) are skipped or dimmed.
+
 Test hooks: `WONDERPARK_F1_SHOT=<prefix>` opens the tab
 `WONDERPARK_F1_SHOT_AT` seconds after the first frame (default 1) and saves
 `<prefix>-<n>[b]-<category>.bmp` (the frame as shown; `b`: scrolled to the

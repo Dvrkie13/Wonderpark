@@ -291,7 +291,9 @@ WP_HOOK(0x802D49E0, WPADRead) {
     if (on && g_host_pad_read && !g_host_pad_read(chan, &held)) held = 0;
     if (on && chan == 0) {
         uint32_t scripted = script_held();
+        extern void options_rows_filter(uint32_t * held); /* settings_ui.cpp: the Options page's PC rows */
         if (!g_host_script_input || !g_host_script_input(scripted)) held |= scripted;
+        options_rows_filter(&held);
     }
     if (on && chan == 0 && (motion = hle_motion(held, sReports, acc, dots)) != 0) {
         /* In minigames, the remote's motion as each asks (hle_motion.c). */
