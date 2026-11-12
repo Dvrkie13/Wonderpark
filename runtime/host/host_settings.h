@@ -56,6 +56,53 @@ typedef struct {
 
 extern HostSettings g_settings;
 
+/* Wonderpark's PC settings beyond the ones above (docs/handoff/SETTINGS.md,
+ * the F1 tab's six categories), each a whole number in settings.ini under
+ * its section, overridable by WONDERPARK_<KEY>. Choices are 0-based
+ * indexes; percents are percents. Some are stored but not working yet (the
+ * F1 tab shows those as "Coming soon"). */
+enum {
+    /* [display] */
+    X_WINDOW_MODE,      /* 0 windowed, 1 borderless, 2 fullscreen (exclusive; coming) */
+    X_RESOLUTION,       /* window size: 0 1280x720, 1 1600x900, 2 1920x1080, 3 2560x1440, 4 match screen */
+    X_VSYNC,            /* 0, 1 */
+    X_BRIGHTNESS,       /* 50-150 % */
+    /* [graphics] */
+    X_SCALING_FILTER,   /* 0 smooth, 1 sharp */
+    X_WIDESCREEN,       /* 0, 1 (from the next start) */
+    X_HUD_EDGES, X_BLOOM, X_FOG, X_PER_PIXEL_LIGHTING, X_HDR,
+    X_COLORS,           /* 0 original, 1 vivid */
+    X_SHADER_MODE,      /* 0 smooth, 1 fast, 2 precompile */
+    X_FAST_LOADING,
+    /* [controls] */
+    X_INVERT_X,
+    X_RIGHT_STICK,      /* 0 camera, 1 pointer, 2 auto */
+    X_AIM_ASSIST,
+    X_STEER_SENSITIVITY, X_AIM_SPEED, /* 25-200 % */
+    X_RHYTHM_OFFSET,    /* -100..100 ms */
+    /* [audio] */
+    X_VOLUME_MASTER, X_VOLUME_MUSIC, X_VOLUME_SFX, X_VOLUME_VOICES, /* 0-100 % */
+    X_VOICE_LANGUAGE,   /* 0 English, 1 Japanese */
+    X_MUTE_BACKGROUND,
+    X_AUDIO_LATENCY,    /* 0 low, 1 normal, 2 safe */
+    /* [gameplay] */
+    X_PAUSE_BACKGROUND, X_SKIP_LOGOS,
+    /* [silly] */
+    X_POKEMON_SIZE,     /* 0 mini, 1 normal, 2 giant */
+    X_VOICE_PITCH,      /* -50..50 % */
+    X_MIRROR_WORLD, X_VICTORY_CONFETTI,
+    X_STEREO_3D,        /* 0 off, 1 red-cyan, 2 side by side */
+    X_COUNT
+};
+extern int g_x[X_COUNT];
+/* Sets one (clamped to its range), applies it and saves. */
+void settings_set_x(int which, int value);
+int settings_x_default(int which);
+/* Whether WONDERPARK_<KEY> overrides it (the F1 tab says so). */
+int settings_x_overridden(int which);
+/* Called when a setting changes, for parts that apply it (window, audio). */
+void settings_apply_window(void); /* window_win32.c */
+
 void settings_load(void);
 void settings_save(void);
 void settings_default_controls(void);

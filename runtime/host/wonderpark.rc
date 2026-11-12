@@ -1,0 +1,4 @@
+// The F1 settings tab's fonts (settings_ui.cpp), the launcher's own files
+// (SIL Open Font License; builder/launcher/fonts/*-OFL.txt).
+101 RCDATA "../../builder/launcher/fonts/Fredoka.ttf"
+102 RCDATA "../../builder/launcher/fonts/Nunito.ttf"

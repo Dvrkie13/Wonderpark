@@ -36,11 +36,25 @@ void wp_set_game_speed(int times); /* cpu_host.c */
 
 int overlay_is_open(void) { return sOpen; }
 
-/* The settings menu's hooks (host_settings.h): no menu yet, so these carry
- * only the overlay's keys. */
+/* The F1 settings tab (settings_ui.cpp). */
+int settings_ui_is_open(void);
+int settings_ui_message(void* hwnd, unsigned msg, uintptr_t wp, intptr_t lp);
+void settings_ui_controller(uint32_t buttons);
+const uint32_t* settings_ui_draw(int w, int h);
+unsigned settings_ui_generation(void);
+static unsigned sGeneration; /* the debug panel's image, redrawn */
+
+/* The settings menu's hooks (host_settings.h): the F1 tab first, then the
+ * debug overlay's keys. */
+int menu_is_open(void) { return settings_ui_is_open(); }
+void menu_controller(uint32_t buttons, uint32_t nav) {
+    (void)nav;
+    settings_ui_controller(buttons);
+}
+unsigned menu_generation(void) { return sGeneration + settings_ui_generation() * 7919u + settings_ui_is_open(); }
+
 int menu_window_message(void* hwnd, unsigned msg, uintptr_t wp, intptr_t lp) {
-    (void)hwnd;
-    (void)lp;
+    if (settings_ui_message(hwnd, msg, wp, lp)) return 1;
     if (msg != WM_KEYDOWN || (lp & (1 << 30))) return 0; /* key down, not repeats */
     if (wp == VK_OEM_3) { /* backtick */
         sOpen = !sOpen;
@@ -145,7 +159,9 @@ const uint32_t* menu_draw(int w, int h) {
             for (i = 0; i < (int)(sizeof(kSpeeds) / sizeof(kSpeeds[0])); i++)
                 if (kSpeeds[i] == atoi(e)) sSpeed = i, wp_set_game_speed(kSpeeds[i]);
     }
-    if (!sOpen || w <= 0 || h <= 0) return NULL;
+    if (w <= 0 || h <= 0) return NULL;
+    if (settings_ui_is_open()) return settings_ui_draw(w, h);
+    if (!sOpen) return NULL;
     if (w != sW || h != sH) {
         free(sImage);
         sImage = (uint32_t*)calloc((size_t)w * h, 4);
@@ -155,8 +171,10 @@ const uint32_t* menu_draw(int w, int h) {
     }
     if (!sImage) return NULL;
     if (sDrawnSerial != g_wp_stats.serial) {
+        memset(sImage, 0, (size_t)w * h * 4);
         draw_panel(w, h);
         sDrawnSerial = g_wp_stats.serial;
+        sGeneration++;
     }
     return sImage;
 }

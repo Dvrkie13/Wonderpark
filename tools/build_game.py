@@ -175,7 +175,10 @@ def main() -> int:
                           "(the game runs 3-5% slower)", flush=True)
             cfg = ["cmake", "-S", str(REPO), "-B", str(build), "-G", "Ninja", "-DCMAKE_BUILD_TYPE=Release",
                    f"-DCMAKE_MAKE_PROGRAM={ninja}", f"-DCMAKE_C_COMPILER={path}",
-                   f"-DCMAKE_C_FLAGS_INIT={' '.join(flags)}", *linker, *opts]
+                   f"-DCMAKE_C_FLAGS_INIT={' '.join(flags)}",
+                   # The F1 settings tab (settings_ui.cpp) is C++: the same compiler and flags.
+                   f"-DCMAKE_CXX_COMPILER={path}", f"-DCMAKE_CXX_FLAGS_INIT={' '.join(flags)}",
+                   *linker, *opts]
             if link_flags:
                 cfg.append(f"-DCMAKE_EXE_LINKER_FLAGS_INIT={' '.join(link_flags)}")
             # CMake takes the flags and linker only when a build folder is

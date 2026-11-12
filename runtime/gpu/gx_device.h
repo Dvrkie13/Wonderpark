@@ -69,6 +69,9 @@ typedef struct GXDevice {
      * been shown): RGBA8, top row first, at the internal resolution
      * (malloc'd; w and h say its size), or NULL. */
     uint8_t* (*copy_read)(int target, int* w, int* h);
+    /* Shows the last presented picture again, with the overlay as it is now
+     * (the game paused behind the F1 tab); 0 if it can't. NULL: none. */
+    int (*present_last)(void);
 } GXDevice;
 
 extern const GXDevice g_gl_device, g_vk_device;

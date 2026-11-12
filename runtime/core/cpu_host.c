@@ -78,11 +78,21 @@ static uint64_t host_to_tb(uint64_t d) { return (d / s_host_freq) * TB_HZ + (d %
 static int s_speed = 1;
 static uint64_t s_last_raw, s_scaled_raw;
 
+static int s_paused;
+
 void wp_clock_tick(void) {
     uint64_t raw = host_ticks();
-    s_scaled_raw += (raw - s_last_raw) * (uint64_t)s_speed;
+    if (!s_paused) s_scaled_raw += (raw - s_last_raw) * (uint64_t)s_speed;
     s_last_raw = raw;
     s_now = host_to_tb(s_scaled_raw);
+}
+
+/* Stops the game's clock (the F1 settings tab, pause in the background):
+ * no guest time passes while paused, so timers, retraces and audio pick up
+ * where they were. */
+void wp_clock_pause(int on) {
+    wp_clock_tick();
+    s_paused = on;
 }
 
 void wp_set_game_speed(int times) {

@@ -67,6 +67,79 @@ static void apply_frame_rate(void) {
 
 HostSettings g_settings;
 
+/* The PC settings table (host_settings.h X_*): section, key, default, range, comment. */
+static const struct {
+    const char* section;
+    const char* key;
+    int def, min, max;
+    const char* note;
+} kX[X_COUNT] = {
+    {"display", "window_mode", 0, 0, 2, "0 windowed, 1 borderless fullscreen, 2 fullscreen (not yet)"},
+    {"display", "resolution", 4, 0, 4, "window size: 0 1280x720, 1 1600x900, 2 1920x1080, 3 2560x1440, 4 match screen"},
+    {"display", "vsync", 1, 0, 1, "not yet"},
+    {"display", "brightness", 100, 50, 150, "percent (not yet)"},
+    {"graphics", "scaling_filter", 0, 0, 1, "0 smooth, 1 sharp (pixels as squares)"},
+    {"graphics", "widescreen", 1, 0, 1, "16:9, from the next start"},
+    {"graphics", "hud_edges", 0, 0, 1, "not yet"},
+    {"graphics", "bloom", 1, 0, 1, "not yet"},
+    {"graphics", "fog", 1, 0, 1, "not yet"},
+    {"graphics", "per_pixel_lighting", 0, 0, 1, "not yet"},
+    {"graphics", "hdr", 0, 0, 1, "not yet"},
+    {"graphics", "colors", 0, 0, 1, "0 original, 1 vivid (not yet)"},
+    {"graphics", "shader_mode", 0, 0, 2, "0 smooth, 1 fast, 2 precompile (not yet)"},
+    {"graphics", "fast_loading", 1, 0, 1, "not yet"},
+    {"controls", "invert_x", 0, 0, 1, "not yet"},
+    {"controls", "right_stick", 2, 0, 2, "0 camera, 1 pointer, 2 auto (not yet)"},
+    {"controls", "aim_assist", 1, 0, 1, "not yet"},
+    {"controls", "steer_sensitivity", 100, 25, 200, "percent (not yet)"},
+    {"controls", "aim_speed", 100, 25, 200, "percent (not yet)"},
+    {"controls", "rhythm_offset", 0, -100, 100, "dance timing, ms (not yet)"},
+    {"audio", "volume_master", 100, 0, 100, "percent"},
+    {"audio", "volume_music", 100, 0, 100, "percent (not yet)"},
+    {"audio", "volume_sfx", 100, 0, 100, "percent (not yet)"},
+    {"audio", "volume_voices", 100, 0, 100, "percent (not yet)"},
+    {"audio", "voice_language", 0, 0, 1, "0 English, 1 Japanese (not yet)"},
+    {"audio", "mute_background", 1, 0, 1, "1: silent while another window is in front"},
+    {"audio", "audio_latency", 1, 0, 2, "0 low, 1 normal, 2 safe (not yet)"},
+    {"gameplay", "pause_background", 1, 0, 1, "1: the game pauses while another window is in front"},
+    {"gameplay", "skip_logos", 0, 0, 1, "not yet"},
+    {"silly", "pokemon_size", 1, 0, 2, "0 mini, 1 normal, 2 giant (not yet)"},
+    {"silly", "voice_pitch", 0, -50, 50, "percent (not yet)"},
+    {"silly", "mirror_world", 0, 0, 1, "not yet"},
+    {"silly", "victory_confetti", 0, 0, 1, "not yet"},
+    {"silly", "stereo_3d", 0, 0, 2, "0 off, 1 red-cyan, 2 side by side (not yet)"},
+};
+int g_x[X_COUNT];
+static int sXOverridden[X_COUNT];
+static char sXFileValue[X_COUNT][32];
+
+static int x_index(const char* section, const char* key) {
+    int i;
+    for (i = 0; i < X_COUNT; i++)
+        if (!strcmp(kX[i].section, section) && !strcmp(kX[i].key, key)) return i;
+    return -1;
+}
+static int x_clamp(int i, int v) { return v < kX[i].min ? kX[i].min : v > kX[i].max ? kX[i].max : v; }
+int settings_x_default(int which) { return which >= 0 && which < X_COUNT ? kX[which].def : 0; }
+int settings_x_overridden(int which) { return which >= 0 && which < X_COUNT && sXOverridden[which]; }
+
+/* What a PC setting changes outside this file, done when it changes. */
+static void apply_x(int which) {
+    switch (which) {
+    case X_WINDOW_MODE: g_settings.fullscreen = g_x[X_WINDOW_MODE] != 0; /* fall through */
+    case X_RESOLUTION: settings_apply_window(); break;
+    default: break;
+    }
+}
+
+void settings_set_x(int which, int value) {
+    if (which < 0 || which >= X_COUNT) return;
+    g_x[which] = x_clamp(which, value);
+    sXOverridden[which] = 0; /* changed here: saved */
+    apply_x(which);
+    settings_save();
+}
+
 static const char* const kActionIni[ACT_COUNT] = {
     "up", "down", "left", "right", "two", "one", "a", "b", "plus", "minus", "home", "shake", "shake2",
 };
@@ -247,10 +320,13 @@ static void write_file(const char* path, const char* text) {
         char buf[512], key[32];
         int i = -1;
         snprintf(buf, sizeof(buf), "%.*s", (int)(len < sizeof(buf) ? len : sizeof(buf) - 1), line);
+        int x = -1;
         if (buf[0] == '[') sscanf(buf, "[%31[^]]", section);
-        else if (sscanf(buf, "%31[a-z_0-9] =", key) == 1) i = option_index(section, key);
+        else if (sscanf(buf, "%31[a-z_0-9] =", key) == 1) i = option_index(section, key), x = x_index(section, key);
         if (i >= 0 && sOverridden[i]) {
             if (sFileValue[i][0]) fprintf(f, "%s = %s\n", key, sFileValue[i]);
+        } else if (x >= 0 && sXOverridden[x]) {
+            if (sXFileValue[x][0]) fprintf(f, "%s = %s\n", key, sXFileValue[x]);
         } else {
             fputs(buf, f);
         }
@@ -279,6 +355,13 @@ static void tprintf(Text* t, const char* fmt, ...) {
     }
 }
 
+/* The PC settings (kX) of one section. */
+static void emit_x(Text* s, const char* section) {
+    int i;
+    for (i = 0; i < X_COUNT; i++)
+        if (!strcmp(kX[i].section, section)) tprintf(s, "%s = %d ; %s\n", kX[i].key, g_x[i], kX[i].note);
+}
+
 void settings_save(void) {
     Text s = {0}, b = {0};
     int i;
@@ -295,13 +378,21 @@ void settings_save(void) {
             g_settings.frame_rate);
     tprintf(&s, "fov = %d ; field of view in the park, percent of the game's: %d-%d\n", g_settings.fov, FOV_MIN, FOV_MAX);
     tprintf(&s, "aniso = %d ; anisotropic texture filtering: 1 (off), 2, 4, 8 or 16\n", g_settings.aniso);
-#ifdef __ANDROID__
-    tprintf(&s, "\n");
-#else
-    tprintf(&s, "renderer = %s ; opengl or vulkan, from the next start\n\n",
+#ifndef __ANDROID__
+    tprintf(&s, "renderer = %s ; opengl or vulkan, from the next start\n",
             g_settings.renderer == RENDERER_VULKAN ? "vulkan" : "opengl");
 #endif
-    tprintf(&s, "[gameplay]\n");
+    emit_x(&s, "display");
+    tprintf(&s, "\n[graphics]\n");
+    emit_x(&s, "graphics");
+    tprintf(&s, "\n[controls]\n");
+    emit_x(&s, "controls");
+    tprintf(&s, "\n[audio]\n");
+    emit_x(&s, "audio");
+    tprintf(&s, "\n[silly]\n");
+    emit_x(&s, "silly");
+    tprintf(&s, "\n[gameplay]\n");
+    emit_x(&s, "gameplay");
     tprintf(&s, "skip_movies = %d ; 1: skip the story's video cutscenes (not working yet)\n", g_settings.skip_movies);
     tprintf(&s, "text_speed = %d ; dialogue: 1 (the game's), 2, 3 times as fast, or 0: a page at once\n",
             g_settings.text_speed);
@@ -355,6 +446,10 @@ static void parse_option(const char* section, const char* name, const char* p, i
     int i;
     char* end;
     unsigned long a, b;
+    if ((i = x_index(section, name)) >= 0) {
+        g_x[i] = x_clamp(i, atoi(p));
+        return;
+    }
     if (!strcmp(section, "display")) {
         if (!strcmp(name, "fullscreen")) g_settings.fullscreen = atoi(p) != 0;
         if (!strcmp(name, "scale")) g_settings.scale = atoi(p) < 0 ? 0 : atoi(p) > MAX_SCALE ? MAX_SCALE : atoi(p);
@@ -428,6 +523,7 @@ static int read_file(const char* path, int* sawShake2) {
         while (*p == ' ' || *p == '\t') p++;
         for (c = p + strlen(p); c > p && (c[-1] == '\n' || c[-1] == '\r' || c[-1] == ' ' || c[-1] == '\t'); c--) c[-1] = '\0';
         if ((i = option_index(section, name)) >= 0) snprintf(sFileValue[i], sizeof(sFileValue[i]), "%s", p);
+        if ((i = x_index(section, name)) >= 0) snprintf(sXFileValue[i], sizeof(sXFileValue[i]), "%s", p);
         parse_option(section, name, p, sawShake2);
     }
     fclose(f);
@@ -455,8 +551,13 @@ void settings_load(void) {
     settings_default_controls();
     memset(sOverridden, 0, sizeof(sOverridden));
     memset(sFileValue, 0, sizeof(sFileValue));
+    memset(sXOverridden, 0, sizeof(sXOverridden));
+    memset(sXFileValue, 0, sizeof(sXFileValue));
+    for (i = 0; i < X_COUNT; i++) g_x[i] = kX[i].def;
 
     found = read_file(settings_path(), &sawShake2);
+    /* Files from before window_mode: the old fullscreen switch says it. */
+    if (!sXFileValue[X_WINDOW_MODE][0]) g_x[X_WINDOW_MODE] = g_settings.fullscreen ? 1 : 0;
 #ifdef _WIN32
     if (!found) {
         /* Before Wonderpark kept its files in %APPDATA%, settings.ini (with
@@ -479,6 +580,26 @@ void settings_load(void) {
         parse_option(kOptions[i].section, kOptions[i].key, e, &sawShake2);
         fprintf(stderr, "settings: %s = %s (from %s)\n", kOptions[i].key, e, kOptions[i].env);
     }
+    for (i = 0; i < X_COUNT; i++) {
+        char env[64];
+        const char* e;
+        size_t k;
+        snprintf(env, sizeof(env), "WONDERPARK_%s", kX[i].key);
+        for (k = 11; env[k]; k++) env[k] = (char)(env[k] >= 'a' && env[k] <= 'z' ? env[k] - 32 : env[k]);
+        if (!(e = getenv(env)) || !*e) continue;
+        sXOverridden[i] = 1;
+        g_x[i] = x_clamp(i, atoi(e));
+        fprintf(stderr, "settings: %s = %d (from %s)\n", kX[i].key, g_x[i], env);
+    }
+    {
+        /* WONDERPARK_FULLSCREEN (older) still works, as a window_mode override. */
+        int f = option_index("display", "fullscreen");
+        if (f >= 0 && sOverridden[f] && !sXOverridden[X_WINDOW_MODE]) {
+            g_x[X_WINDOW_MODE] = g_settings.fullscreen ? 1 : 0;
+            sXOverridden[X_WINDOW_MODE] = 1;
+        }
+    }
+    g_settings.fullscreen = g_x[X_WINDOW_MODE] != 0;
 
     /* Files from before the second shake key gave its default (RB) to
      * shake: it moves over. */

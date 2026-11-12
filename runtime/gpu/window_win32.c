@@ -36,10 +36,7 @@ static LRESULT CALLBACK wnd_proc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
     /* Alt+Enter toggles fullscreen; Alt alone doesn't open the window
      * menu, which would hold the game's keys. */
     if (msg == WM_SYSKEYDOWN && wp == VK_RETURN && (lp & (1 << 29))) {
-        if (!(lp & (1 << 30))) {
-            g_settings.fullscreen = !g_settings.fullscreen;
-            settings_save();
-        }
+        if (!(lp & (1 << 30))) settings_set_x(X_WINDOW_MODE, g_settings.fullscreen ? 0 : 1);
         return 0;
     }
     if (msg == WM_SYSCHAR || (msg == WM_SYSCOMMAND && (wp & 0xFFF0) == SC_KEYMENU)) return 0;
@@ -72,7 +69,10 @@ void win_create(void) {
         extern int g_wp_headless; /* --headless (main.c) */
         sHidden = (v && *v && *v != '0') || g_wp_headless;
     }
-    if (!sHidden) ShowWindow(sWnd, SW_SHOW);
+    if (!sHidden) {
+        ShowWindow(sWnd, SW_SHOW);
+        settings_apply_window();
+    }
 }
 
 void* win_handle(void) { return sWnd; }
@@ -105,6 +105,40 @@ void win_set_fullscreen(int on) {
         SetWindowPos(sWnd, NULL, 0, 0, 0, 0,
                      SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
     }
+}
+
+/* The window mode and resolution settings (host_settings.h X_*): in a
+ * window, its client area is that size (Match screen: maximized); in
+ * borderless fullscreen it covers the monitor (win_set_fullscreen). */
+void settings_apply_window(void) {
+    static const int kSizes[4][2] = {{1280, 720}, {1600, 900}, {1920, 1080}, {2560, 1440}};
+    int r = g_x[X_RESOLUTION];
+    if (!sWnd || sHidden) return;
+    if (GetCurrentThreadId() != sThread) return; /* only from the window's thread */
+    win_set_fullscreen(g_settings.fullscreen);
+    if (g_settings.fullscreen) return;
+    if (r >= 0 && r < 4) {
+        RECT rc = {0, 0, kSizes[r][0], kSizes[r][1]};
+        MONITORINFO mi;
+        mi.cbSize = sizeof(mi);
+        ShowWindow(sWnd, SW_RESTORE);
+        AdjustWindowRect(&rc, WS_OVERLAPPEDWINDOW, FALSE);
+        GetMonitorInfoA(MonitorFromWindow(sWnd, MONITOR_DEFAULTTOPRIMARY), &mi);
+        SetWindowPos(sWnd, NULL, mi.rcWork.left + ((mi.rcWork.right - mi.rcWork.left) - (rc.right - rc.left)) / 2,
+                     mi.rcWork.top + ((mi.rcWork.bottom - mi.rcWork.top) - (rc.bottom - rc.top)) / 2,
+                     rc.right - rc.left, rc.bottom - rc.top, SWP_NOZORDER | SWP_NOOWNERZORDER);
+    } else {
+        ShowWindow(sWnd, SW_MAXIMIZE);
+    }
+}
+
+/* Whether the game's window is in front (pause and mute in the background). */
+int win_has_focus(void) {
+    HWND w = GetForegroundWindow();
+    DWORD pid = 0;
+    if (!w) return 0;
+    GetWindowThreadProcessId(w, &pid);
+    return pid == GetCurrentProcessId();
 }
 
 void win_set_title(const char* title) {

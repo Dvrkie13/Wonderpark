@@ -9,6 +9,7 @@
 #include <sys/stat.h>
 
 #include "ref_compat.h"
+#include "host_settings.h"
 
 #ifdef _WIN32
 #include <direct.h>
@@ -465,8 +466,10 @@ static void ensure_sysconf(void) {
 int hle_widescreen(void) {
     static int on = -1;
     if (on < 0) {
+        /* The Widescreen setting (read once: the game takes it at start),
+         * unless RECOMP_WIDESCREEN says otherwise. */
         const char* e = getenv("RECOMP_WIDESCREEN");
-        on = !(e && *e == '0');
+        on = e && *e ? *e != '0' : g_x[X_WIDESCREEN] != 0;
     }
     return on;
 }

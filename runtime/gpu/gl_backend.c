@@ -1857,8 +1857,55 @@ static void dump_bmp(const char* path, int w, int h) {
     free(px);
 }
 
+/* The last picture shown, before the overlay (the F1 tab's pause shows it
+ * again: gl_present_last). One blit a frame. */
+static GLuint sLastFbo, sLastTex;
+static int sLastW, sLastH, sHaveLast;
+
+static void keep_last(int w, int h) {
+    if (w <= 0 || h <= 0) return;
+    if (!sLastFbo) {
+        p_glGenFramebuffers(1, &sLastFbo);
+        glGenTextures(1, &sLastTex);
+    }
+    if (w != sLastW || h != sLastH) {
+        glBindTexture(GL_TEXTURE_2D, sLastTex);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+        p_glBindFramebuffer(GL_FRAMEBUFFER, sLastFbo);
+        p_glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, sLastTex, 0);
+        sLastW = w, sLastH = h;
+    }
+    p_glBindFramebuffer(GL_READ_FRAMEBUFFER, sWinFbo);
+    p_glBindFramebuffer(GL_DRAW_FRAMEBUFFER, sLastFbo);
+    p_glBlitFramebuffer(0, 0, w, h, 0, 0, w, h, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+    sHaveLast = 1;
+}
+
+/* After the picture is in the window's framebuffer: the overlay (debug panel,
+ * F1 tab) over it, frame dumps, and presenting. 1 if left out. */
+static int finish_present(int w, int h, int may_drop);
+
+/* Shows the last picture again, with the overlay as it now is (the game
+ * paused: gx_frames.c gxb_pause_loop). 0 if there is none. */
+static int gl_present_last(void) {
+    int w, h;
+    if (!sHaveLast) return 0;
+    gl_forget();
+    win_size(&w, &h);
+    if (w <= 0 || h <= 0) return 1;
+    if (sChain) dx_size(w, h);
+    p_glBindFramebuffer(GL_READ_FRAMEBUFFER, sLastFbo);
+    p_glBindFramebuffer(GL_DRAW_FRAMEBUFFER, sWinFbo);
+    glDisable(GL_SCISSOR_TEST);
+    glViewport(0, 0, w, h);
+    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+    p_glBlitFramebuffer(0, 0, sLastW, sLastH, 0, 0, w, h, GL_COLOR_BUFFER_BIT, GL_LINEAR);
+    finish_present(w, h, 0);
+    return 1;
+}
+
 static int gl_present(int x, int y, int cw, int ch, int may_drop) {
-    int w, h, dw, dh, dropped;
+    int w, h, dw, dh;
     double aspect;
     gl_forget();
     win_size(&w, &h);
@@ -1882,16 +1929,31 @@ static int gl_present(int x, int y, int cw, int ch, int may_drop) {
     glClearColor(0, 0, 0, 1);
     glClear(GL_COLOR_BUFFER_BIT);
     p_glBlitFramebuffer(GLX(x), GLY(EFB_H - y - ch), GLX(x + cw), GLY(EFB_H - y), (w - dw) / 2, (h - dh) / 2,
-                        (w - dw) / 2 + dw, (h - dh) / 2 + dh, GL_COLOR_BUFFER_BIT, GL_LINEAR);
+                        (w - dw) / 2 + dw, (h - dh) / 2 + dh, GL_COLOR_BUFFER_BIT,
+                        g_x[X_SCALING_FILTER] ? GL_NEAREST : GL_LINEAR);
+    keep_last(w, h);
+    return finish_present(w, h, may_drop);
+}
+
+static int finish_present(int w, int h, int may_drop) {
+    int dropped;
     {
         const uint32_t* menu = menu_draw(w, h);
         if (menu) {
+            /* The overlay's image is uploaded only when it changed. */
+            static const uint32_t* lastImage;
+            static unsigned lastGen = ~0u;
+            static int lastW, lastH;
+            unsigned gen = menu_generation();
             p_glBindFramebuffer(GL_FRAMEBUFFER, sWinFbo);
             p_glUseProgram(sOverlayProgram);
             p_glBindVertexArray(sCopyVao);
             p_glActiveTexture(GL_TEXTURE0);
             glBindTexture(GL_TEXTURE_2D, sOverlayTex);
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_BGRA, GL_UNSIGNED_BYTE, menu);
+            if (menu != lastImage || gen != lastGen || w != lastW || h != lastH) {
+                glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_BGRA, GL_UNSIGNED_BYTE, menu);
+                lastImage = menu, lastGen = gen, lastW = w, lastH = h;
+            }
             glDisable(GL_DEPTH_TEST);
             glDisable(GL_CULL_FACE);
             glEnable(GL_BLEND);
@@ -1909,7 +1971,24 @@ static int gl_present(int x, int y, int cw, int ch, int may_drop) {
         snprintf(path, sizeof(path), "%s/frame_%05u.bmp", sDumpDir, sPresented);
         dump_bmp(path, w, h);
     }
+    {
+        /* A single frame as shown, overlay and all, asked for by the F1 tab's
+         * test shots (settings_ui.cpp). */
+        extern char g_dump_next[512];
+        if (g_dump_next[0] && !sChain) {
+            p_glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+            dump_bmp(g_dump_next, w, h);
+            g_dump_next[0] = 0;
+        }
+    }
     dropped = window_present(w, h, may_drop);
+    {
+        extern char g_dump_next[512];
+        if (g_dump_next[0] && sChain) {
+            dump_shared(g_dump_next);
+            g_dump_next[0] = 0;
+        }
+    }
     if (sDumpDir && sPresented >= sDumpFrom && sPresented % (unsigned)sDumpEvery == 0 && sChain) {
         char path[512];
         snprintf(path, sizeof(path), "%s/frame_%05u.bmp", sDumpDir, sPresented);
@@ -1924,5 +2003,5 @@ const GXDevice g_gl_device = {
     "OpenGL",       gl_init,       gl_texture,     gl_texture_update, gl_texture_delete, gl_draw,
     gl_frame_data,  gl_draw_recorded, gl_clear,    gl_copy_target,    gl_copy_texture,   gl_copy,
     gl_present,     gl_apply_settings, gl_scale,   gl_msaa,          gl_arena_alloc,    gl_arena_write,
-    gl_arena_free,  NULL,          gl_copy_read,
+    gl_arena_free,  NULL,          gl_copy_read,      gl_present_last,
 };

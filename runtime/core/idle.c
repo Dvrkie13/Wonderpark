@@ -72,6 +72,18 @@ WP_HOOK(0x80296090, SelectThread_idle) {
         return 0;
     }
     if (off) return 0;
+    {
+        /* The F1 settings tab or pause in the background: wait here, the
+         * frame done and shown (gx_frames.c). */
+        extern int settings_ui_wants_pause(void);
+        extern void gxb_pause_loop(void);
+        if (settings_ui_wants_pause()) {
+            gxb_pause_loop();
+            c->timebase = wp_timebase();
+            c->downcount = -100000;
+            return 0;
+        }
+    }
     if (g_gx_game_tick) g_gx_game_tick(); /* the render thread has all that was sent */
     wp_clock_tick();
     start = wp_host_time();

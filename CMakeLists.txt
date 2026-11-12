@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
-project(Wonderpark C)
+project(Wonderpark C CXX RC)
+set(CMAKE_CXX_STANDARD 17)
 
 # Built on the player's PC after tools/recomp.py has written generated/.
 # Nothing game-derived is in the repo; generated/ and build/ are git-ignored.
@@ -32,12 +33,13 @@ target_link_libraries(wp_generated PUBLIC wp_dolrecomp_cpu)
 
 file(GLOB WP_RUNTIME_SOURCES CONFIGURE_DEPENDS
     runtime/core/*.c runtime/hw/*.c runtime/hle/*.c runtime/ios/*.c
-    runtime/gpu/*.c runtime/host/*.c config/patches/*.c "${WP_GENERATED_DIR}/wp_hooks.c")
-add_executable(Wonderpark ${WP_RUNTIME_SOURCES})
+    runtime/gpu/*.c runtime/host/*.c runtime/host/*.cpp config/patches/*.c "${WP_GENERATED_DIR}/wp_hooks.c")
+# wonderpark.rc: the F1 tab's fonts (Fredoka, Nunito; SIL OFL), shared with the launcher.
+add_executable(Wonderpark ${WP_RUNTIME_SOURCES} runtime/host/wonderpark.rc)
 target_include_directories(Wonderpark PRIVATE runtime/core runtime/gpu runtime/host)
 target_link_libraries(Wonderpark PRIVATE wp_generated)
 if(WIN32)
-    target_link_libraries(Wonderpark PRIVATE opengl32 gdi32 user32 winmm shell32 ole32 dwmapi)
+    target_link_libraries(Wonderpark PRIVATE opengl32 gdi32 user32 winmm shell32 ole32 dwmapi d2d1 dwrite windowscodecs)
 endif()
 
 option(WP_FAST_FP "Inline floating-point helpers in the recompiled code (no FPSCR status flags)" ON)

@@ -108,7 +108,8 @@ static int connected(int32_t chan) { return chan == 0 && sConnected; }
  * directions), each held from its time until the next entry, timed from
  * program start. "4:2 4.2: 9:a 9.2:" presses 2 at 4 s and A at 9 s. */
 static struct ScriptEntry { double t; uint32_t held; } *sScript;
-static int sScriptLen = -1;
+static int sScriptLen = -1, sScriptFrames;
+unsigned gxb_game_frames(void); /* gx_frames.c */
 
 static void load_script(void) {
     static const struct { const char* name; uint32_t bit; } kNames[] = {
@@ -126,6 +127,13 @@ static void load_script(void) {
         uint32_t held = 0;
         while (*p == ' ' || *p == ',') p++;
         if (!*p) break;
+        if (*p == 'f') {
+            /* "f<n>": at the game's n-th finished frame instead of a time
+             * (unaffected by waits for the disc, which vary a lot on a hard
+             * drive). The whole script counts frames then. */
+            sScriptFrames = 1;
+            p++;
+        }
         t = strtod(p, &end);
         if (end == p || *end != ':') {
             fprintf(stderr, "wpad: WONDERPARK_PAD_SCRIPT: ignoring everything from \"%.20s\"\n", p);
@@ -161,7 +169,7 @@ static uint32_t script_held(void) {
     /* Wonderpark: timed from program start (monotonic host time), so scripts
      * line up with screenshots and logs. */
     (void)start;
-    now = (double)wp_host_time() / PPC_TB_HZ;
+    now = sScriptFrames ? (double)gxb_game_frames() : (double)wp_host_time() / PPC_TB_HZ;
     for (i = 0; i < sScriptLen && sScript[i].t <= now; i++) held = sScript[i].held;
     return held;
 }

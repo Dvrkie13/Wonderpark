@@ -21,6 +21,7 @@
 #include <string.h>
 
 #include "host_audio.h"
+#include "host_settings.h"
 
 #pragma comment(lib, "winmm.lib")
 
@@ -81,6 +82,15 @@ static void push_out(const int16_t* lr, int frames) {
         lr += n * 2;
         frames -= n;
         if (sFrames == BLOCK_FRAMES) {
+            /* Master volume (squared, so the slider feels even) and
+             * silence while another window is in front (settings). */
+            extern int win_has_focus(void);
+            int vol = g_x[X_VOLUME_MASTER];
+            if (g_x[X_MUTE_BACKGROUND] && !win_has_focus()) vol = 0;
+            if (vol < 100) {
+                int g = vol * vol * 65536 / 10000, k;
+                for (k = 0; k < BLOCK_FRAMES * 2; k++) sData[sFill][k] = (int16_t)((sData[sFill][k] * g) >> 16);
+            }
             h->dwFlags &= ~WHDR_DONE;
             waveOutWrite(sOut, h, sizeof(*h));
             sFill = (sFill + 1) % BLOCKS;

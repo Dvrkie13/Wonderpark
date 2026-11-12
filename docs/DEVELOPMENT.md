@@ -114,6 +114,53 @@ the file).
 | `[mouse] invert_tilt` | `WONDERPARK_INVERT_TILT` | 0, 1 | |
 | `[controller] rumble` | `WONDERPARK_RUMBLE` | 0 off, 1 light, 2 normal, 3 strong | |
 
+The PC settings of the F1 tab (`runtime/host/settings.c`, table `kX`; each
+also `WONDERPARK_<KEY>`, key in capitals, for example `WONDERPARK_WINDOW_MODE=1`):
+
+| Setting | Values | State |
+| --- | --- | --- |
+| `[display] window_mode` | 0 windowed, 1 borderless, 2 fullscreen | 0 and 1 work (replaces `fullscreen`, still read from old files); exclusive fullscreen not yet |
+| `[display] resolution` | window size: 0 1280x720, 1 1600x900, 2 1920x1080, 3 2560x1440, 4 match screen (maximized) | works, in a window |
+| `[display] vsync`, `brightness` | 0/1; 50-150 % | not yet |
+| `[graphics] scaling_filter` | 0 smooth, 1 sharp | works |
+| `[graphics] widescreen` | 0, 1 | works, from the next start (`RECOMP_WIDESCREEN` still wins) |
+| `[graphics] hud_edges`, `bloom`, `fog`, `per_pixel_lighting`, `hdr`, `colors`, `shader_mode`, `fast_loading` | | not yet |
+| `[controls] invert_x`, `right_stick`, `aim_assist`, `steer_sensitivity`, `aim_speed`, `rhythm_offset` | | not yet |
+| `[audio] volume_master` | 0-100 % | works |
+| `[audio] volume_music`, `volume_sfx`, `volume_voices`, `voice_language`, `audio_latency` | | not yet |
+| `[audio] mute_background` | 0, 1 | works: silent while another window is in front |
+| `[gameplay] pause_background` | 0, 1 | works: the game pauses while another window is in front |
+| `[gameplay] skip_logos` | | not yet |
+| `[silly] pokemon_size`, `voice_pitch`, `mirror_world`, `victory_confetti`, `stereo_3d` | | not yet |
+
+## The F1 settings tab
+
+`runtime/host/settings_ui.cpp`, matching `docs/settings/ingame-f1-settings.html`.
+F1 or a controller's Back + Start opens it; F1, Esc, Close or the
+controller's B close it. It's drawn by the runtime with Direct2D and
+DirectWrite (software, into an image the overlay path lays over the frame;
+redrawn only on change), no game assets; the fonts are the launcher's,
+built into the exe (`runtime/host/wonderpark.rc`).
+
+While it's open the game is paused: from the idle hook (between frames),
+`gx_frames.c gxb_pause_loop` stops the game's clock (`wp_clock_pause`) and
+shows the last whole picture again (`present_last`, gl_backend.c keeps a
+copy each frame) with the tab over it, handling window messages and the
+controller. Changes apply at once and save to `settings.ini` /
+`bindings.ini`; internal resolution and anti-aliasing take effect when the
+tab closes (they rebuild the EFB). The same pause holds the game while its
+window is in the background, with "Pause in the background" on.
+
+Settings not built yet are shown greyed with "Coming soon" (a choice not
+available yet is a dimmed pill).
+
+Test hooks: `WONDERPARK_F1_SHOT=<prefix>` opens the tab
+`WONDERPARK_F1_SHOT_AT` seconds after the first frame (default 1) and saves
+`<prefix>-<n>[b]-<category>.bmp` (the frame as shown; `b`: scrolled to the
+end), then closes it. `WONDERPARK_F1_SCRIPT="<seconds>:<key>,..."` presses
+keys (f1 esc up down left right enter q e backspace, a letter or digit) or
+`shot=<file.bmp>`, through the tab's own key handling (headless too).
+
 ## Environment variables (development)
 
 | Variable | What it does |
@@ -123,7 +170,7 @@ the file).
 | `WONDERPARK_SETTINGS`, `WONDERPARK_BINDINGS` | other settings / bindings files (`RECOMP_SETTINGS` is still accepted) |
 | `WONDERPARK_OVERLAY=1` | debug overlay open at start |
 | `WONDERPARK_GAME_SPEED=N` | game speed 1, 2, 4 or 10 at start |
-| `WONDERPARK_PAD_SCRIPT` | scripted Wii Remote input, timed from start: `40:2,40.4:,45:down,45.3:` (time in seconds, then buttons joined by `+`: up down left right a b 1 2 plus minus home shake shake2; empty = release) |
+| `WONDERPARK_PAD_SCRIPT` | scripted Wii Remote input, timed from start: `40:2,40.4:,45:down,45.3:` (time in seconds, then buttons joined by `+`: up down left right a b 1 2 plus minus home shake shake2; empty = release). `f3000:2,f3010:` counts the game's finished frames instead (waits for the disc don't shift it) |
 | `WONDERPARK_LOG` | debug log categories, comma-separated (below) |
 | `WONDERPARK_MAX_SLICES` | stop after N dispatcher slices, printing where |
 | `WONDERPARK_PEEK=addr,len` | with `WONDERPARK_MAX_SLICES`: dump guest memory at the stop |

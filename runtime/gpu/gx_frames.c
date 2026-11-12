@@ -236,6 +236,32 @@ static void show(int x, int y, int w, int h) {
     sDev->apply_settings();
 }
 
+/* The F1 settings tab, or the window in the background with "pause in the
+ * background" on: called from the idle hook (idle.c), between frames, so
+ * the last picture shown is a whole frame. The game waits here with its
+ * clock stopped while that picture is shown again (with the tab over it)
+ * and the window's messages are handled; settings that change the EFB's
+ * size take effect after. */
+void gxb_pause_loop(void) {
+    extern int settings_ui_wants_pause(void);
+    extern void settings_ui_paused_tick(void);
+    extern void wp_clock_pause(int on);
+    extern int win_has_focus(void);
+    extern int g_gx_threaded;
+    if (g_gx_threaded || !sDev->present_last) return;
+    wp_clock_pause(1);
+    while (settings_ui_wants_pause()) {
+        int front = win_has_focus();
+        win_pump();
+        settings_ui_paused_tick();
+        win_set_fullscreen(g_settings.fullscreen);
+        if (!sDev->present_last()) break;
+        Sleep(front ? 15 : 100); /* in the background, rarely */
+    }
+    wp_clock_pause(0);
+    sDev->apply_settings();
+}
+
 /* ------------------------------------------------------------------------ */
 /* Textures */
 
