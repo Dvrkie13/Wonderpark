@@ -84,10 +84,17 @@ static int qlog_on(void) {
 extern double wp_wall_seconds(void);
 
 static void push_out(const int16_t* lr, int frames) {
+    static double energy; /* sum of squares since the last report (before the master volume) */
     sPushed += (unsigned)frames;
+    if (log_on()) {
+        int k;
+        for (k = 0; k < frames * 2; k++) energy += (double)lr[k] * lr[k];
+    }
     if (log_on() && sPushed >= (unsigned)OUT_RATE * 5) {
-        fprintf(stderr, "[audiostats] 5 s: %u blocks dropped, %u underruns, %d queued\n", sDrops, sUnderruns, queued());
+        fprintf(stderr, "[audiostats] 5 s: %u blocks dropped, %u underruns, %d queued, level %.0f (RMS)\n", sDrops,
+                sUnderruns, queued(), sqrt(energy / (sPushed * 2.0)));
         sPushed = 0;
+        energy = 0;
         sDrops = sUnderruns = 0;
     }
     while (frames > 0) {

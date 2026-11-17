@@ -337,9 +337,9 @@ void build_rows() {
     {
         Category c{L"audio", L"Audio", L"Music, sound effects and voices", 0x5bc26a, 0x7ad68a, 0x10182f, {}};
         c.rows.push_back(xslider(X_VOLUME_MASTER, L"Master volume", nullptr, 0, 100, 5, L"%", false));
-        c.rows.push_back(xslider(X_VOLUME_MUSIC, L"Music", L"Will share its value with the game's own Options page.", 0, 100, 5, L"%", true));
-        c.rows.push_back(xslider(X_VOLUME_SFX, L"Sound effects", nullptr, 0, 100, 5, L"%", true));
-        c.rows.push_back(xslider(X_VOLUME_VOICES, L"Pokémon voices", nullptr, 0, 100, 5, L"%", true));
+        c.rows.push_back(xslider(X_VOLUME_MUSIC, L"Music", L"Music and jingles.", 0, 100, 5, L"%", false));
+        c.rows.push_back(xslider(X_VOLUME_SFX, L"Sound effects", nullptr, 0, 100, 5, L"%", false));
+        c.rows.push_back(xslider(X_VOLUME_VOICES, L"Pokémon voices", nullptr, 0, 100, 5, L"%", false));
         c.rows.push_back(xrow(CHOICE, X_VOICE_LANGUAGE, L"Voice language", L"Japanese needs your own Japanese disc.",
                               {L"English", L"Japanese"}, true));
         c.rows.push_back(xrow(TOGGLE, X_MUTE_BACKGROUND, L"Mute in the background", L"Goes quiet when you switch to another window."));

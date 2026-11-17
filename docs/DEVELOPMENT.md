@@ -178,7 +178,8 @@ also `WONDERPARK_<KEY>`, key in capitals, for example `WONDERPARK_WINDOW_MODE=1`
 | `[controls] invert_x`, `right_stick`, `aim_assist`, `steer_sensitivity`, `aim_speed`, `rhythm_offset` | | not yet |
 | `[audio] volume_master` | 0-100 % | works |
 | `[audio] audio_latency` | 0 low, 1 normal, 2 safe | works: 48, 84 (as before) or 132 ms queued before playback starts; lower at once, higher from the next refill (`runtime/host/audio_win32.c`) |
-| `[audio] volume_music`, `volume_sfx`, `volume_voices`, `voice_language` | | not yet |
+| `[audio] volume_music`, `volume_sfx`, `volume_voices` | 0-100 % | work, at once, through the game's own CRI categories (`runtime/hle/hle_volume.c`): music is BGM and JGL (jingles), voices PK_VOICE and PC_VOICE, effects the other five. The game's own category changes are kept and multiplied. Movies (the title's too) play their sound outside CRI and aren't affected |
+| `[audio] voice_language` | | not yet |
 | `[audio] mute_background` | 0, 1 | works: silent while another window is in front |
 | `[gameplay] pause_background` | 0, 1 | works: the game pauses while another window is in front |
 | `[gameplay] skip_logos` | | not yet |
@@ -280,7 +281,7 @@ keys (f1 esc up down left right enter q e backspace, a letter or digit) or
 
 ### `WONDERPARK_LOG` categories
 
-`adxcheck audioq audiostats axramp bloom framerate axvoice axvoices dec dsp efbcopy exc gxhw gxirq hook gxpe hostprof hwmisc idle ios ipc irq kpad memcpywatch mmio mmiostat mods movie mqwatch nandio pi pointer prof stalls steps threads waits wpad wpadbtn`
+`adxcheck audioq audiostats axramp bloom framerate axvoice axvoices dec dsp efbcopy exc gxhw gxirq hook gxpe hostprof hwmisc idle ios ipc irq kpad memcpywatch mmio mmiostat mods movie mqwatch nandio pi pointer prof stalls steps threads volume waits wpad wpadbtn`
 
 The most useful: `waits` (where threads block), `steps` (the game's logic
 steps per tick), `idle`, `efbcopy`, `gxirq`, `mmiostat` (slow memory
