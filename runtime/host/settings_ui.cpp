@@ -204,16 +204,16 @@ void build_rows() {
     // Display
     {
         Category c{L"display", L"Display", L"Window, resolution and frame rate", 0x4a7fe0, 0x79a5f0, 0xffffff, {}};
-        Row wm = xrow(CHOICE, X_WINDOW_MODE, L"Window", nullptr, {L"Windowed", L"Borderless", L"Fullscreen"});
-        wm.soonOpts = 1u << 2;
-        c.rows.push_back(wm);
+        c.rows.push_back(xrow(CHOICE, X_WINDOW_MODE, L"Window",
+                              L"Fullscreen sets the screen to the resolution below; Borderless keeps the desktop's.",
+                              {L"Windowed", L"Borderless", L"Fullscreen"}));
         c.rows.push_back(xrow(CHOICE, X_RESOLUTION, L"Resolution", L"The window's size, when in a window.",
                               {L"1280×720", L"1600×900", L"1920×1080", L"2560×1440", L"Match screen"}));
         Row fr = vchoice(L"Frame rate", L"60 draws every step of the game; movies stay at 30.", {L"30 (original)", L"60", L"120"},
                          {30, 60, 120}, &g_settings.frame_rate, 30);
         fr.soonOpts = 4;  // 120: frame interpolation, not built yet
         c.rows.push_back(fr);
-        c.rows.push_back(xrow(TOGGLE, X_VSYNC, L"V-Sync", L"Stops the picture from tearing.", {}, true));
+        c.rows.push_back(xrow(TOGGLE, X_VSYNC, L"V-Sync", L"Stops the picture from tearing in fullscreen. A window never tears."));
         Row rd;
         rd.kind = CHOICE;
         rd.label = L"Renderer";
@@ -227,12 +227,21 @@ void build_rows() {
         Row fov;
         fov.kind = SLIDER;
         fov.label = L"Field of view";
-        fov.min = 80, fov.max = 130, fov.step = 5, fov.unit = L"%", fov.soon = true;
+        fov.desc = L"In widescreen. Wider views can show things popping in at the sides.";
+        fov.min = 80, fov.max = 130, fov.step = 5, fov.unit = L"%";
         fov.get = [] { return g_settings.fov; };
-        fov.set = [](int) {};
-        fov.reset = [] {};
+        fov.set = [](int v) {
+            g_settings.fov = v;
+            settings_save();
+        };
+        fov.reset = [] {
+            g_settings.fov = 100;
+            settings_save();
+        };
+        fov.off = [] { return !g_x[X_WIDESCREEN]; };
+        fov.tag = L"Widescreen only";
         c.rows.push_back(fov);
-        c.rows.push_back(xslider(X_BRIGHTNESS, L"Brightness", nullptr, 50, 150, 5, L"%", true));
+        c.rows.push_back(xslider(X_BRIGHTNESS, L"Brightness", nullptr, 50, 150, 5, L"%", false));
         g_cats.push_back(c);
     }
     // Graphics
@@ -252,11 +261,11 @@ void build_rows() {
                               L"The game's own 16:9 mode; wider screens see more to the sides. From the next start."));
         c.rows.push_back(xrow(TOGGLE, X_HUD_EDGES, L"HUD at screen edges",
                               L"In game, moves HUD items at the sides (the minimap) out to the screen's edges, in widescreen."));
-        c.rows.push_back(xrow(TOGGLE, X_BLOOM, L"Bloom", L"The soft glow around bright lights.", {}, true));
-        c.rows.push_back(xrow(TOGGLE, X_FOG, L"Fog", nullptr, {}, true));
+        c.rows.push_back(xrow(TOGGLE, X_BLOOM, L"Bloom", L"The soft glow around bright lights."));
+        c.rows.push_back(xrow(TOGGLE, X_FOG, L"Fog", L"The haze that softens faraway parts of the park."));
         c.rows.push_back(xrow(TOGGLE, X_PER_PIXEL_LIGHTING, L"Per-pixel lighting", L"Smoother lighting on Pokémon and the park.", {}, true));
         c.rows.push_back(xrow(TOGGLE, X_HDR, L"HDR", nullptr, {}, true));
-        c.rows.push_back(xrow(CHOICE, X_COLORS, L"Colors", nullptr, {L"Original", L"Vivid"}, true));
+        c.rows.push_back(xrow(CHOICE, X_COLORS, L"Colors", nullptr, {L"Original", L"Vivid"}));
         c.rows.push_back(head(L"Performance"));
         c.rows.push_back(xrow(CHOICE, X_SHADER_MODE, L"Shader compilation",
                               L"Smooth never stutters. Precompile prepares every saved shader before the game starts.",
@@ -334,7 +343,7 @@ void build_rows() {
         c.rows.push_back(xrow(CHOICE, X_VOICE_LANGUAGE, L"Voice language", L"Japanese needs your own Japanese disc.",
                               {L"English", L"Japanese"}, true));
         c.rows.push_back(xrow(TOGGLE, X_MUTE_BACKGROUND, L"Mute in the background", L"Goes quiet when you switch to another window."));
-        c.rows.push_back(xrow(CHOICE, X_AUDIO_LATENCY, L"Audio delay", L"Raise it if the sound crackles.", {L"Low", L"Normal", L"Safe"}, true));
+        c.rows.push_back(xrow(CHOICE, X_AUDIO_LATENCY, L"Audio delay", L"Raise it if the sound crackles.", {L"Low", L"Normal", L"Safe"}));
         g_cats.push_back(c);
     }
     // Gameplay
@@ -382,7 +391,7 @@ void build_rows() {
         Category c{L"silly", L"Silly", L"Just for fun", 0xe2457f, 0xf27aa5, 0xffffff, {}};
         c.rows.push_back(xrow(CHOICE, X_POKEMON_SIZE, L"Pokémon size", nullptr, {L"Mini", L"Normal", L"Giant"}, true));
         c.rows.push_back(xslider(X_VOICE_PITCH, L"Voice pitch", L"From deep and grumbly to tiny and squeaky.", -50, 50, 5, L"%", true, true));
-        c.rows.push_back(xrow(TOGGLE, X_MIRROR_WORLD, L"Mirror world", L"Flips the whole park left to right.", {}, true));
+        c.rows.push_back(xrow(TOGGLE, X_MIRROR_WORLD, L"Mirror world", L"Flips the whole park left to right. Left and right swap too."));
         c.rows.push_back(xrow(TOGGLE, X_VICTORY_CONFETTI, L"Victory confetti", L"A burst of confetti when you win an attraction.", {}, true));
         c.rows.push_back(xrow(CHOICE, X_STEREO_3D, L"3D glasses", L"For red-cyan glasses or a 3D TV.", {L"Off", L"Red-cyan", L"Side by side"}, true));
         g_cats.push_back(c);

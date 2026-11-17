@@ -128,7 +128,7 @@ static void mouse(void) {
 }
 
 static void read_pointer(float* dx, float* dy) {
-    *dx = sPointerX * g_settings.mouse_sensitivity;
+    *dx = sPointerX * g_settings.mouse_sensitivity * (g_x[X_MIRROR_WORLD] ? -1 : 1);
     *dy = sPointerY * g_settings.mouse_sensitivity;
     sPointerX = sPointerY = 0;
 }
@@ -264,6 +264,11 @@ static int read_pad(int chan, uint32_t* held) {
     if (pad) sControllerLast = 1;
     else if (keys) sControllerLast = 0;
     *held = keys | pad;
+    if (g_x[X_MIRROR_WORLD]) {
+        /* The picture is flipped: left on screen is right in the game. */
+        uint32_t lr = *held & (HOST_PAD_SCREEN_LEFT | HOST_PAD_SCREEN_RIGHT);
+        if (lr == HOST_PAD_SCREEN_LEFT || lr == HOST_PAD_SCREEN_RIGHT) *held ^= HOST_PAD_SCREEN_LEFT | HOST_PAD_SCREEN_RIGHT;
+    }
     if (menu_is_open()) menuHeld = 1;
     else if (menuHeld && !*held) menuHeld = 0;
     if (menuHeld) *held = 0;

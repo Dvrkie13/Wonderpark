@@ -31,8 +31,81 @@ static char sTitle[128];
 static volatile LONG sTitlePending;
 
 
+/* Fullscreen (window mode 2): the screen switched to the Resolution
+ * setting's size while the game is in front (Match screen leaves it, which
+ * is then borderless). sModeDevice is the display changed, "" if none. */
+static char sModeDevice[CCHDEVICENAME];
+
+static void restore_mode(void) {
+    if (!sModeDevice[0]) return;
+    ChangeDisplaySettingsExA(sModeDevice, NULL, NULL, 0, NULL);
+    sModeDevice[0] = 0;
+}
+
+/* Switches the window's monitor to w x h, or back when w is 0; 1 if it's
+ * at that size now. */
+static int set_mode(int w, int h) {
+    MONITORINFOEXA mi;
+    DEVMODEA dm;
+    if (!w) {
+        restore_mode();
+        return 1;
+    }
+    mi.cbSize = sizeof(mi);
+    if (!GetMonitorInfoA(MonitorFromWindow(sWnd, MONITOR_DEFAULTTOPRIMARY), (MONITORINFO*)&mi)) return 0;
+    memset(&dm, 0, sizeof(dm));
+    dm.dmSize = sizeof(dm);
+    if (EnumDisplaySettingsA(mi.szDevice, ENUM_CURRENT_SETTINGS, &dm) && (int)dm.dmPelsWidth == w &&
+        (int)dm.dmPelsHeight == h)
+        return 1;
+    dm.dmPelsWidth = (DWORD)w;
+    dm.dmPelsHeight = (DWORD)h;
+    dm.dmFields = DM_PELSWIDTH | DM_PELSHEIGHT;
+    if (ChangeDisplaySettingsExA(mi.szDevice, &dm, NULL, CDS_FULLSCREEN, NULL) != DISP_CHANGE_SUCCESSFUL) {
+        fprintf(stderr, "window: the screen can't be set to %dx%d; fullscreen stays at its own size\n", w, h);
+        return 0;
+    }
+    if (!sModeDevice[0]) {
+        static int registered;
+        if (!registered) registered = 1, atexit(restore_mode);
+    }
+    memcpy(sModeDevice, mi.szDevice, sizeof(sModeDevice));
+    return 1;
+}
+
+static void cover_monitor(void) {
+    MONITORINFO mi;
+    mi.cbSize = sizeof(mi);
+    GetMonitorInfoA(MonitorFromWindow(sWnd, MONITOR_DEFAULTTOPRIMARY), &mi);
+    SetWindowPos(sWnd, HWND_TOP, mi.rcMonitor.left, mi.rcMonitor.top, mi.rcMonitor.right - mi.rcMonitor.left,
+                 mi.rcMonitor.bottom - mi.rcMonitor.top, SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
+}
+
+static const int kSizes[4][2] = {{1280, 720}, {1600, 900}, {1920, 1080}, {2560, 1440}};
+
+/* The display mode fullscreen wants: the resolution's, while in front. */
+static void apply_mode(int active) {
+    int r = g_x[X_RESOLUTION];
+    if (sFullscreen && g_x[X_WINDOW_MODE] == 2 && active && r >= 0 && r < 4) {
+        if (set_mode(kSizes[r][0], kSizes[r][1])) cover_monitor();
+    } else if (sModeDevice[0]) {
+        set_mode(0, 0);
+        if (sFullscreen) cover_monitor();
+    }
+}
+
 static LRESULT CALLBACK wnd_proc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
-    if (msg == WM_CLOSE) exit(0);
+    if (msg == WM_CLOSE) {
+        restore_mode();
+        exit(0);
+    }
+    if (msg == WM_ACTIVATEAPP && sFullscreen && g_x[X_WINDOW_MODE] == 2) {
+        /* Alt+Tab out of fullscreen: the desktop gets its own size back,
+         * and the game's window steps aside until it's chosen again. */
+        apply_mode(wp != 0);
+        if (!wp && !sHidden) ShowWindow(sWnd, SW_MINIMIZE);
+        else if (wp && IsIconic(sWnd)) ShowWindow(sWnd, SW_RESTORE);
+    }
     /* Alt+Enter toggles fullscreen; Alt alone doesn't open the window
      * menu, which would hold the game's keys. */
     if (msg == WM_SYSKEYDOWN && wp == VK_RETURN && (lp & (1 << 29))) {
@@ -93,18 +166,20 @@ void win_size(int* w, int* h) {
 
 void win_set_fullscreen(int on) {
     DWORD style = (DWORD)GetWindowLongA(sWnd, GWL_STYLE);
-    if (sHidden || on == sFullscreen) return;
+    if (sHidden) return;
+    if (on == sFullscreen) {
+        if (on) apply_mode(1); /* fullscreen kind or resolution changed */
+        return;
+    }
     sFullscreen = on;
     if (on) {
-        MONITORINFO mi;
-        mi.cbSize = sizeof(mi);
         sWindowed.length = sizeof(sWindowed);
         GetWindowPlacement(sWnd, &sWindowed);
-        GetMonitorInfoA(MonitorFromWindow(sWnd, MONITOR_DEFAULTTOPRIMARY), &mi);
         SetWindowLongA(sWnd, GWL_STYLE, (LONG)((style & ~WS_OVERLAPPEDWINDOW) | WS_POPUP));
-        SetWindowPos(sWnd, HWND_TOP, mi.rcMonitor.left, mi.rcMonitor.top, mi.rcMonitor.right - mi.rcMonitor.left,
-                     mi.rcMonitor.bottom - mi.rcMonitor.top, SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
+        cover_monitor();
+        apply_mode(1);
     } else {
+        apply_mode(0);
         SetWindowLongA(sWnd, GWL_STYLE, (LONG)((style & ~WS_POPUP) | WS_OVERLAPPEDWINDOW));
         SetWindowPlacement(sWnd, &sWindowed);
         SetWindowPos(sWnd, NULL, 0, 0, 0, 0,
@@ -116,7 +191,6 @@ void win_set_fullscreen(int on) {
  * window, its client area is that size (Match screen: maximized); in
  * borderless fullscreen it covers the monitor (win_set_fullscreen). */
 void settings_apply_window(void) {
-    static const int kSizes[4][2] = {{1280, 720}, {1600, 900}, {1920, 1080}, {2560, 1440}};
     int r = g_x[X_RESOLUTION];
     if (!sWnd || sHidden) return;
     if (GetCurrentThreadId() != sThread) return; /* only from the window's thread */

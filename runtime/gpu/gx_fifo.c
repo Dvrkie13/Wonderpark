@@ -21,6 +21,7 @@
 
 #include "gx.h"
 #include "host_mods.h"
+#include "host_settings.h"
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
@@ -978,7 +979,7 @@ static void build_state(GXDrawState* st) {
     st->z_func = (zmode >> 1) & 7;
     st->z_update = (zmode >> 4) & 1;
     st->efb_alpha = (bp[0x43] & 7) == 1;
-    st->fog_type = (bp[0xF1] >> 21) & 7;
+    st->fog_type = g_x[X_FOG] ? (bp[0xF1] >> 21) & 7 : 0; /* the Fog setting: off, none drawn */
     st->fog_ortho = (bp[0xF1] >> 20) & 1;
     st->fog_a = fog_float(bp[0xEE]);
     st->fog_b_mag = (int)(bp[0xEF] & 0xFFFFFF);
@@ -1144,20 +1145,25 @@ static int is_layout_camera(void) {
 }
 
 /* The transform for this draw (count vertices of format f at p). */
-static void wide_for_draw(const uint8_t* p, const VtxFormat* f, int count, float* sx, float* ox) {
+static void wide_for_draw(const uint8_t* p, const VtxFormat* f, int count, float* sx, float* ox, float* sy) {
     static GXVertex* scratch;
     static int cap;
     GXVertex tpl;
     float vp[6], box[4], wd = xf_float(0x101A), ht = xf_float(0x101B);
+    /* Field of view (g_settings.fov, percent of the game's tangent of half
+     * the angle): the world's projection scaled by its inverse, both ways.
+     * Only in widescreen, where the layout's camera tells the world apart. */
+    float fov = g_settings.fov > 0 && g_settings.fov != 100 ? 100.0f / (float)g_settings.fov : 1.0f;
     int i, layout;
     *sx = 1;
     *ox = 0;
-    if (!hle_widescreen() || (g_wide_r == 1 && g_wide_shown == 1 && !g_x[X_HUD_EDGES])) return;
+    *sy = 1;
+    if (!hle_widescreen() || (g_wide_r == 1 && g_wide_shown == 1 && !g_x[X_HUD_EDGES] && fov == 1.0f)) return;
     if (fabsf(2.0f * wd - 640.0f) > 1.0f) return; /* into part of the EFB */
     layout = is_layout_camera();
     if (!layout) {
-        if (!xf[0x1026]) *sx = 1.0f / g_wide_r, sWorldFrame = sFrame; /* the world */
-        return;                                                       /* effects, copies */
+        if (!xf[0x1026]) *sx = fov / g_wide_r, *sy = fov, sWorldFrame = sFrame; /* the world */
+        return;                                                                /* effects, copies */
     }
     if (count > cap) {
         cap = count * 2;
@@ -1324,7 +1330,7 @@ static void flush_batch(void) {
 
 /* Makes the batch one drawn with the current state, drawing the pending
  * one first if its state differs. */
-static void use_current_state(int mtx_per_vertex, float wide_sx, float wide_ox) {
+static void use_current_state(int mtx_per_vertex, float wide_sx, float wide_ox, float wide_sy) {
     int rebuilt = sStateDirty;
     if (rebuilt) {
         build_state(&sState); /* may draw the pending batch, if a texture changes */
@@ -1334,9 +1340,10 @@ static void use_current_state(int mtx_per_vertex, float wide_sx, float wide_ox) 
         sState.mtx_per_vertex = mtx_per_vertex;
         rebuilt = 1;
     }
-    if (sState.wide_sx != wide_sx || sState.wide_ox != wide_ox) {
+    if (sState.wide_sx != wide_sx || sState.wide_ox != wide_ox || sState.wide_sy != wide_sy) {
         sState.wide_sx = wide_sx;
         sState.wide_ox = wide_ox;
+        sState.wide_sy = wide_sy;
         rebuilt = 1;
     }
     /* Everything but the XF fields, which build_state leaves zero. A
@@ -1704,9 +1711,9 @@ static void draw(int prim, const uint8_t* p, const VtxFormat* f, int count, int 
         return;
     }
     {
-        float wsx, wox;
-        wide_for_draw(p, f, count, &wsx, &wox);
-        use_current_state(f->pnmtx | (f->texmtx_mask ? 2 : 0), wsx, wox);
+        float wsx, wox, wsy;
+        wide_for_draw(p, f, count, &wsx, &wox, &wsy);
+        use_current_state(f->pnmtx | (f->texmtx_mask ? 2 : 0), wsx, wox, wsy);
     }
     if ((sArena ? 0 : sBatchVerts) + count > sBatchCap) {
         sBatchCap = ((sArena ? 0 : sBatchVerts) + count) * 2;

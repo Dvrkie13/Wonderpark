@@ -63,7 +63,7 @@ extern HostSettings g_settings;
  * F1 tab shows those as "Coming soon"). */
 enum {
     /* [display] */
-    X_WINDOW_MODE,      /* 0 windowed, 1 borderless, 2 fullscreen (exclusive; coming) */
+    X_WINDOW_MODE,      /* 0 windowed, 1 borderless, 2 fullscreen (the screen set to X_RESOLUTION's size) */
     X_RESOLUTION,       /* window size: 0 1280x720, 1 1600x900, 2 1920x1080, 3 2560x1440, 4 match screen */
     X_VSYNC,            /* 0, 1 */
     X_BRIGHTNESS,       /* 50-150 % */

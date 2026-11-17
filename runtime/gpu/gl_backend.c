@@ -164,7 +164,9 @@ static void gl_forget(void);
  * by gx_frames.c), and in a window or borderless window the compositor
  * shows only whole frames anyway. Waiting held up the game thread: with
  * a display whose refresh stalls (a virtual display with nobody
- * watching), every present took 110 ms and the game ran at 7 fps. */
+ * watching), every present took 110 ms and the game ran at 7 fps. The
+ * V-Sync setting (g_x[X_VSYNC], off by default) sets it to 1, for screens
+ * where the picture tears (exclusive fullscreen): window_present. */
 static BOOL(WINAPI* pSwapInterval)(int);
 
 static void load_gl(void) {
@@ -266,7 +268,7 @@ static const char* kVertexShader =
      * reversed (see gxd_init), so the far plane, where GX scenes keep
      * nearly everything, gets the float precision: 0..w, far to near. */
     /* u_wide: the widescreen transform of clip x (gx_fifo.c wide_for_draw). */
-    "  gl_Position = vec4(clip.x * u_wide.x + u_wide.y * clip.w, clip.y, -clip.z, clip.w);\n"
+    "  gl_Position = vec4(clip.x * u_wide.x + u_wide.y * clip.w, clip.y * (u_wide.z != 0.0 ? u_wide.z : 1.0), -clip.z, clip.w);\n"
     "  v_col0 = channel(0, a_col0, world, n);\n"
     "  v_col1 = channel(1, a_col1, world, n);\n"
     "  int ntex = int(xw(0x103F) & 15u);\n"
@@ -1251,6 +1253,53 @@ static const char* kOverlayFragmentShader =
     "uniform sampler2D u_image;\n"
     "void main() { o_color = texture(u_image, v_uv); }\n";
 
+/* The picture's own look, from the F1 tab's settings, drawn from the kept
+ * picture (sLastTex) back into the window's framebuffer: brightness (a
+ * gamma curve, so whites stay white and nothing clips), Vivid colors (more
+ * saturation, a little contrast) and Mirror world (flipped left to right).
+ * Only when one of them isn't the default: otherwise no pass at all. */
+static const char* kLookFragmentShader =
+    "#version 330 core\n"
+    "in vec2 v_uv;\n"
+    "out vec4 o_color;\n"
+    "uniform sampler2D u_image;\n"
+    "uniform vec4 u_look; /* gamma, saturation, contrast, mirror */\n"
+    "void main() {\n"
+    "    vec2 uv = vec2(u_look.w != 0.0 ? 1.0 - v_uv.x : v_uv.x, 1.0 - v_uv.y);\n"
+    "    vec3 c = texture(u_image, uv).rgb;\n"
+    "    float l = dot(c, vec3(0.2126, 0.7152, 0.0722));\n"
+    "    c = clamp(mix(vec3(l), c, u_look.y), 0.0, 1.0);\n"
+    "    c = clamp((c - 0.5) * u_look.z + 0.5, 0.0, 1.0);\n"
+    "    o_color = vec4(pow(c, vec3(u_look.x)), 1.0);\n"
+    "}\n";
+
+static GLuint sLookProgram;
+static GLint uLook;
+
+static int look_needed(void) {
+    return g_x[X_BRIGHTNESS] != 100 || g_x[X_COLORS] || g_x[X_MIRROR_WORLD];
+}
+
+static void build_look_program(void) {
+    GLint ok;
+    sLookProgram = p_glCreateProgram();
+    p_glAttachShader(sLookProgram, compile(GL_VERTEX_SHADER, kOverlayVertexShader));
+    p_glAttachShader(sLookProgram, compile(GL_FRAGMENT_SHADER, kLookFragmentShader));
+    p_glLinkProgram(sLookProgram);
+    p_glGetProgramiv(sLookProgram, GL_LINK_STATUS, &ok);
+    if (!ok) {
+        char log[4096];
+        p_glGetProgramInfoLog(sLookProgram, sizeof(log), NULL, log);
+        fprintf(stderr, "gl: link error:\n%s\n", log);
+        sLookProgram = 0;
+        return;
+    }
+    p_glUseProgram(sLookProgram);
+    p_glUniform1i(p_glGetUniformLocation(sLookProgram, "u_image"), 0);
+    uLook = p_glGetUniformLocation(sLookProgram, "u_look");
+    p_glUseProgram(sProgram);
+}
+
 static GLuint sOverlayProgram, sOverlayTex;
 
 static void build_overlay_program(void) {
@@ -1587,8 +1636,11 @@ static void dump_shared(const char* path) {
 static int window_present(int w, int h, int may_drop) {
     ID3D11Texture2D* back;
     HRESULT hr;
-    static int failures;
+    static int failures, swapInterval;
+    int vsync = g_x[X_VSYNC] != 0;
     if (!sChain) {
+        /* V-Sync (off by default: see pSwapInterval). */
+        if (pSwapInterval && vsync != swapInterval) pSwapInterval(swapInterval = vsync);
         SwapBuffers(sDC);
         return 0;
     }
@@ -1605,8 +1657,9 @@ static int window_present(int w, int h, int may_drop) {
         ID3D11DeviceContext_CopyResource(sD3dCtx, (ID3D11Resource*)back, (ID3D11Resource*)sShared);
         ID3D11Texture2D_Release(back);
     }
-    hr = IDXGISwapChain1_Present(sChain, 0,
-                                 (sTearing ? DXGI_PRESENT_ALLOW_TEARING : 0) | (may_drop ? DXGI_PRESENT_DO_NOT_WAIT : 0));
+    hr = IDXGISwapChain1_Present(sChain, vsync ? 1 : 0,
+                                 (sTearing && !vsync ? DXGI_PRESENT_ALLOW_TEARING : 0) |
+                                     (may_drop ? DXGI_PRESENT_DO_NOT_WAIT : 0));
     if (hr == DXGI_ERROR_WAS_STILL_DRAWING) return 1;
     if (FAILED(hr) && failures++ < 5) fprintf(stderr, "gl: present failed (%08lX)\n", (unsigned long)hr);
     return 0;
@@ -1710,6 +1763,7 @@ static int gl_init(void) {
     build_program();
     build_copy_program();
     build_overlay_program();
+    build_look_program();
     spec_init(rc, GetPixelFormat(sGlDC), &pfd);
     pSwapInterval = (BOOL(WINAPI*)(int))(void*)wglGetProcAddress("wglSwapIntervalEXT");
     if (pSwapInterval) pSwapInterval(0);
@@ -1982,7 +2036,7 @@ static void apply_draw_state(const GXDrawState* st) {
         UNIFORM_IF_CHANGED(p_glUniform4fv, P, FogRange, 4, range);
     }
     {
-        GLfloat wide[4] = {st->wide_sx, st->wide_ox, 0, 0};
+        GLfloat wide[4] = {st->wide_sx, st->wide_ox, st->wide_sy, 0};
         UNIFORM_IF_CHANGED(p_glUniform4fv, P, Wide, 1, wide);
     }
     UNIFORM_IF_CHANGED(p_glUniform4iv, P, Ind, 1, ind);
@@ -2506,6 +2560,11 @@ static void keep_last(int w, int h) {
     if (!sLastFbo) {
         p_glGenFramebuffers(1, &sLastFbo);
         glGenTextures(1, &sLastTex);
+        glBindTexture(GL_TEXTURE_2D, sLastTex);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     }
     if (w != sLastW || h != sLastH) {
         glBindTexture(GL_TEXTURE_2D, sLastTex);
@@ -2518,6 +2577,31 @@ static void keep_last(int w, int h) {
     p_glBindFramebuffer(GL_DRAW_FRAMEBUFFER, sLastFbo);
     p_glBlitFramebuffer(0, 0, w, h, 0, 0, w, h, GL_COLOR_BUFFER_BIT, GL_NEAREST);
     sHaveLast = 1;
+}
+
+/* The kept picture (sLastTex) drawn into the window's framebuffer, w x h,
+ * with the look settings (kLookFragmentShader). */
+static void draw_look(int w, int h) {
+    float b = g_x[X_BRIGHTNESS] / 100.0f;
+    p_glBindFramebuffer(GL_FRAMEBUFFER, sWinFbo);
+    glViewport(0, 0, w, h);
+    glDisable(GL_SCISSOR_TEST);
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_CULL_FACE);
+    glDisable(GL_BLEND);
+    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+    p_glUseProgram(sLookProgram);
+    p_glBindVertexArray(sCopyVao);
+    p_glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, sLastTex);
+    {
+        float look[4] = {1.0f / (b > 0.1f ? b : 0.1f), g_x[X_COLORS] ? 1.3f : 1.0f, g_x[X_COLORS] ? 1.06f : 1.0f,
+                         g_x[X_MIRROR_WORLD] ? 1.0f : 0.0f};
+        p_glUniform4fv(uLook, 1, look);
+    }
+    glDrawArrays(GL_TRIANGLES, 0, 3);
+    p_glUseProgram(sProgram);
+    p_glBindVertexArray(sVao);
 }
 
 /* The GPU's own time for everything between two presents, measured with
@@ -2576,7 +2660,8 @@ static int gl_present_last(void) {
     glDisable(GL_SCISSOR_TEST);
     glViewport(0, 0, w, h);
     glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
-    p_glBlitFramebuffer(0, 0, sLastW, sLastH, 0, 0, w, h, GL_COLOR_BUFFER_BIT, GL_LINEAR);
+    if (sLookProgram && look_needed()) draw_look(w, h);
+    else p_glBlitFramebuffer(0, 0, sLastW, sLastH, 0, 0, w, h, GL_COLOR_BUFFER_BIT, GL_LINEAR);
     finish_present(w, h, 0);
     return 1;
 }
@@ -2625,6 +2710,7 @@ static int gl_present(int x, int y, int cw, int ch, int may_drop) {
                         (w - dw) / 2 + dw, (h - dh) / 2 + dh, GL_COLOR_BUFFER_BIT,
                         g_x[X_SCALING_FILTER] ? GL_NEAREST : GL_LINEAR);
     keep_last(w, h);
+    if (sLookProgram && look_needed()) draw_look(w, h);
     return finish_present(w, h, may_drop);
 }
 

@@ -37,7 +37,16 @@
  * Contraption's character select); 16 absorbs them, and the latency stays
  * that of PRIME_BLOCKS. */
 #define BLOCKS 16 /* at most 192 ms queued */
-#define PRIME_BLOCKS 7 /* 84 ms */
+/* The Audio delay setting (g_x[X_AUDIO_LATENCY]): low 4 blocks (48 ms),
+ * normal 7 (84 ms, as before there was a setting), safe 11 (132 ms). A
+ * lower one takes effect at once (the queue is trimmed down to it); a
+ * higher one at the next refill (after a pause or a stall). */
+static int prime_blocks(void) {
+    static const int kPrime[3] = {4, 7, 11};
+    int l = g_x[X_AUDIO_LATENCY];
+    return kPrime[l < 0 ? 0 : l > 2 ? 2 : l];
+}
+#define PRIME_BLOCKS prime_blocks()
 #define TRIM_ABOVE 2
 #define TRIM_EVERY 128
 

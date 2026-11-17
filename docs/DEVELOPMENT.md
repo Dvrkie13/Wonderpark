@@ -150,7 +150,7 @@ the file).
 | `[display] aniso` | `WONDERPARK_ANISO` | 1, 2, 4, 8, 16 | works |
 | `[display] renderer` | `WONDERPARK_RENDERER` | opengl, vulkan | only OpenGL is built |
 | `[display] frame_rate` | `WONDERPARK_FRAME_RATE` | 30, 60, 120-240 | 30 and 60 work, at once (F1 or the Options page): at 60 the game's frame timer runs at 59.94 Hz instead of 29.97 and draws every 60 Hz logic step; movies stay at 30, and it drops to 30 for 15 s when frames keep coming late (`runtime/hle/hle_frame.c`). 120 and up: not yet (frame interpolation) |
-| `[display] fov` | `WONDERPARK_FOV` | 80-150 | not hooked up yet |
+| `[display] fov` | `WONDERPARK_FOV` | 80-150 (the F1 tab offers 80-130) | works, at once, in widescreen only: the world's projection is scaled by 100/fov both ways (`runtime/gpu/gx_fifo.c` wide_for_draw); the game still culls for its own view, so above 100 things can pop in at the sides |
 | `[gameplay] skip_movies` | `WONDERPARK_SKIP_MOVIES` | 0, 1 | not working yet (see "Skip movies" in `docs/recomp-status.md`) |
 | `[gameplay] text_speed`, `berries`, `prices`, `damage_dealt`, `damage_taken`, `chase_speed` | `WONDERPARK_<KEY>` | percent | from the PokéPark 1 runtime; not hooked up for PokéPark 2 yet |
 | `[updates] check` | `WONDERPARK_CHECK_UPDATES` | 0, 1 | no update check built yet |
@@ -163,21 +163,27 @@ also `WONDERPARK_<KEY>`, key in capitals, for example `WONDERPARK_WINDOW_MODE=1`
 
 | Setting | Values | State |
 | --- | --- | --- |
-| `[display] window_mode` | 0 windowed, 1 borderless, 2 fullscreen | 0 and 1 work (replaces `fullscreen`, still read from old files); exclusive fullscreen not yet |
-| `[display] resolution` | window size: 0 1280x720, 1 1600x900, 2 1920x1080, 3 2560x1440, 4 match screen (maximized) | works, in a window |
-| `[display] vsync`, `brightness` | 0/1; 50-150 % | not yet |
+| `[display] window_mode` | 0 windowed, 1 borderless, 2 fullscreen | works (replaces `fullscreen`, still read from old files). Fullscreen sets the screen to the resolution setting's size while the game is in front (Match screen: the screen's own, as borderless); Alt+Tab gives the desktop its size back and minimizes, and it's put back on exit (`runtime/gpu/window_win32.c`) |
+| `[display] resolution` | window size: 0 1280x720, 1 1600x900, 2 1920x1080, 3 2560x1440, 4 match screen (maximized) | works, in a window and in fullscreen |
+| `[display] vsync` | 0, 1 (default 0) | works, at once: presents wait for the screen's refresh (swap interval 1, or DXGI sync interval 1 without tearing). Off by default, as before: a window never tears, and waiting can hold up the game thread (`runtime/gpu/gl_backend.c`) |
+| `[display] brightness` | 50-150 % | works, at once: a gamma curve on the shown picture (whites stay white) |
 | `[graphics] scaling_filter` | 0 smooth, 1 sharp | works |
 | `[graphics] widescreen` | 0, 1 | works, from the next start (`RECOMP_WIDESCREEN` still wins): the game's own 16:9 mode (it is told the TV is 16:9: `SCGetAspectRatio`, `runtime/hle/hle_os.c`). A window wider than 16:9 (up to 32:9) shows more of the world to the sides with menus and HUD kept in the middle; a narrower one (16:10) is cropped at the sides (`runtime/gpu/gx_fifo.c`, "Widescreen") |
 | `[graphics] hud_edges` | 0, 1 | works, with widescreen: in game, HUD items at the sides (the minimap) move out to the screen's edges; menus stay as they are |
 | `[graphics] fast_loading` | 0, 1 (default 1) | works, from the next start: a thread reads the disc's files into RAM at start, all but movies and streamed music and voices (949 files, 284 MB), the game's own reads first (`runtime/ios/dvd.c`, "Fast loading") |
-| `[graphics] bloom`, `fog`, `per_pixel_lighting`, `hdr`, `colors`, `shader_mode` | | not yet |
+| `[graphics] bloom` | 0, 1 (default 1) | works, at once: off skips the game's store of the effect's strength at `0x8011D91C`, as the known Gecko code does (`0411D91C 60000000`), and keeps the value it was made with (`runtime/hle/hle_effects.c`) |
+| `[graphics] fog` | 0, 1 (default 1) | works, at once: off draws no GX fog (`runtime/gpu/gx_fifo.c`) |
+| `[graphics] colors` | 0 original, 1 vivid | works, at once: more saturation (1.3x) and a little contrast on the shown picture |
+| `[graphics] per_pixel_lighting`, `hdr`, `shader_mode` | | not yet |
 | `[controls] invert_x`, `right_stick`, `aim_assist`, `steer_sensitivity`, `aim_speed`, `rhythm_offset` | | not yet |
 | `[audio] volume_master` | 0-100 % | works |
-| `[audio] volume_music`, `volume_sfx`, `volume_voices`, `voice_language`, `audio_latency` | | not yet |
+| `[audio] audio_latency` | 0 low, 1 normal, 2 safe | works: 48, 84 (as before) or 132 ms queued before playback starts; lower at once, higher from the next refill (`runtime/host/audio_win32.c`) |
+| `[audio] volume_music`, `volume_sfx`, `volume_voices`, `voice_language` | | not yet |
 | `[audio] mute_background` | 0, 1 | works: silent while another window is in front |
 | `[gameplay] pause_background` | 0, 1 | works: the game pauses while another window is in front |
 | `[gameplay] skip_logos` | | not yet |
-| `[silly] pokemon_size`, `voice_pitch`, `mirror_world`, `victory_confetti`, `stereo_3d` | | not yet |
+| `[silly] mirror_world` | 0, 1 | works, at once: the shown picture flipped left to right, with left and right (and the pointer's left and right) swapped to match (`runtime/host/input_win32.c`) |
+| `[silly] pokemon_size`, `voice_pitch`, `victory_confetti`, `stereo_3d` | | not yet |
 
 ## The F1 settings tab
 
@@ -274,7 +280,7 @@ keys (f1 esc up down left right enter q e backspace, a letter or digit) or
 
 ### `WONDERPARK_LOG` categories
 
-`adxcheck audioq audiostats axramp framerate axvoice axvoices dec dsp efbcopy exc gxhw gxirq hook gxpe hostprof hwmisc idle ios ipc irq kpad memcpywatch mmio mmiostat mods movie mqwatch nandio pi pointer prof stalls steps threads waits wpad wpadbtn`
+`adxcheck audioq audiostats axramp bloom framerate axvoice axvoices dec dsp efbcopy exc gxhw gxirq hook gxpe hostprof hwmisc idle ios ipc irq kpad memcpywatch mmio mmiostat mods movie mqwatch nandio pi pointer prof stalls steps threads waits wpad wpadbtn`
 
 The most useful: `waits` (where threads block), `steps` (the game's logic
 steps per tick), `idle`, `efbcopy`, `gxirq`, `mmiostat` (slow memory
