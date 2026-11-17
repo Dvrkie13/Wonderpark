@@ -10,6 +10,7 @@
 
 #include "ref_compat.h"
 #include "host_settings.h"
+#include "host_mods.h"
 
 #ifndef _WIN32
 #define _strdup strdup
@@ -76,15 +77,28 @@ static uint8_t* read_file(const char* path, uint32_t* size) {
     return data;
 }
 
+static void put_be32(uint8_t* p, uint32_t v) {
+    p[0] = (uint8_t)(v >> 24), p[1] = (uint8_t)(v >> 16), p[2] = (uint8_t)(v >> 8), p[3] = (uint8_t)v;
+}
+
 /* Walks the FST, adding a region for every file. Wii FSTs store file
- * offsets divided by 4. */
+ * offsets divided by 4. A file an enabled mod replaces (host_mods.h) is
+ * read from the mod instead: the FST (which the game reads from memory) gets
+ * its size, and if it grew, a new place past the end of the disc's data. */
 static void add_fst_files(void) {
     uint32_t count = be32(sFst + 8);
     const char* names = (const char*)sFst + count * 12;
     uint32_t dir_end[64];
     char dir_path[64][256];
-    int depth = 0;
+    int depth = 0, replaced = 0;
     uint32_t i;
+    uint64_t next_free = 0;
+    for (i = 1; i < count; i++) {
+        const uint8_t* e = sFst + i * 12;
+        uint64_t end = ((uint64_t)be32(e + 4) << 2) + be32(e + 8);
+        if (!e[0] && end > next_free) next_free = end;
+    }
+    next_free = (next_free + 0x7FFF) & ~0x7FFFull;
     strcpy(dir_path[0], "files");
     dir_end[0] = count;
     for (i = 1; i < count; i++) {
@@ -99,10 +113,28 @@ static void add_fst_files(void) {
                 dir_end[depth] = be32(e + 8);
             }
         } else {
+            char rel[512], mod[600];
+            uint64_t size;
+            snprintf(rel, sizeof(rel), "%s/%s", dir_path[depth] + (depth ? 6 : 5), name); /* past "files/" */
+            if (wp_mod_file(depth ? rel : name, mod, sizeof(mod), &size) && size < 0xFFFFFFFFull) {
+                uint8_t* w = sFst + i * 12;
+                uint64_t at = (uint64_t)be32(w + 4) << 2;
+                if (size > be32(w + 8)) {
+                    at = next_free;
+                    next_free = (next_free + size + 0x7FFF) & ~0x7FFFull;
+                    put_be32(w + 4, (uint32_t)(at >> 2));
+                }
+                put_be32(w + 8, (uint32_t)size);
+                add_region(at, size, mod);
+                replaced++;
+                WP_LOG("mods", "disc file %s from %s", depth ? rel : name, mod);
+                continue;
+            }
             snprintf(path, sizeof(path), "%s/%s/%s", sRoot, dir_path[depth], name);
             add_region((uint64_t)be32(e + 4) << 2, be32(e + 8), path);
         }
     }
+    if (replaced) fprintf(stderr, "disc: %d file%s from mods\n", replaced, replaced == 1 ? "" : "s");
 }
 
 int hle_dvd_init(const char* root) {
@@ -417,7 +449,8 @@ static int read_regions(uint64_t offset, uint32_t len, uint32_t dst) {
             fclose(f);
         }
 #endif
-        HLE_LOG("disc read %08llX+%X: %s", (unsigned long long)lo, (unsigned)(hi - lo), r->path + strlen(sRoot) + 1);
+        HLE_LOG("disc read %08llX+%X: %s", (unsigned long long)lo, (unsigned)(hi - lo),
+                strncmp(r->path, sRoot, strlen(sRoot)) == 0 ? r->path + strlen(sRoot) + 1 : r->path); /* a mod's file: in full */
     }
     if (ram) g_cnt_disc_ram++;
     return ok;

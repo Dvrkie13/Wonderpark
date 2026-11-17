@@ -9,7 +9,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # Static runtime: the launcher runs with nothing else installed.
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
-add_executable(WonderparkLauncher WIN32 launcher.cpp launcher.rc)
+add_executable(WonderparkLauncher WIN32 launcher.cpp mods.cpp launcher.rc)
 target_compile_definitions(WonderparkLauncher PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
 if(MSVC)
   target_compile_options(WonderparkLauncher PRIVATE /W3 /utf-8)

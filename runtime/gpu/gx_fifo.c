@@ -20,6 +20,7 @@
 #include <string.h>
 
 #include "gx.h"
+#include "host_mods.h"
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
@@ -488,6 +489,7 @@ typedef struct TexEntry {
     uint32_t image_hash; /* of the texture's memory alone, without its palette */
     int pix;             /* its layout (GX_PIX_...) */
     uint64_t checked, hashed; /* the frames it was last looked at, and hashed */
+    int rep;             /* a mod's replacement (host_mods.h): 0 none, 1 loading, 2 in use */
 } TexEntry;
 
 /* Which pages (4 KB) of MEM1 and MEM2 have been written, and when: the
@@ -716,6 +718,7 @@ static uint32_t texture_for_map(int map) {
     uint64_t key;
     TexEntry* e;
     uint32_t h;
+    int was_rep; /* the entry held a mod's replacement (another size: never updated in place) */
     if ((long)sFrame == sDebugFrame) {
         int copy = -1;
         for (i = 0; i < sCopyCount; i++) {
@@ -781,6 +784,31 @@ static uint32_t texture_for_map(int map) {
         h = image;
     }
     if (fmt >= 8 && fmt <= 10) h ^= hash_bytes(&tmem[((tlut & 0x3FF) << 9) & 0xFFFFF], fmt == 8 ? 32 : 512);
+    {
+        /* Mods: a texture with a replacement (by this hash) is drawn with
+         * it. It's read on a background thread; until it's ready the
+         * game's own is used, and this asks again each frame. */
+        const uint8_t* rgba = NULL;
+        int rw = 0, rh = 0, rs = 0;
+        int same = e->handle && e->key == key && e->hash == h;
+        was_rep = e->rep;
+        if (wp_mods_have_textures() && (!same || e->rep == 1)) rs = wp_mod_texture(h, &rgba, &rw, &rh);
+        if (rs == 2) {
+            if (e->handle) gxb_texture_free(e->handle);
+            e->handle = gxb_texture(key, GX_PIX_RGBA8, rw, rh, 1, rgba, mode0);
+            e->pix = GX_PIX_RGBA8;
+            e->key = key;
+            e->hash = h;
+            e->rep = 2;
+            e->checked = sFrame;
+            return e->handle;
+        }
+        if (!same || e->rep == 1) e->rep = rs; /* 1: the game's own until it's read (asked each frame) */
+        if (same && rs == 1) {
+            e->checked = sFrame;
+            return e->handle;
+        }
+    }
     if (e->key != key || e->hash != h || !e->handle) {
         uint8_t* rgba = (uint8_t*)malloc((size_t)width * height * 8); /* the levels below take a third more */
         /* RECOMP_GX_DUMP_TEX=<address>: save that texture, as decoded, to
@@ -822,7 +850,7 @@ static uint32_t texture_for_map(int map) {
                 else save_bmp(path, rgba, width, height);
             }
         }
-        if (e->handle && e->key == key && e->pix == pix) {
+        if (e->handle && e->key == key && e->pix == pix && was_rep != 2) {
             /* Same texture, new contents (a movie frame, say): the key
              * covers size and sampling, so update it in place. */
             flush_batch();

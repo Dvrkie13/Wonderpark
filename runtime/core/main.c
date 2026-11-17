@@ -216,6 +216,12 @@ int main(int argc, char** argv) {
         snprintf(root, sizeof(root), "%s", dol);
         for (p = root; *p; p++) if (*p == '\\') *p = '/';
         if ((p = strstr(root, "/sys/main.dol")) != NULL) *p = '\0';
+        {
+            /* The mods switched on in the launcher (host_mods.h): their
+             * files take the place of the disc's, so before the disc opens. */
+            extern void wp_mods_init(void);
+            wp_mods_init();
+        }
         if (hle_dvd_init(root) != 0) return 1;
         hle_dvd_boot_setup();
         snprintf(nand, sizeof(nand), "%s/nand", wp_data_dir());

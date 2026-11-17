@@ -38,6 +38,8 @@
 #include <dxgi1_2.h>
 #include <wincodec.h>
 
+#include "mods.h"
+
 #include <algorithm>
 #include <atomic>
 #include <map>
@@ -459,12 +461,16 @@ struct Gfx {
     ComPtr<IDWriteFontCollection1> fonts;
     ComPtr<IDWriteFontFace> fredoka7, nunito8;
     ComPtr<IDWriteTextFormat> tfStatus, tfProgress, tfLegal, tfHint, tfButton, tfToast;
+    // The corner hint and the Mods page.
+    ComPtr<IDWriteTextFormat> tfPill, tfTab, tfBadge, tfMTitle, tfMSub, tfDrop, tfDropSmall, tfMProg, tfMLabel,
+        tfModName, tfModSum, tfMFoot, tfMErr, tfTip;
+    ComPtr<ID2D1PathGeometry> puzzle, upload, card;  // card: 422 x 61, uneven corners
+    ComPtr<ID2D1StrokeStyle> dash;                    // the drop zone's dashed border
     // Built once (scene units)
     ComPtr<ID2D1PathGeometry> star, gems[8], wedges[12], ring, rays[20];
     ComPtr<ID2D1GeometryGroup> starClip;
     ComPtr<ID2D1Geometry> wonderT, parkT, recompT, wonderparkM, unofficialM;
-    ComPtr<ID2D1PathGeometry> sparkle4, ringBack, ringFront, bandA, bandB, hintStar, shootLine, checkMark, stone,
-        stoneHi, stoneLo;
+    ComPtr<ID2D1PathGeometry> sparkle4, ringBack, ringFront, bandA, bandB, hintStar, shootLine, checkMark;
     ComPtr<ID2D1StrokeStyle> round;
     // Rendered once per size (pixels)
     ComPtr<ID2D1Bitmap1> sky, twA, twB, beam, glow8, glow18;
@@ -605,6 +611,30 @@ static bool load_fonts() {
     fmt(L"Fredoka", DWRITE_FONT_WEIGHT_SEMI_BOLD, 18, G.tfToast);
     G.tfLegal->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_TRAILING);
     G.tfLegal->SetLineSpacing(DWRITE_LINE_SPACING_METHOD_UNIFORM, 18, 13.5f);
+    fmt(L"Fredoka", DWRITE_FONT_WEIGHT_SEMI_BOLD, 17, G.tfPill);
+    fmt(L"Fredoka", DWRITE_FONT_WEIGHT_BOLD, 17, G.tfTab);
+    fmt(L"Fredoka", DWRITE_FONT_WEIGHT_BOLD, 13, G.tfBadge);
+    fmt(L"Fredoka", DWRITE_FONT_WEIGHT_BOLD, 32, G.tfMTitle);
+    fmt(L"Nunito", DWRITE_FONT_WEIGHT_BOLD, 13.5f, G.tfMSub);
+    fmt(L"Fredoka", DWRITE_FONT_WEIGHT_SEMI_BOLD, 19, G.tfDrop);
+    fmt(L"Nunito", DWRITE_FONT_WEIGHT_BOLD, 12.5f, G.tfDropSmall);
+    fmt(L"Nunito", DWRITE_FONT_WEIGHT_BOLD, 13, G.tfMProg);
+    fmt(L"Nunito", DWRITE_FONT_WEIGHT_EXTRA_BOLD, 11.5f, G.tfMLabel);
+    fmt(L"Fredoka", DWRITE_FONT_WEIGHT_SEMI_BOLD, 18, G.tfModName);
+    fmt(L"Nunito", DWRITE_FONT_WEIGHT_BOLD, 12, G.tfModSum);
+    fmt(L"Nunito", DWRITE_FONT_WEIGHT_BOLD, 12, G.tfMFoot);
+    fmt(L"Nunito", DWRITE_FONT_WEIGHT_BOLD, 13.5f, G.tfMErr);
+    fmt(L"Nunito", DWRITE_FONT_WEIGHT_BOLD, 12.5f, G.tfTip);
+    G.tfMSub->SetLineSpacing(DWRITE_LINE_SPACING_METHOD_UNIFORM, 13.5f * 1.45f, 13.5f * 1.08f);
+    // Card text: one line, cut off with "…".
+    for (IDWriteTextFormat* f : {G.tfModName.Get(), G.tfModSum.Get(), G.tfMProg.Get()}) {
+        if (!f) continue;
+        f->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
+        ComPtr<IDWriteInlineObject> ell;
+        G.dw->CreateEllipsisTrimmingSign(f, &ell);
+        DWRITE_TRIMMING tr = {DWRITE_TRIMMING_GRANULARITY_CHARACTER, 0, 0};
+        f->SetTrimming(&tr, ell.Get());
+    }
     return G.fredoka7 && G.nunito8;
 }
 
@@ -761,41 +791,30 @@ static ComPtr<ID2D1PathGeometry> curve_path(D2D1_POINT_2F a, D2D1_POINT_2F c1, D
     return p;
 }
 
-// The stone hint's slab: border-radius 20px 13px 22px 11px / 13px 20px 11px 18px.
-static ComPtr<ID2D1PathGeometry> slab(float x, float y, float w, float h) {
+// A rectangle with its own radius at each corner (top left, top right,
+// bottom right, bottom left): the mod cards' "slightly uneven" corners.
+static ComPtr<ID2D1PathGeometry> uneven(D2D1_RECT_F r, float tl, float tr, float br, float bl) {
     ComPtr<ID2D1PathGeometry> p;
     ComPtr<ID2D1GeometrySink> s;
     G.f->CreatePathGeometry(&p);
     p->Open(&s);
-    auto arc = [&](float px, float py, float rx, float ry) {
-        s->AddArc(D2D1::ArcSegment(Point2F(px, py), D2D1::SizeF(rx, ry), 0, D2D1_SWEEP_DIRECTION_CLOCKWISE,
+    auto arc = [&](float px, float py, float rad) {
+        s->AddArc(D2D1::ArcSegment(Point2F(px, py), D2D1::SizeF(rad, rad), 0, D2D1_SWEEP_DIRECTION_CLOCKWISE,
                                    D2D1_ARC_SIZE_SMALL));
     };
-    s->BeginFigure(Point2F(x + 20, y), D2D1_FIGURE_BEGIN_FILLED);
-    s->AddLine(Point2F(x + w - 13, y));
-    arc(x + w, y + 20, 13, 20);
-    s->AddLine(Point2F(x + w, y + h - 11));
-    arc(x + w - 22, y + h, 22, 11);
-    s->AddLine(Point2F(x + 11, y + h));
-    arc(x, y + h - 18, 11, 18);
-    s->AddLine(Point2F(x, y + 13));
-    arc(x + 20, y, 20, 13);
+    s->BeginFigure(Point2F(r.left + tl, r.top), D2D1_FIGURE_BEGIN_FILLED);
+    s->AddLine(Point2F(r.right - tr, r.top));
+    arc(r.right, r.top + tr, tr);
+    s->AddLine(Point2F(r.right, r.bottom - br));
+    arc(r.right - br, r.bottom, br);
+    s->AddLine(Point2F(r.left + bl, r.bottom));
+    arc(r.left, r.bottom - bl, bl);
+    s->AddLine(Point2F(r.left, r.top + tl));
+    arc(r.left + tl, r.top, tl);
     s->EndFigure(D2D1_FIGURE_END_CLOSED);
     s->Close();
     return p;
 }
-static ComPtr<ID2D1PathGeometry> combine(ID2D1Geometry* a, ID2D1Geometry* b, D2D1_COMBINE_MODE mode,
-                                         const Matrix3x2F& bm) {
-    ComPtr<ID2D1PathGeometry> p;
-    ComPtr<ID2D1GeometrySink> s;
-    G.f->CreatePathGeometry(&p);
-    p->Open(&s);
-    a->CombineWithGeometry(b, mode, bm, s.Get());
-    s->Close();
-    return p;
-}
-
-static float g_hintW = 0;  // the hint slab's width
 
 static void build_geometry() {
     G.star = polygon({{300, 8}, {380, 220}, {592, 300}, {380, 380}, {300, 592}, {220, 380}, {8, 300}, {220, 220}});
@@ -859,16 +878,54 @@ static void build_geometry() {
     D2D1_STROKE_STYLE_PROPERTIES sp = D2D1::StrokeStyleProperties(D2D1_CAP_STYLE_ROUND, D2D1_CAP_STYLE_ROUND,
                                                                  D2D1_CAP_STYLE_ROUND, D2D1_LINE_JOIN_ROUND);
     G.f->CreateStrokeStyle(sp, nullptr, 0, &G.round);
+    {
+        const float dashes[2] = {3, 3};  // in stroke widths: 6 px on, 6 off at 2 px
+        D2D1_STROKE_STYLE_PROPERTIES dp = D2D1::StrokeStyleProperties(D2D1_CAP_STYLE_FLAT, D2D1_CAP_STYLE_FLAT,
+                                                                     D2D1_CAP_STYLE_FLAT, D2D1_LINE_JOIN_MITER, 10,
+                                                                     D2D1_DASH_STYLE_CUSTOM, 0);
+        G.f->CreateStrokeStyle(dp, dashes, 2, &G.dash);
+    }
+    G.card = uneven(RectF(0, 0, 422, 61), 13, 16, 12, 15);
 
-    // The hint slab: icon 20 + gap 10 + text, padding 22 and border 3 each side.
-    ComPtr<IDWriteTextLayout> l;
-    G.dw->CreateTextLayout(L"Click the logo", 14, G.tfHint.Get(), 1000, 100, &l);
-    DWRITE_TEXT_METRICS tm;
-    l->GetMetrics(&tm);
-    g_hintW = 3 + 22 + 20 + 10 + tm.widthIncludingTrailingWhitespace + 22 + 3;
-    G.stone = slab(140, 104, g_hintW, 50);
-    G.stoneHi = combine(G.stone.Get(), G.stone.Get(), D2D1_COMBINE_MODE_EXCLUDE, Matrix3x2F::Translation(0, 3));
-    G.stoneLo = combine(G.stone.Get(), G.stone.Get(), D2D1_COMBINE_MODE_EXCLUDE, Matrix3x2F::Translation(0, -5));
+    // The Mods tab's puzzle piece (the mockup's 24-box SVG path, stroked).
+    {
+        G.f->CreatePathGeometry(&G.puzzle);
+        ComPtr<ID2D1GeometrySink> s;
+        G.puzzle->Open(&s);
+        auto arc = [&](float x, float y) {
+            s->AddArc(D2D1::ArcSegment(Point2F(x, y), D2D1::SizeF(2, 2), 0, D2D1_SWEEP_DIRECTION_COUNTER_CLOCKWISE,
+                                       D2D1_ARC_SIZE_LARGE));
+        };
+        auto to = [&](float x, float y) { s->AddLine(Point2F(x, y)); };
+        s->BeginFigure(Point2F(10, 3), D2D1_FIGURE_BEGIN_HOLLOW);
+        to(14, 3), to(14, 6), arc(18, 6), to(18, 3), to(21, 3), to(21, 10), to(18, 10), arc(18, 14), to(21, 14), to(21, 21),
+            to(14, 21), to(14, 18), arc(10, 18), to(10, 21), to(3, 21), to(3, 14), to(6, 14), arc(6, 10), to(3, 10), to(3, 3);
+        s->EndFigure(D2D1_FIGURE_END_CLOSED);
+        s->Close();
+    }
+    // The drop zone's upload arrow ("M12 15V3M7 8l5-5 5 5" and the tray).
+    {
+        G.f->CreatePathGeometry(&G.upload);
+        ComPtr<ID2D1GeometrySink> s;
+        G.upload->Open(&s);
+        s->BeginFigure(Point2F(12, 15), D2D1_FIGURE_BEGIN_HOLLOW);
+        s->AddLine(Point2F(12, 3));
+        s->EndFigure(D2D1_FIGURE_END_OPEN);
+        s->BeginFigure(Point2F(7, 8), D2D1_FIGURE_BEGIN_HOLLOW);
+        s->AddLine(Point2F(12, 3));
+        s->AddLine(Point2F(17, 8));
+        s->EndFigure(D2D1_FIGURE_END_OPEN);
+        s->BeginFigure(Point2F(4, 15), D2D1_FIGURE_BEGIN_HOLLOW);
+        s->AddLine(Point2F(4, 19));
+        s->AddArc(D2D1::ArcSegment(Point2F(6, 21), D2D1::SizeF(2, 2), 0, D2D1_SWEEP_DIRECTION_COUNTER_CLOCKWISE,
+                                   D2D1_ARC_SIZE_SMALL));
+        s->AddLine(Point2F(18, 21));
+        s->AddArc(D2D1::ArcSegment(Point2F(20, 19), D2D1::SizeF(2, 2), 0, D2D1_SWEEP_DIRECTION_COUNTER_CLOCKWISE,
+                                   D2D1_ARC_SIZE_SMALL));
+        s->AddLine(Point2F(20, 15));
+        s->EndFigure(D2D1_FIGURE_END_OPEN);
+        s->Close();
+    }
 }
 
 // ---- layers rendered once per window size
@@ -1051,8 +1108,27 @@ struct View {
     double last_frame = 0, last_render = -1;
     double fast_until = 3;     // 60 fps until then (the intro, then after input)
     D2D1_RECT_F button = {}, log_link = {};
+    // The Mods page
+    bool mods = false;         // open (or opening)
+    float modsK = 0;           // 0 closed .. 1 open, linear over .8 s (eased where drawn)
+    double mods_t = -100;      // when it last opened (the contents' fade-ups, the sweep)
+    int focus = -1;            // keyboard/controller focus: 0 drop zone, 1 close, 2+ the switches
+    float scroll = 0;          // the list's scroll, scene px
+    std::wstring fresh;        // the mod just installed: at the top, glowing, popped in
+    double fresh_t = -100;
+    D2D1_RECT_F tab = {}, close = {}, drop = {}, list = {};
+    std::vector<D2D1_RECT_F> switches, summaries;
+    std::vector<bool> cut;     // a card's summary is cut off (full text on hover)
+    int tip = -1;              // the card whose summary tooltip shows
+    float tip_x = 0, tip_y = 0;
+    bool drag_over = false;    // a file is being dragged over the window
+    bool inst_handled = true;  // the last install's result has been taken in
+    double inst_done_t = -100; // when it finished (the bar shows "Done" for .25 s)
+    float list_h = 0, content_h = 0;  // the list's visible and full height (scrolling)
+    bool keys = false;         // last input was keyboard/controller: focus rings show
 };
 static View V;
+static std::vector<ModInfo> g_mods;  // installed, in mods.ini's order
 static void fast(double secs) { V.fast_until = std::max(V.fast_until, now_s() + secs); }
 
 // Seconds since the menu opened; huge when there's no animation.
@@ -1115,6 +1191,337 @@ static float text_height(const std::wstring& s, IDWriteTextFormat* f, float w, f
     return m.height;
 }
 
+// ------------------------------------------------------------------------
+// The Mods page: the MODS tab on the right edge and the panel that slides in
+// (the mockup's .mods-tab and .mods). Rects for the mouse are in scene units.
+
+static std::map<std::wstring, float> g_knob;  // each switch's knob, 0 off .. 1 on (.2 s)
+
+// A text layout with letter spacing (the tab's MODS, the INSTALLED label).
+static ComPtr<IDWriteTextLayout> spaced(const std::wstring& s, IDWriteTextFormat* f, float spacing) {
+    ComPtr<IDWriteTextLayout> l;
+    G.dw->CreateTextLayout(s.c_str(), (UINT32)s.size(), f, 1000, 100, &l);
+    ComPtr<IDWriteTextLayout1> l1;
+    if (l && SUCCEEDED(l.As(&l1))) l1->SetCharacterSpacing(0, spacing, 0, {0, (UINT32)s.size()});
+    return l;
+}
+
+static void focus_ring(D2D1_RECT_F r, float rad) {  // outline: 3px teal, 3px out
+    if (!V.keys) return;  // only while moving with the keyboard or a controller
+    G.dc->DrawRoundedRectangle(
+        D2D1::RoundedRect(RectF(r.left - 4.5f, r.top - 4.5f, r.right + 4.5f, r.bottom + 4.5f), rad + 4.5f, rad + 4.5f),
+        brush(rgb(0x3fd0d8)).Get(), 3);
+}
+
+static void render_mods(double t, float /*mk*/) {
+    ID2D1DeviceContext2* dc = G.dc.Get();
+    Matrix3x2F R = root_m();
+    float lin = V.reduced ? (V.mods ? 1.f : 0.f) : V.modsK;  // 0..1, linear over .8 s
+    float tsec = lin * .8f;
+    float open_s = V.reduced ? 1e6f : (float)(t - V.mods_t);  // since it last opened
+    size_t n = g_mods.size();
+    static double lastT = t;
+    float dt = (float)std::min(.1, std::max(0.0, t - lastT));
+    lastT = t;
+    dc->SetTransform(R);
+
+    // ---- The tab (slides off to the right as the page opens: 130%, .45 s).
+    {
+        float tk = V.reduced ? lin : ease_pop(clamp01(tsec / .45f));
+        ComPtr<IDWriteTextLayout> word = spaced(L"MODS", G.tfTab.Get(), 17 * .14f);
+        DWRITE_TEXT_METRICS m;
+        word->GetMetrics(&m);
+        float len = m.widthIncludingTrailingWhitespace, lh = m.height;
+        bool hov = V.hover == 5;
+        float w = 1 + 14 + 24 + (hov ? 20 : 12);
+        float h = 1 + 18 + 24 + 10 + len + (n ? 10 + 24 : 0) + 18 + 1;
+        float x = W - w + w * 1.3f * tk, y = H / 2 - h / 2;
+        if (tk < 1) {
+            for (int i = 5; i >= 1; i--) {  // teal glow (0 0 22px; 32px hovered)
+                float g = i * (hov ? 6.4f : 4.4f);
+                dc->FillRoundedRectangle(D2D1::RoundedRect(RectF(x - g, y - g, W + 40, y + h + g), 18 + g, 18 + g),
+                                         brush(rgb(0x3fd0d8, hov ? .07f : .04f)).Get());
+            }
+            ID2D1Brush* bg = cached("modsTab", [] {
+                return linear(Point2F(0, 0), Point2F(0, 1), {{0, rgb(0x26387a, .8f)}, {1, rgb(0x121b3a, .85f)}});
+            });
+            bg->SetTransform(Matrix3x2F::Scale(1, h) * Matrix3x2F::Translation(0, y));
+            D2D1_ROUNDED_RECT rr = D2D1::RoundedRect(RectF(x, y, W + 40, y + h), 18, 18);
+            dc->FillRoundedRectangle(rr, bg);
+            D2D1_ROUNDED_RECT bd = D2D1::RoundedRect(RectF(x + .5f, y + .5f, W + 40, y + h - .5f), 17.5f, 17.5f);
+            dc->DrawRoundedRectangle(bd, brush(rgb(0xf3cf6b, .55f)).Get(), 1);
+            float cx = x + 1 + 14 + 12;
+            dc->SetTransform(Matrix3x2F::Translation(cx - 12, y + 1 + 18) * R);
+            strokeG(G.puzzle.Get(), brush(rgb(0xffe7a3)).Get(), 2, G.round.Get());
+            // MODS, read bottom to top (vertical-rl turned 180 degrees).
+            float ty = y + 1 + 18 + 24 + 10;
+            dc->SetTransform(Matrix3x2F::Rotation(-90) * Matrix3x2F::Translation(cx - lh / 2, ty + len) * R);
+            dc->DrawTextLayout(Point2F(0, 0), word.Get(), brush(rgb(0xffe7a3)).Get());
+            dc->SetTransform(R);
+            if (n) {
+                std::wstring c = std::to_wstring(n);
+                float cw = 0, ch = text_height(c, G.tfBadge.Get(), 1000, &cw);
+                float bw = std::max(24.f, cw + 12), by = ty + len + 10;
+                dc->FillRoundedRectangle(D2D1::RoundedRect(RectF(cx - bw / 2, by, cx + bw / 2, by + 24), 12, 12),
+                                         brush(rgb(0x3fd0d8)).Get());
+                draw_text(c, G.tfBadge.Get(), cx - bw / 2, by + 12 - ch / 2, bw, ch, rgb(0x10223a),
+                          DWRITE_TEXT_ALIGNMENT_CENTER);
+            }
+            if (V.focus == -2 && !V.mods) focus_ring(RectF(x, y, W - 6, y + h), 18);
+        }
+        V.tab = tk < .5f ? RectF(x, y, W, y + h) : RectF();
+    }
+
+    // ---- The panel: 470 wide, 24 from the top, right and bottom. Slides in
+    // over .6 s, fades in over .4 s.
+    float pk = V.reduced ? lin : ease_pop(clamp01(tsec / .6f));
+    float po = V.reduced ? lin : clamp01(tsec / .4f);
+    V.close = V.drop = V.list = RectF();
+    V.switches.assign(n, RectF());
+    V.summaries.assign(n, RectF());
+    V.cut.assign(n, false);
+    if (po <= 0) return;
+    float px = 786 + (470 + 48) * (1 - pk), top = 24, bot = H - 24, pw = 470;
+    dc->PushLayer(D2D1::LayerParameters1(D2D1::InfiniteRect(), nullptr, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE,
+                                         Matrix3x2F::Identity(), po), nullptr);
+    D2D1_ROUNDED_RECT panel = D2D1::RoundedRect(RectF(px, top, px + pw, bot), 24, 24);
+    auto grow = [](D2D1_ROUNDED_RECT r, float g, float dy = 0) {
+        return D2D1::RoundedRect(RectF(r.rect.left - g, r.rect.top - g + dy, r.rect.right + g, r.rect.bottom + g + dy),
+                                 r.radiusX + g, r.radiusY + g);
+    };
+    for (int i = 6; i >= 1; i--)  // drop shadow (0 24px 60px) and the purple glow (44px)
+        dc->FillRoundedRectangle(grow(panel, i * 7.f, 24 * i / 6.f), brush(rgb(0x040818, .07f)).Get());
+    for (int i = 5; i >= 1; i--) dc->FillRoundedRectangle(grow(panel, i * 8.f), brush(rgb(0x8b5bd2, .028f)).Get());
+    dc->DrawRoundedRectangle(grow(panel, 2), brush(rgb(0x121b3a, .6f)).Get(), 4);  // the 4px ring
+    ID2D1Brush* bg = cached("modsPanel", [] {
+        return linear(Point2F(0, 0), Point2F(0, 1), {{0, rgb(0x1f2b4f, .95f)}, {1, rgb(0x0e1530, .97f)}});
+    });
+    bg->SetTransform(Matrix3x2F::Scale(1, bot - top) * Matrix3x2F::Translation(0, top));
+    dc->FillRoundedRectangle(panel, bg);
+    // The light sweep across it as it opens (.25 s in, 1.1 s).
+    if (V.mods && !V.reduced && open_s > .25f && open_s < 1.35f) {
+        float k = ease_out((open_s - .25f) / 1.1f);
+        float cx = px + pw / 2 + pw * (-1.2f + 2.4f * k), cy = (top + bot) / 2;
+        float dx = .966f, dy = .259f, half = 314;  // 105deg, the gradient line's half length
+        ComPtr<ID2D1LinearGradientBrush> sw = linear(Point2F(cx - dx * half, cy - dy * half), Point2F(cx + dx * half, cy + dy * half),
+                                                     {{.35f, ColorF(1, 1, 1, 0)}, {.5f, ColorF(1, 1, 1, .14f)}, {.65f, ColorF(1, 1, 1, 0)}});
+        dc->FillRoundedRectangle(panel, sw.Get());
+    }
+    dc->DrawRoundedRectangle(grow(panel, -1), brush(rgb(0xf3cf6b)).Get(), 2);
+
+    // The contents fade up one group after another (.2, .3, .4, .5 s).
+    auto group = [&](float delay) {
+        float k = V.mods && !V.reduced ? ease_pop(clamp01((open_s - delay) / .5f)) : 1.f;
+        dc->SetTransform(Matrix3x2F::Translation(0, 14 * (1 - k)) * R);
+        dc->PushLayer(D2D1::LayerParameters1(D2D1::InfiniteRect(), nullptr, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE,
+                                             Matrix3x2F::Identity(), k), nullptr);
+        return Matrix3x2F::Translation(0, 14 * (1 - k)) * R;
+    };
+    float L = px + 24, Rr = px + pw - 24, CW = Rr - L;
+
+    // Head: the title and the close button; the line under it.
+    Matrix3x2F M = group(.2f);
+    {
+        float y = top + 2 + 22;
+        float th = text_height(L"Mods", G.tfMTitle.Get(), 300);
+        draw_text(L"Mods", G.tfMTitle.Get(), L, y + 22 - th / 2 + 3, 300, th, rgb(0x6b4410));
+        draw_text(L"Mods", G.tfMTitle.Get(), L, y + 22 - th / 2, 300, th, rgb(0xffe7a3));
+        D2D1_ELLIPSE c = D2D1::Ellipse(Point2F(Rr - 22, y + 22), 22, 22);
+        dc->FillEllipse(c, brush(V.hover == 6 ? rgb(0x24335f) : rgb(0x121b3a, .6f)).Get());
+        dc->DrawEllipse(D2D1::Ellipse(c.point, 21, 21), brush(rgb(0xf3cf6b, .6f)).Get(), 2);
+        float a = 5;
+        dc->DrawLine(Point2F(c.point.x - a, c.point.y - a), Point2F(c.point.x + a, c.point.y + a), brush(rgb(0xffe7a3)).Get(), 2.2f, G.round.Get());
+        dc->DrawLine(Point2F(c.point.x + a, c.point.y - a), Point2F(c.point.x - a, c.point.y + a), brush(rgb(0xffe7a3)).Get(), 2.2f, G.round.Get());
+        if (V.focus == 1) focus_ring(RectF(Rr - 44, y, Rr, y + 44), 22);
+        V.close = RectF(Rr - 44, y, Rr, y + 44);
+        std::wstring sub = L"Add mods from your own .zip files. Changes apply the next time you press Play.";
+        draw_text(sub, G.tfMSub.Get(), L, y + 44 + 6, CW, 100, rgb(0xc6d0e6));
+    }
+    dc->PopLayer();
+    float y = top + 2 + 22 + 44 + 6 + text_height(L"Add mods from your own .zip files. Changes apply the next time you press Play.",
+                                                   G.tfMSub.Get(), CW) + 14;
+
+    // The drop zone, the progress and any error.
+    std::wstring ifile, istage, ierr;
+    float iprog = 0;
+    bool irun;
+    {
+        std::lock_guard<std::mutex> lk(g_install.m);
+        irun = g_install.running;
+        ifile = g_install.file, istage = g_install.stage, ierr = g_install.error, iprog = g_install.progress;
+    }
+    bool showProg = irun || (ierr.empty() && t - V.inst_done_t < .35);
+    M = group(.3f);
+    {
+        D2D1_RECT_F r = RectF(L, y, Rr, y + 76);
+        bool lit = !irun && (V.hover == 7 || V.drag_over);
+        if (irun) dc->PushLayer(D2D1::LayerParameters1(D2D1::InfiniteRect(), nullptr, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE,
+                                                        Matrix3x2F::Identity(), .5f), nullptr);
+        dc->FillRoundedRectangle(D2D1::RoundedRect(r, 16, 16), brush(rgb(0x3fd0d8, lit ? .14f : .06f)).Get());
+        dc->DrawRoundedRectangle(D2D1::RoundedRect(RectF(L + 1, y + 1, Rr - 1, y + 75), 15, 15),
+                                 brush(lit ? rgb(0x3fd0d8) : rgb(0xf3cf6b, .6f)).Get(), 2, G.dash.Get());
+        dc->SetTransform(Matrix3x2F::Scale(1.25f, 1.25f) * Matrix3x2F::Translation(L + 2 + 18, y + 38 - 15) * M);
+        strokeG(G.upload.Get(), brush(rgb(0x3fd0d8)).Get(), 2, G.round.Get());
+        dc->SetTransform(M);
+        float tx = L + 2 + 18 + 30 + 14;
+        float h1 = text_height(L"Install from .zip", G.tfDrop.Get(), Rr - tx);
+        std::wstring hintLine = L"Click to choose a file, or drop a .zip here";
+        float h2 = text_height(hintLine, G.tfDropSmall.Get(), Rr - tx - 18);
+        float ty = y + 38 - (h1 + h2) / 2;
+        draw_text(L"Install from .zip", G.tfDrop.Get(), tx, ty, Rr - tx, h1, rgb(0xffe7a3));
+        draw_text(hintLine, G.tfDropSmall.Get(), tx, ty + h1, Rr - tx - 18, h2, rgb(0xc6d0e6));
+        if (irun) dc->PopLayer();
+        if (V.focus == 0) focus_ring(r, 16);
+        V.drop = r;
+        y += 76;
+        if (showProg) {
+            y += 12;
+            float rh = text_height(L"Ag", G.tfMProg.Get(), 1000);
+            float bh = 1 + 14 + rh + 8 + 14 + 8 + rh + 14 + 1;
+            D2D1_ROUNDED_RECT box = D2D1::RoundedRect(RectF(L, y, Rr, y + bh), 14, 14);
+            dc->FillRoundedRectangle(box, brush(rgb(0x121b3a, .7f)).Get());
+            dc->DrawRoundedRectangle(grow(box, -.5f), brush(rgb(0xf3cf6b, .3f)).Get(), 1);
+            float ix = L + 17, iw = CW - 34, iy = y + 15;
+            float pct = irun ? iprog : 100;
+            std::wstring ps = std::to_wstring((int)(pct + .5f)) + L"%";
+            draw_text(ps, G.tfMProg.Get(), ix, iy, iw, rh, rgb(0xe6ebf5), DWRITE_TEXT_ALIGNMENT_TRAILING);
+            draw_text(ifile, G.tfMProg.Get(), ix, iy, iw - 60, rh, rgb(0xe6ebf5));
+            float by = iy + rh + 8;
+            D2D1_ROUNDED_RECT bar = D2D1::RoundedRect(RectF(ix + 1, by + 1, ix + iw - 1, by + 13), 6, 6);
+            dc->FillRoundedRectangle(bar, brush(rgb(0x121b3a)).Get());
+            float fw = (iw - 4) * clamp01(pct / 100);
+            if (fw > 1)
+                dc->FillRoundedRectangle(D2D1::RoundedRect(RectF(ix + 2, by + 2, ix + 2 + fw, by + 12), 5, 5),
+                                         brush(rgb(0x3fd0d8)).Get());
+            dc->DrawRoundedRectangle(bar, brush(rgb(0xf3cf6b)).Get(), 2);
+            draw_text(irun ? istage : L"Done", G.tfMProg.Get(), ix, by + 14 + 8, iw, rh, rgb(0xe6ebf5));
+            y += bh;
+        }
+        if (!irun && !ierr.empty()) {
+            y += 12;
+            float eh = text_height(ierr, G.tfMErr.Get(), CW);
+            draw_text(ierr, G.tfMErr.Get(), L, y, CW, eh, rgb(0xffb4b4));
+            y += eh;
+        }
+    }
+    dc->PopLayer();
+
+    // The footer (measured first: the list fills the space above it).
+    std::wstring foot = L"Mods are stored in %APPDATA%\\Wonderpark\\mods. Only install mods you trust.";
+    float fh = text_height(foot, G.tfMFoot.Get(), CW);
+    float footTop = bot - 2 - (12 + fh + 18);
+
+    // The list of installed mods (scrolls).
+    M = group(.4f);
+    {
+        D2D1_RECT_F lr = RectF(px + 2, y, px + pw - 2, footTop);
+        V.list = lr;
+        float lblH = 0;
+        ComPtr<IDWriteTextLayout> lbl = spaced(L"INSTALLED", G.tfMLabel.Get(), 11.5f * .12f);
+        DWRITE_TEXT_METRICS lm;
+        lbl->GetMetrics(&lm);
+        lblH = lm.height;
+        const float cardH = 61, gap = 10;
+        float content = 14 + 4 + lblH + gap + (n ? n * (cardH + gap) - gap : 20) + 10;
+        V.list_h = footTop - y;
+        V.content_h = content;
+        V.scroll = std::max(0.f, std::min(V.scroll, content - V.list_h));
+        dc->PushAxisAlignedClip(lr, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+        float cy = y + 14 - V.scroll;
+        dc->DrawTextLayout(Point2F(L, cy + 4), lbl.Get(), brush(rgb(0xc6d0e6)).Get());
+        cy += 4 + lblH + gap;
+        if (!n) draw_text(L"No mods yet.", G.tfStatus.Get(), L, cy + 6, CW, 30, rgb(0xaab6cf));
+        for (size_t i = 0; i < n; i++, cy += cardH + gap) {
+            const ModInfo& md = g_mods[i];
+            // The switch's knob slides over .2 s.
+            float want = md.enabled ? 1.f : 0.f;
+            auto it = g_knob.find(md.id);
+            float kv = it == g_knob.end() || V.reduced ? want : it->second;
+            kv = kv < want ? std::min(want, kv + dt / .2f) : std::max(want, kv - dt / .2f);
+            g_knob[md.id] = kv;
+            if (kv != want) fast(.3);
+            if (cy > footTop || cy + cardH < y) continue;
+            bool fresh = !V.fresh.empty() && md.id == V.fresh;
+            float fk = fresh && !V.reduced ? ease_pop(clamp01(since(V.fresh_t, t) / .5f)) : 1.f;
+            float sc = .88f + .12f * fk;
+            Matrix3x2F C = Matrix3x2F::Translation(L, cy) * Matrix3x2F::Scale(sc, sc, Point2F(L + CW / 2, cy + cardH / 2)) * M;
+            if (fk < 1)
+                dc->PushLayer(D2D1::LayerParameters1(D2D1::InfiniteRect(), nullptr, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE,
+                                                     Matrix3x2F::Identity(), fk), nullptr);
+            bool hov = V.hover == 100 + (int)i || V.tip == (int)i;
+            if (fresh)
+                for (int g = 4; g >= 1; g--) {  // gold glow (0 0 18px)
+                    dc->SetTransform(Matrix3x2F::Scale(1 + g * 4.5f / 211, 1 + g * 4.5f / 30.5f, Point2F(211, 30.5f)) * C);
+                    fillG(G.card.Get(), brush(rgb(0xf3cf6b, .06f)).Get());
+                }
+            dc->SetTransform(Matrix3x2F::Translation(0, 3) * C);
+            fillG(G.card.Get(), brush(rgb(0x080c1e, .45f)).Get());
+            dc->SetTransform(C);
+            ID2D1Brush* cb = cached("modCard", [] {
+                return linear(Point2F(0, 0), Point2F(0, 61), {{0, rgb(0x2c3d70, .7f)}, {1, rgb(0x1e2b52, .75f)}});
+            });
+            fillG(G.card.Get(), cb);
+            dc->DrawLine(Point2F(14, 1.5f), Point2F(422 - 16, 1.5f), brush(ColorF(1, 1, 1, .08f)).Get(), 1);
+            strokeG(G.card.Get(), brush(fresh ? rgb(0xf3cf6b) : rgb(0xf3cf6b, hov ? .6f : .32f)).Get(), 1.5f);
+            // Title and one-line summary (cut off with "…"; full text on hover).
+            float tx = 1.5f + 16, tw = 422 - 3 - 16 - 12 - 52 - 12;
+            float nh = text_height(L"Ag", G.tfModName.Get(), 1000), sh = text_height(L"Ag", G.tfModSum.Get(), 1000);
+            float ty = cardH / 2 - (nh + 3 + sh) / 2;
+            float a = md.enabled ? 1.f : .55f;
+            draw_text(md.name, G.tfModName.Get(), tx, ty, tw, nh, rgb(0xffe7a3, a));
+            draw_text(md.summary, G.tfModSum.Get(), tx, ty + nh + 3, tw, sh, rgb(0xb9c4dc, a));
+            float full = 0;
+            text_height(md.summary, G.tfModSum.Get(), 100000, &full);
+            V.cut[i] = full > tw + .5f;
+            V.summaries[i] = RectF(L + tx, cy + ty + nh + 3, L + tx + tw, cy + ty + nh + 3 + sh);
+            // The switch: 52 x 30, the knob slides right and turns gold.
+            float sx = 422 - 1.5f - 12 - 52, sy = cardH / 2 - 15;
+            D2D1_ROUNDED_RECT tr = D2D1::RoundedRect(RectF(sx, sy, sx + 52, sy + 30), 15, 15);
+            dc->FillRoundedRectangle(tr, brush(mix(rgb(0x3a466b), rgb(0x3fd0d8), kv)).Get());
+            dc->DrawRoundedRectangle(grow(tr, -1), brush(mix(rgb(0x5d6a8a), rgb(0xe8fdff), kv)).Get(), 2);
+            float kx = sx + 4 + 11 + 22 * kv, ky = sy + 4 + 11;
+            fill_ellipse(kx, ky + 2, 11, brush(rgb(0x10182f, .4f)).Get());
+            fill_ellipse(kx, ky, 11, brush(mix(rgb(0xb6c1d6), rgb(0xf3cf6b), kv)).Get());
+            draw_sparkle(C, kx - 5.5f, ky - 5.5f, 11, mix(rgb(0x7f8daa), rgb(0xa8741d), kv), 1, 1);
+            dc->SetTransform(C);
+            if (V.focus == 2 + (int)i) focus_ring(RectF(sx, sy, sx + 52, sy + 30), 15);
+            V.switches[i] = RectF(L + sx, cy + sy, L + sx + 52, cy + sy + 30);
+            if (fk < 1) dc->PopLayer();
+        }
+        dc->PopAxisAlignedClip();
+        // A thin scroll bar when the list is longer than its space.
+        if (content > V.list_h + 1) {
+            float th = std::max(30.f, V.list_h * V.list_h / content);
+            float ty = y + (V.list_h - th) * (V.scroll / (content - V.list_h));
+            dc->SetTransform(M);
+            dc->FillRoundedRectangle(D2D1::RoundedRect(RectF(px + pw - 12, ty + 4, px + pw - 7, ty + th - 4), 2.5f, 2.5f),
+                                     brush(rgb(0xf3cf6b, .5f)).Get());
+        }
+    }
+    dc->PopLayer();
+
+    M = group(.5f);
+    dc->DrawLine(Point2F(px + 2, footTop + .5f), Point2F(px + pw - 2, footTop + .5f), brush(rgb(0xf3cf6b, .2f)).Get(), 1);
+    draw_text(foot, G.tfMFoot.Get(), L, footTop + 12, CW, fh, rgb(0x8f9cbd));
+    dc->PopLayer();
+
+    // The tooltip with a cut-off summary's full text.
+    if (V.tip >= 0 && V.tip < (int)n && V.cut[V.tip]) {
+        dc->SetTransform(R);
+        const std::wstring& s = g_mods[V.tip].summary;
+        float ww = 0, hh = text_height(s, G.tfTip.Get(), 300, &ww);
+        float bw = std::min(300.f, ww) + 20, bh = hh + 14;
+        float bx = std::min(V.tip_x, px + pw - 12 - bw), by = V.tip_y + 20;
+        if (by + bh > H - 8) by = V.tip_y - 10 - bh;
+        D2D1_ROUNDED_RECT tb = D2D1::RoundedRect(RectF(bx, by, bx + bw, by + bh), 10, 10);
+        dc->FillRoundedRectangle(tb, brush(rgb(0x121b3a, .97f)).Get());
+        dc->DrawRoundedRectangle(grow(tb, -.5f), brush(rgb(0xf3cf6b, .6f)).Get(), 1);
+        draw_text(s, G.tfTip.Get(), bx + 10, by + 7, 300, hh, rgb(0xe6ebf5));
+    }
+    dc->PopLayer();
+    dc->SetTransform(R);
+}
+
 static void render(double t, const Shared& s) {
     ID2D1DeviceContext2* dc = G.dc.Get();
     Matrix3x2F R = root_m();
@@ -1124,6 +1531,8 @@ static void render(double t, const Shared& s) {
     float menuK = V.menu ? clamp01(tm / 1.4f) : 0;  // the emblem's zoom transition
     float menuE = ease_pop(menuK);
     auto fade = [&](float dur, float delay = 0) { return V.menu ? clamp01((tm - delay) / dur) : 0.f; };
+    // The Mods page: 0 closed .. 1 open (the emblem's shift, .8 s eased).
+    float mk = V.reduced ? (V.mods ? 1.f : 0.f) : ease_pop(V.modsK);
 
     dc->SetTransform(Matrix3x2F::Identity());
     dc->Clear(rgb(0x060a1c));
@@ -1193,6 +1602,7 @@ static void render(double t, const Shared& s) {
     // Light rays (title 1, menu .45 over 1 s), turning once in 90 s.
     {
         float op = 1 - .55f * fade(1);
+        op = op + (.2f - op) * mk;  // .2 with the Mods page open
         float rot = V.reduced ? 0 : (float)std::fmod(t / 90 * 360, 360.0);
         dc->SetTransform(Matrix3x2F::Rotation(rot, Point2F(640, 360)) * R);
         ID2D1Brush* rb = cached("rays", [] {
@@ -1212,6 +1622,8 @@ static void render(double t, const Shared& s) {
             float f = since(V.done_t, t);
             if (f < 1.6f) flash = f < .4f ? ease_out(f / .4f) : 1 - ease_out((f - .4f) / 1.2f);
         }
+        op *= 1 - mk;  // gone with the Mods page open
+        flash *= 1 - mk;
         dc->SetTransform(R);
         D2D1_RECT_F r = RectF(546, -24, 734, 384);
         dc->DrawBitmap(G.beam.Get(), r, op);
@@ -1265,8 +1677,12 @@ static void render(double t, const Shared& s) {
     float introE = ease_pop(introK);
     float introOp = V.reduced ? 1 : ease_pop(clamp01(introK / .6f));
     float introS = .7f + .3f * introE;
+    // With the Mods page open the stage slides left and shrinks (the mockup's
+    // .shift: translateX(-250px) scale(.82) about the middle).
+    Matrix3x2F SH = Matrix3x2F::Scale(1 - .18f * mk, 1 - .18f * mk, Point2F(640, 360)) *
+                    Matrix3x2F::Translation(-250 * mk, 0);
     Matrix3x2F S = Matrix3x2F::Scale(introS, introS, Point2F(300, 300)) *
-                   Matrix3x2F::Translation(340, 60 + 50 * (1 - introE)) * R;
+                   Matrix3x2F::Translation(340, 60 + 50 * (1 - introE)) * SH * R;
     // Orbiting sparkles (title only).
     {
         float op = (1 - fade(.6f)) * introOp;
@@ -1458,48 +1874,51 @@ static void render(double t, const Shared& s) {
                          V.reduced ? 1 : .6f + .4f * w2);
         }
     }
+    // Dimmed with the Mods page open (brightness .65).
+    if (mk > 0) {
+        dc->SetTransform(E);
+        fillG(G.starClip.Get(), brush(rgb(0x060a1c, .35f * mk)).Get());
+    }
     if (introOp < 1) dc->PopLayer();
 
-    // ---- The stone "Click the logo" hint (fades out with the menu).
+    // ---- The "Click the logo" hint: a glass pill in the top-left corner, a
+    // label only (not clickable). Glows gently; fades with the menu and the
+    // Mods page.
     {
-        float op = 1 - fade(.5f);
+        float op = (1 - fade(.5f)) * (1 - mk);
         if (op > 0) {
-            if (!V.menu && !V.reduced) op *= 1 - .45f * wave(t, 2.4f);
-            float dy = V.hover == 2 && V.pressed ? 4 : 0;
-            Matrix3x2F M = Matrix3x2F::Translation(0, dy) * R;
+            if (!V.menu && !V.reduced) op *= .78f + .22f * wave(t, 3);
+            dc->SetTransform(R);
             dc->PushLayer(D2D1::LayerParameters1(D2D1::InfiniteRect(), nullptr, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE,
                                                  Matrix3x2F::Identity(), op), nullptr);
-            for (int i = 0; i < 4; i++) {  // the soft shadow below
-                dc->SetTransform(Matrix3x2F::Scale(1 + i * .015f, 1 + i * .04f, Point2F(140 + g_hintW / 2, 129)) *
-                                 Matrix3x2F::Translation(0, 10) * M);
-                fillG(G.stone.Get(), brush(rgb(0x0a1024, .12f)).Get());
+            float tw = 0, th = text_height(L"Click the logo", G.tfPill.Get(), 1000, &tw);
+            float x = 32, y = 28, h = 1 + 9 + th + 9 + 1, w = 1 + 12 + 18 + 10 + tw + 18 + 1, cy = y + h / 2;
+            for (int i = 5; i >= 1; i--) {  // the purple glow (box-shadow 0 0 22px)
+                float g = i * 4.4f;
+                dc->FillRoundedRectangle(D2D1::RoundedRect(RectF(x - g, y - g, x + w + g, y + h + g), h / 2 + g, h / 2 + g),
+                                         brush(rgb(0x8b5bd2, .055f)).Get());
             }
-            dc->SetTransform(Matrix3x2F::Translation(0, 6) * M);
-            fillG(G.stone.Get(), brush(rgb(0x4a5677)).Get());
-            dc->SetTransform(M);
-            fillG(G.stone.Get(), cached("stone", [] {
-                                 return linear(Point2F(0, 104), Point2F(0, 154), {{0, rgb(0xb6c1d6)}, {1, rgb(0x8f9cb7)}});
-                             }));
-            float x0 = 140, w0 = g_hintW;
-            fill_ellipse(x0 + w0 * .18f, 104 + 50 * .3f, 2, brush(ColorF(1, 1, 1, .3f)).Get());
-            fill_ellipse(x0 + w0 * .72f, 104 + 50 * .62f, 2, brush(rgb(0x283458, .28f)).Get());
-            fill_ellipse(x0 + w0 * .46f, 104 + 50 * .82f, 1.5f, brush(ColorF(1, 1, 1, .22f)).Get());
-            fill_ellipse(x0 + w0 * .88f, 104 + 50 * .24f, 1.5f, brush(rgb(0x283458, .22f)).Get());
-            fillG(G.stoneHi.Get(), brush(ColorF(1, 1, 1, .4f)).Get());
-            fillG(G.stoneLo.Get(), brush(rgb(0x283458, .32f)).Get());
-            strokeG(G.stone.Get(), brush(rgb(0x5d6a8a)).Get(), 3);
-            if (V.hover == 2) fillG(G.stone.Get(), brush(ColorF(1, 1, 1, .08f)).Get());
-            dc->SetTransform(Matrix3x2F::Scale(20 / 24.f, 20 / 24.f) * Matrix3x2F::Translation(165, 119) * M);
-            fillG(G.hintStar.Get(), gold);
-            strokeG(G.hintStar.Get(), brush(rgb(0x1b2440)).Get(), 1.4f, G.round.Get());
-            dc->SetTransform(M);
-            float th = text_height(L"Click the logo", G.tfHint.Get(), 400);
-            draw_text(L"Click the logo", G.tfHint.Get(), 195, 129 - th / 2 + 1, 400, 50, ColorF(1, 1, 1, .55f));
-            draw_text(L"Click the logo", G.tfHint.Get(), 195, 129 - th / 2, 400, 50, rgb(0x1b2440));
+            D2D1_ROUNDED_RECT pill = D2D1::RoundedRect(RectF(x, y, x + w, y + h), h / 2, h / 2);
+            dc->FillRoundedRectangle(pill, brush(rgb(0x121b3a, .55f)).Get());
+            D2D1_ROUNDED_RECT in = D2D1::RoundedRect(RectF(x + 2, y + 2, x + w - 2, y + h - 2), h / 2 - 2, h / 2 - 2);
+            dc->DrawRoundedRectangle(in, brush(ColorF(1, 1, 1, .05f)).Get(), 3);
+            D2D1_ROUNDED_RECT bd = D2D1::RoundedRect(RectF(x + .5f, y + .5f, x + w - .5f, y + h - .5f), h / 2 - .5f, h / 2 - .5f);
+            dc->DrawRoundedRectangle(bd, brush(rgb(0xf3cf6b, .4f)).Get(), 1);
+            float w2 = V.reduced ? 1 : wave(t, 2.2f);
+            draw_sparkle(R, x + 13, cy - 9, 18, rgb(0xfff4cf), V.reduced ? 1 : .15f + .85f * w2, V.reduced ? 1 : .6f + .4f * w2);
+            dc->SetTransform(R);
+            draw_text(L"Click the logo", G.tfPill.Get(), x + 13 + 18 + 10, cy - th / 2, tw + 4, th, rgb(0xffe7a3));
             dc->PopLayer();
         }
     }
 
+    // Status and the legal line fade out with the Mods page open.
+    bool uiLayer = mk > 0;
+    if (uiLayer) {
+        dc->SetTransform(R);
+        dc->PushLayer(D2D1::LayerParameters1(D2D1::InfiniteRect(), nullptr, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE,
+                                             Matrix3x2F::Identity(), 1 - mk), nullptr);
+    }
     // ---- Status, bottom left (40, bottom 36, 340 wide): lines stacked upwards.
     {
         dc->SetTransform(R);
@@ -1589,6 +2008,8 @@ static void render(double t, const Shared& s) {
         float h = text_height(legal, G.tfLegal.Get(), 420);
         draw_text(legal, G.tfLegal.Get(), W - 40 - 420, H - 40 - h, 420, 100, rgb(0xd0d8ea), DWRITE_TEXT_ALIGNMENT_TRAILING);
     }
+    if (uiLayer) dc->PopLayer();
+    render_mods(t, mk);
     // Confetti for 4.5 s after the build finishes.
     {
         float f = since(V.done_t, t);
@@ -1673,6 +2094,178 @@ static void open_menu() {
     V.menu_t = now_s();
     fast(2.5);
 }
+
+// ---- The Mods page
+
+static void open_mods() {
+    if (V.mods) return;
+    g_mods = mods_list();
+    V.mods = true;
+    V.mods_t = now_s();
+    V.focus = 0;  // the drop zone
+    V.scroll = 0;
+    V.tip = -1;
+    fast(2);
+}
+
+static void close_mods() {
+    if (!V.mods) return;
+    V.mods = false;
+    V.fresh.clear();
+    V.focus = -1;
+    V.tip = -1;
+    fast(1.2);
+}
+
+static void toggle_mod(size_t i) {
+    if (i >= g_mods.size()) return;
+    g_mods[i].enabled = !g_mods[i].enabled;
+    mods_save(g_mods);
+    fast(.5);
+}
+
+static void start_install(const std::wstring& path) {
+    {
+        std::lock_guard<std::mutex> lk(g_install.m);
+        if (g_install.running) return;
+    }
+    V.inst_handled = false;
+    mods_install_start(path, wake);
+    fast(1);
+}
+
+static std::wstring g_test_zip;  // --test-zip: the file picker answers with this
+
+static void pick_zip() {
+    {
+        std::lock_guard<std::mutex> lk(g_install.m);
+        if (g_install.running) return;
+    }
+    if (!g_test_zip.empty()) {
+        start_install(g_test_zip);
+        return;
+    }
+    ComPtr<IFileOpenDialog> d;
+    if (FAILED(CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&d)))) return;
+    COMDLG_FILTERSPEC types[] = {{L"Wonderpark mod (*.zip)", L"*.zip"}, {L"All files", L"*.*"}};
+    d->SetFileTypes(2, types);
+    d->SetTitle(L"Install a mod from a .zip");
+    if (FAILED(d->Show(g_wnd))) return;
+    ComPtr<IShellItem> it;
+    PWSTR path = nullptr;
+    if (SUCCEEDED(d->GetResult(&it)) && SUCCEEDED(it->GetDisplayName(SIGDN_FILESYSPATH, &path))) {
+        start_install(path);
+        CoTaskMemFree(path);
+    }
+}
+
+// Each frame: the page's open amount, and an install's result.
+static void update_mods(double t, float dt) {
+    float want = V.mods ? 1.f : 0.f;
+    if (V.modsK != want) {
+        V.modsK = want > V.modsK ? std::min(1.f, V.modsK + dt / .8f) : std::max(0.f, V.modsK - dt / .8f);
+        fast(.2);
+    }
+    bool fin;
+    std::wstring id;
+    {
+        std::lock_guard<std::mutex> lk(g_install.m);
+        fin = g_install.finished;
+        id = g_install.new_id;
+        if (g_install.running) fast(.2);
+    }
+    if (fin && !V.inst_handled) {
+        V.inst_handled = true;
+        V.inst_done_t = t;
+        if (!id.empty()) {
+            g_mods = mods_list();
+            V.fresh = id;
+            V.fresh_t = t + .25;  // pops in as the bar goes
+            V.scroll = 0;
+            g_knob.erase(id);
+        }
+        fast(1.5);
+    }
+}
+
+// Keyboard and controller focus on the page: 0 drop zone, 1 close, 2+ switches.
+static void move_focus(int d) {
+    int last = 1 + (int)g_mods.size();
+    V.focus = V.focus < 0 ? 0 : std::max(0, std::min(last, V.focus + d));
+    // Keep a focused switch in view.
+    if (V.focus >= 2 && (size_t)(V.focus - 2) < V.switches.size()) {
+        D2D1_RECT_F r = V.switches[V.focus - 2];
+        if (r.bottom > V.list.bottom - 8) V.scroll += r.bottom - (V.list.bottom - 8);
+        if (r.top < V.list.top + 8) V.scroll -= (V.list.top + 8) - r.top;
+    }
+    fast(1);
+}
+
+static void activate_focus() {
+    if (V.focus == 0) pick_zip();
+    else if (V.focus == 1) close_mods();
+    else if (V.focus >= 2) toggle_mod(V.focus - 2);
+}
+
+// Files dragged onto the window: the page opens and the drop zone lights up;
+// a dropped .zip installs.
+class DropTarget : public IDropTarget {
+    LONG refs = 1;
+    static std::wstring first_file(IDataObject* d) {
+        FORMATETC f = {CF_HDROP, nullptr, DVASPECT_CONTENT, -1, TYMED_HGLOBAL};
+        STGMEDIUM m;
+        std::wstring out;
+        if (SUCCEEDED(d->GetData(&f, &m))) {
+            HDROP h = (HDROP)GlobalLock(m.hGlobal);
+            wchar_t p[MAX_PATH * 4];
+            if (h && DragQueryFileW(h, 0, p, (UINT)std::size(p))) out = p;
+            GlobalUnlock(m.hGlobal);
+            ReleaseStgMedium(&m);
+        }
+        return out;
+    }
+    bool ok = false;
+public:
+    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID id, void** out) override {
+        if (id == IID_IUnknown || id == IID_IDropTarget) {
+            *out = this;
+            AddRef();
+            return S_OK;
+        }
+        *out = nullptr;
+        return E_NOINTERFACE;
+    }
+    ULONG STDMETHODCALLTYPE AddRef() override { return InterlockedIncrement(&refs); }
+    ULONG STDMETHODCALLTYPE Release() override { return InterlockedDecrement(&refs); }  // static object
+    HRESULT STDMETHODCALLTYPE DragEnter(IDataObject* d, DWORD, POINTL, DWORD* eff) override {
+        FORMATETC f = {CF_HDROP, nullptr, DVASPECT_CONTENT, -1, TYMED_HGLOBAL};
+        ok = SUCCEEDED(d->QueryGetData(&f));
+        if (ok) {
+            open_mods();
+            V.drag_over = true;
+            fast(1);
+        }
+        *eff = ok ? DROPEFFECT_COPY : DROPEFFECT_NONE;
+        return S_OK;
+    }
+    HRESULT STDMETHODCALLTYPE DragOver(DWORD, POINTL, DWORD* eff) override {
+        *eff = ok ? DROPEFFECT_COPY : DROPEFFECT_NONE;
+        return S_OK;
+    }
+    HRESULT STDMETHODCALLTYPE DragLeave() override {
+        V.drag_over = false;
+        fast(.5);
+        return S_OK;
+    }
+    HRESULT STDMETHODCALLTYPE Drop(IDataObject* d, DWORD, POINTL, DWORD* eff) override {
+        V.drag_over = false;
+        std::wstring p = ok ? first_file(d) : L"";
+        *eff = p.empty() ? DROPEFFECT_NONE : DROPEFFECT_COPY;
+        if (!p.empty()) start_install(p);
+        return S_OK;
+    }
+};
+static DropTarget g_drop;
 
 static std::wstring g_test_iso;
 
@@ -1776,6 +2369,27 @@ static void run_script(double t) {
         else if (a == L"cancel") { if (current_state() == S_BUILDING) cancel_build(); }
         else if (a.rfind(L"shot=", 0) == 0) g_shot = a.substr(5);
         else if (a == L"quit") PostMessageW(g_wnd, WM_CLOSE, 0, 1);
+        else if (a == L"mods") open_mods();
+        else if (a == L"mods-close") close_mods();
+        else if (a.rfind(L"install=", 0) == 0) start_install(a.substr(8));
+        else if (a.rfind(L"toggle=", 0) == 0) toggle_mod((size_t)_wtoi(a.c_str() + 7));
+        else if (a.rfind(L"wait-install=", 0) == 0) {
+            // Holds the script until an install's progress reaches N (or it ends).
+            float want = (float)_wtof(a.c_str() + 13);
+            bool run;
+            float pr;
+            {
+                std::lock_guard<std::mutex> lk(g_install.m);
+                run = g_install.running;
+                pr = g_install.progress;
+            }
+            if (run && pr < want) {
+                g_script_pos--;
+                double shift = t - g_script[g_script_pos].t;
+                for (size_t i = g_script_pos; i < g_script.size(); i++) g_script[i].t += shift + .02;
+                return;
+            }
+        }
         else if (a.rfind(L"wait-state=", 0) == 0) {
             // Holds the script until the state is reached (built, ready, noiso).
             std::wstring want = a.substr(11);
@@ -1822,16 +2436,32 @@ static bool reduced_motion() {
 static int hit(int x, int y) {
     float sx = (x - G.ox) / G.k, sy = (y - G.oy) / G.k;  // scene units
     auto in = [&](D2D1_RECT_F r) { return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom; };
+    auto ins = [&](D2D1_RECT_F r) { return r.right > r.left && sx >= r.left && sx <= r.right && sy >= r.top && sy <= r.bottom; };
+    if (V.mods) {  // the page takes all clicks while open
+        if (ins(V.close)) return 6;
+        if (ins(V.drop)) {
+            std::lock_guard<std::mutex> lk(g_install.m);
+            return g_install.running ? 0 : 7;
+        }
+        if (ins(V.list))
+            for (size_t i = 0; i < V.switches.size(); i++)
+                if (ins(V.switches[i])) return 100 + (int)i;
+        return 0;
+    }
+    if (ins(V.tab)) return 5;
     if (in(V.log_link)) return 4;
     if (V.menu) return in(V.button) ? 3 : 0;
     float dx = sx - 640, dy = sy - 360;  // the logo button: a 340 circle at the stage centre
     if (dx * dx + dy * dy <= 170 * 170) return 1;
-    if (sx >= 140 && sx <= 140 + g_hintW && sy >= 104 && sy <= 154) return 2;
     return 0;
 }
 
 static void click(int h) {
-    if (h == 1 || h == 2) open_menu();
+    if (h == 1) open_menu();
+    else if (h == 5) open_mods();
+    else if (h == 6) close_mods();
+    else if (h == 7) pick_zip();
+    else if (h >= 100) toggle_mod(h - 100);
     else if (h == 3) press_main();
     else if (h == 4) {
         std::wstring lp;
@@ -1861,6 +2491,7 @@ static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
         }
         case WM_MOUSEMOVE: {
             fast(2);
+            V.keys = false;
             int x = GET_X_LPARAM(lp), y = GET_Y_LPARAM(lp);
             float sx = (x - G.ox) / G.k, sy = (y - G.oy) / G.k;
             V.mx = std::max(-1.f, std::min(1.f, (sx / W - .5f) * 2));
@@ -1868,6 +2499,17 @@ static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
             int h = hit(x, y);
             if (h != V.hover) V.pressed = false;
             V.hover = h;
+            // A cut-off summary under the mouse shows its full text.
+            int tip = -1;
+            if (V.mods && sy >= V.list.top && sy <= V.list.bottom)
+                for (size_t i = 0; i < V.summaries.size(); i++) {
+                    D2D1_RECT_F r = V.summaries[i];
+                    if (i < V.cut.size() && V.cut[i] && sx >= r.left && sx <= r.right && sy >= r.top && sy <= r.bottom)
+                        tip = (int)i;
+                }
+            V.tip = tip;
+            V.tip_x = sx;
+            V.tip_y = sy;
             SetCursor(LoadCursor(nullptr, h ? IDC_HAND : IDC_ARROW));
             TRACKMOUSEEVENT tme = {sizeof(tme), TME_LEAVE, w, 0};
             TrackMouseEvent(&tme);
@@ -1894,8 +2536,35 @@ static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
             V.pressed = false;
             return 0;
         }
+        case WM_MOUSEWHEEL:
+            if (V.mods) {
+                V.scroll -= GET_WHEEL_DELTA_WPARAM(wp) / 120.f * 48;
+                V.tip = -1;
+                fast(.5);
+            }
+            return 0;
         case WM_KEYDOWN:
             fast(1);
+            V.keys = true;
+            if (V.mods) {  // the Mods page has the keyboard while open
+                if (wp == VK_ESCAPE) close_mods();
+                else if (wp == VK_UP || (wp == VK_TAB && GetKeyState(VK_SHIFT) < 0)) move_focus(-1);
+                else if (wp == VK_DOWN || wp == VK_TAB) move_focus(1);
+                else if (wp == VK_RETURN || wp == VK_SPACE) activate_focus();
+                return 0;
+            }
+            if (wp == VK_TAB) {  // Tab focuses the MODS tab (Enter opens it)
+                V.focus = V.focus == -2 ? -1 : -2;
+                return 0;
+            }
+            if ((wp == VK_RETURN || wp == VK_SPACE) && V.focus == -2) {
+                open_mods();
+                return 0;
+            }
+            if (wp == 'M') {
+                open_mods();
+                return 0;
+            }
             if (wp == VK_RETURN || wp == VK_SPACE) press_main();
             if (wp == VK_ESCAPE && current_state() == S_BUILDING && ask_cancel()) cancel_build();
             return 0;
@@ -1910,6 +2579,7 @@ static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
             DestroyWindow(w);
             return 0;
         case WM_DESTROY:
+            RevokeDragDrop(w);
             PostQuitMessage(0);
             return 0;
     }
@@ -1930,13 +2600,25 @@ static void poll_controller() {
         }
         WORD down = st.buttons & ~prev[i];
         prev[i] = st.buttons;
+        if (down) V.keys = true;
+        if (V.mods) {  // the Mods page: d-pad moves, A chooses, B closes
+            if (down & 0x0001) move_focus(-1);       // up
+            if (down & 0x0002) move_focus(1);        // down
+            if (down & 0x1000) activate_focus();     // A
+            if (down & 0x2000) close_mods();         // B
+            continue;
+        }
+        if (down & 0x8000 || down & 0x0008) {        // Y or d-pad right: the Mods page
+            open_mods();
+            continue;
+        }
         if (down & 0x1000) press_main();  // A
     }
 }
 
 int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show) {
     SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
-    CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+    OleInitialize(nullptr);  // COM (STA) plus drag and drop
     int argc;
     wchar_t** argv = CommandLineToArgvW(GetCommandLineW(), &argc);
     const wchar_t* root = nullptr;
@@ -1944,6 +2626,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show) {
         std::wstring a = argv[i];
         if (a == L"--root" && i + 1 < argc) root = argv[++i];
         else if (a == L"--test-iso" && i + 1 < argc) g_test_iso = argv[++i];
+        else if (a == L"--test-zip" && i + 1 < argc) g_test_zip = argv[++i];
         else if (a == L"--test-script" && i + 1 < argc) parse_script(argv[++i]);
         else if (a == L"--reduced-motion") g_force_reduced = true;
     }
@@ -1987,6 +2670,8 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show) {
     resize_targets();
     V.reduced = reduced_motion();
     V.start = now_s();
+    g_mods = mods_list();  // the tab's count
+    RegisterDragDrop(g_wnd, &g_drop);
     if (g_root.empty()) {
         std::lock_guard<std::mutex> lk(g.m);
         g.state = S_NOISO;
@@ -2054,6 +2739,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show) {
             else if (V.gem_mix[i] < want) V.gem_mix[i] = std::min(want, V.gem_mix[i] + dt);
             else V.gem_mix[i] = std::max(want, V.gem_mix[i] - dt);
         }
+        update_mods(t, dt);
         if (IsIconic(g_wnd)) {
             MsgWaitForMultipleObjects(0, nullptr, FALSE, 100, QS_ALLINPUT);
             continue;
@@ -2104,6 +2790,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show) {
     }
     if (current_state() == S_BUILDING) cancel_build();
     join_worker();
-    CoUninitialize();
+    mods_install_join();
+    OleUninitialize();
     return 0;
 }

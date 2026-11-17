@@ -9,8 +9,11 @@
   Open in a browser and click through it. Everything is drawn in code; no game assets.
   The disc check is real: it reads the first 6 bytes of the chosen ISO and expects "S2LE01".
   The build is simulated with a timer. The native launcher should match this look and flow.
+  The Mods tab on the right opens the mod manager: Install from .zip (reads mod.json if present), a progress bar,
+  then the new mod's title (big), summary (smaller) and an on/off switch. The mockup keeps mods in browser storage only.
 -->
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Nunito:wght@600;700;800&display=swap">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
 :root{
   --navy:#1b2440; --navy-deep:#121b3a;
@@ -107,16 +110,73 @@ body{display:flex;align-items:center;justify-content:center;font-family:'Nunito'
 .main-btn.is-play{background:var(--teal);color:#10223a;box-shadow:0 4px 0 #1f8c93,0 0 24px rgba(63,208,216,.6)}
 .main-btn.is-play:hover{background:#7ae4ea}
 
-.stone{position:absolute;left:140px;top:104px;display:flex;align-items:center;gap:10px;min-height:50px;padding:0 22px;
-  border:3px solid #5d6a8a;border-radius:20px 13px 22px 11px / 13px 20px 11px 18px;color:var(--navy);
-  font-family:'Fredoka',sans-serif;font-weight:700;font-size:19px;text-shadow:0 1px 0 rgba(255,255,255,.55);cursor:pointer;
-  background:radial-gradient(circle at 18% 30%,rgba(255,255,255,.3) 0 2px,transparent 3px),radial-gradient(circle at 72% 62%,rgba(40,52,88,.28) 0 2px,transparent 3px),radial-gradient(circle at 46% 82%,rgba(255,255,255,.22) 0 1.5px,transparent 2.5px),radial-gradient(circle at 88% 24%,rgba(40,52,88,.22) 0 1.5px,transparent 2.5px),linear-gradient(180deg,#b6c1d6,#8f9cb7);
-  box-shadow:inset 0 3px 0 rgba(255,255,255,.4),inset 0 -5px 0 rgba(40,52,88,.32),0 6px 0 #4a5677,0 10px 16px rgba(10,16,36,.5);
-  animation:blink 2.4s ease-in-out infinite;transition:opacity .5s,filter .2s,transform .1s}
-.stone:hover{filter:brightness(1.08)}
-.stone:active{transform:translateY(4px)}
-.stone:focus-visible{outline:3px solid var(--teal);outline-offset:5px}
-.is-menu .stone{opacity:0;pointer-events:none;animation:none}
+.hint{position:absolute;left:32px;top:28px;display:flex;align-items:center;gap:10px;padding:9px 18px 9px 12px;border-radius:999px;
+  background:rgba(18,27,58,.55);border:1px solid rgba(243,207,107,.4);box-shadow:0 0 22px rgba(139,91,210,.28),inset 0 0 14px rgba(255,255,255,.05);
+  backdrop-filter:blur(4px);color:var(--cream);font-family:'Fredoka',sans-serif;font-weight:600;font-size:17px;letter-spacing:.02em;
+  pointer-events:none;user-select:none;animation:hintGlow 3s ease-in-out infinite;transition:opacity .5s}
+.hint svg{animation:twinkle 2.2s ease-in-out infinite}
+.is-menu .hint{opacity:0;animation:none}
+
+/* Mods: tab on the right edge + slide-in panel */
+.shift{position:absolute;inset:0;transition:transform .8s cubic-bezier(.2,.8,.2,1),filter .8s}
+.mods-open .shift{transform:translateX(-250px) scale(.82);filter:brightness(.65) saturate(.85)}
+.mods-open .hint,.mods-open .legal,.mods-open .status{opacity:0;transition:opacity .4s}
+.mods-open .beam{opacity:0;animation:none}
+.mods-open .rays{opacity:.2}
+.mods-tab{position:absolute;right:0;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;align-items:center;gap:10px;
+  padding:18px 12px 18px 14px;border-radius:18px 0 0 18px;border:1px solid rgba(243,207,107,.55);border-right:0;
+  background:linear-gradient(180deg,rgba(38,56,122,.8),rgba(18,27,58,.85));box-shadow:0 0 22px rgba(63,208,216,.25);
+  color:var(--cream);font-family:'Fredoka',sans-serif;font-weight:700;font-size:17px;cursor:pointer;
+  transition:transform .45s cubic-bezier(.2,.8,.2,1),box-shadow .2s,padding .2s}
+.mods-tab .vt{writing-mode:vertical-rl;transform:rotate(180deg);letter-spacing:.14em}
+.mods-tab:hover{padding-right:20px;box-shadow:0 0 32px rgba(63,208,216,.55)}
+.mods-tab:focus-visible{outline:3px solid var(--teal);outline-offset:4px}
+.mods-tab .count{min-width:24px;height:24px;padding:0 6px;border-radius:999px;background:var(--teal);color:#10223a;font-size:13px;display:flex;align-items:center;justify-content:center}
+.mods-open .mods-tab{transform:translate(130%,-50%)}
+.mods{position:absolute;top:24px;right:24px;bottom:24px;width:470px;display:flex;flex-direction:column;overflow:hidden;border-radius:24px;
+  background:linear-gradient(180deg,rgba(31,43,79,.95),rgba(14,21,48,.97));border:2px solid var(--gold-hi);
+  box-shadow:0 0 0 4px rgba(18,27,58,.6),0 24px 60px rgba(4,8,24,.6),0 0 44px rgba(139,91,210,.28);
+  transform:translateX(calc(100% + 48px));opacity:0;visibility:hidden;
+  transition:transform .6s cubic-bezier(.2,.8,.2,1),opacity .4s,visibility 0s linear .6s}
+.mods-open .mods{transform:none;opacity:1;visibility:visible;transition:transform .6s cubic-bezier(.2,.8,.2,1),opacity .4s,visibility 0s}
+.mods::before{content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(105deg,transparent 35%,rgba(255,255,255,.14) 50%,transparent 65%);transform:translateX(-120%)}
+.mods-open .mods::before{animation:sweep 1.1s ease-out .25s 1}
+.mods-open .m-in{animation:fadeUp .5s cubic-bezier(.2,.8,.2,1) both}
+.mods-open .m-in.d1{animation-delay:.2s}.mods-open .m-in.d2{animation-delay:.3s}.mods-open .m-in.d3{animation-delay:.4s}.mods-open .m-in.d4{animation-delay:.5s}
+.m-head{display:flex;align-items:center;gap:12px;padding:22px 22px 6px}
+.m-title{flex:1 1 auto;font-family:'Fredoka',sans-serif;font-weight:700;font-size:32px;color:var(--cream);text-shadow:0 3px 0 #6b4410}
+.m-close{width:44px;height:44px;border-radius:50%;border:2px solid rgba(243,207,107,.6);background:rgba(18,27,58,.6);color:var(--cream);cursor:pointer;display:flex;align-items:center;justify-content:center}
+.m-close:hover{background:#24335f}
+.m-sub{padding:0 22px 14px;font-size:13.5px;font-weight:700;color:#c6d0e6;line-height:1.45}
+.drop{margin:0 22px;display:flex;align-items:center;gap:14px;min-height:76px;padding:14px 18px;border-radius:16px;border:2px dashed rgba(243,207,107,.6);
+  background:rgba(63,208,216,.06);color:var(--cream);cursor:pointer;font-family:'Fredoka',sans-serif;font-weight:600;font-size:19px;transition:background .2s,border-color .2s;width:calc(100% - 44px);text-align:left}
+.drop:hover,.drop.over{background:rgba(63,208,216,.14);border-color:var(--teal)}
+.drop small{display:block;font-family:'Nunito',sans-serif;font-weight:700;font-size:12.5px;color:#c6d0e6}
+.drop:disabled{opacity:.5;cursor:default}
+.prog{margin:12px 22px 0;padding:14px 16px;border-radius:14px;background:rgba(18,27,58,.7);border:1px solid rgba(243,207,107,.3)}
+.prog-row{display:flex;justify-content:space-between;gap:10px;font-size:13px;font-weight:700;color:#e6ebf5;margin-bottom:8px}
+.prog-row span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.m-err{margin:12px 22px 0;font-size:13.5px;font-weight:700;color:#ffb4b4}
+.m-list{flex:1 1 auto;overflow-y:auto;padding:14px 22px 10px;display:flex;flex-direction:column;gap:10px;scrollbar-color:rgba(243,207,107,.5) transparent}
+.m-label{font-size:11.5px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:#c6d0e6;margin-top:4px}
+.m-empty{font-size:14px;font-weight:700;color:#aab6cf;padding:6px 0}
+.mod{display:flex;align-items:center;gap:12px;min-height:58px;padding:9px 12px 9px 16px;border-radius:13px 16px 12px 15px;background:linear-gradient(180deg,rgba(44,61,112,.7),rgba(30,43,82,.75));border:1.5px solid rgba(243,207,107,.32);box-shadow:inset 0 1px 0 rgba(255,255,255,.08),0 3px 0 rgba(8,12,30,.45);transition:opacity .2s,border-color .2s}
+.mod:hover{border-color:rgba(243,207,107,.6)}
+.mod.off .mod-text{opacity:.55}
+.mod-text{flex:1 1 auto;min-width:0}
+.mod-name{font-family:'Fredoka',sans-serif;font-weight:600;font-size:18px;line-height:1.15;color:var(--cream);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mod-sum{margin-top:3px;font-size:12px;font-weight:700;color:#b9c4dc;line-height:1.35;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mod-meta{margin-top:4px;font-size:11.5px;font-weight:700;color:#8f9cbd}
+.mod.fresh{border-color:var(--gold-hi);box-shadow:inset 0 1px 0 rgba(255,255,255,.08),0 3px 0 rgba(8,12,30,.45),0 0 18px rgba(243,207,107,.35);animation:popIn .5s cubic-bezier(.2,.8,.2,1) both}
+.tag{display:inline-block;margin-bottom:6px;padding:2px 10px;border-radius:999px;background:var(--teal);color:#10223a;font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase}
+.sw{position:relative;flex:0 0 auto;width:52px;height:30px;border-radius:999px;border:2px solid #5d6a8a;background:#3a466b;cursor:pointer;padding:0;transition:background .2s,border-color .2s}
+.sw span{position:absolute;top:2px;left:2px;width:22px;height:22px;border-radius:50%;background:#b6c1d6;box-shadow:0 2px 0 rgba(16,24,47,.4);display:flex;align-items:center;justify-content:center;transition:left .2s,background .2s}
+.sw svg path{fill:#7f8daa}
+.sw[aria-checked="true"]{background:var(--teal);border-color:#e8fdff}
+.sw[aria-checked="true"] span{left:24px;background:var(--gold-hi)}
+.sw[aria-checked="true"] svg path{fill:#a8741d}
+.sw:focus-visible,.drop:focus-visible,.m-close:focus-visible{outline:3px solid var(--teal);outline-offset:3px}
+.m-foot{padding:12px 22px 18px;font-size:12px;font-weight:700;color:#8f9cbd;border-top:1px solid rgba(243,207,107,.2)}
 
 .status{position:absolute;left:40px;bottom:36px;width:340px;display:flex;flex-direction:column;gap:12px;font-size:14px;font-weight:700}
 .status .muted{color:#d6deef}
@@ -146,6 +206,9 @@ body{display:flex;align-items:center;justify-content:center;font-family:'Nunito'
 @keyframes toast{from{opacity:0;transform:translate(-50%,-12px)}to{opacity:1;transform:translate(-50%,0)}}
 @keyframes beamPulse{0%,100%{opacity:.7}50%{opacity:1}}
 @keyframes flash{0%{filter:blur(8px) brightness(1)}25%{filter:blur(3px) brightness(2.4)}100%{filter:blur(8px) brightness(1)}}
+@keyframes hintGlow{0%,100%{opacity:.78}50%{opacity:1}}
+@keyframes sweep{from{transform:translateX(-120%)}to{transform:translateX(120%)}}
+@keyframes fadeUp{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
 @keyframes confetti{0%{transform:translateY(-60px) rotate(0)}100%{transform:translateY(820px) rotate(600deg)}}
 @media (prefers-reduced-motion:reduce){*{animation:none !important;transition:none !important}.shoot{display:none}}
 </style>
@@ -192,6 +255,7 @@ body{display:flex;align-items:center;justify-content:center;font-family:'Nunito'
   <div class="layer par-a" id="motes" aria-hidden="true"></div>
   <div class="layer par-a" id="sparks" aria-hidden="true"></div>
 
+  <div class="shift">
   <div class="stage">
     <div class="orbit" aria-hidden="true">
       <svg viewBox="0 0 20 20" width="20" height="20" style="left:290px;top:4px"><path d="M10 0L12.5 7.5L20 10L12.5 12.5L10 20L7.5 12.5L0 10L7.5 7.5Z" fill="#fff4cf"/></svg>
@@ -267,10 +331,12 @@ body{display:flex;align-items:center;justify-content:center;font-family:'Nunito'
     <button class="logo-btn" id="logoBtn" type="button" aria-label="Open the Wonderpark launcher"></button>
   </div>
 
-  <button class="stone" id="hintBtn" type="button">
-    <svg viewBox="0 0 24 24" aria-hidden="true" width="20" height="20"><path d="M12 2L14.6 9.4L22 12L14.6 14.6L12 22L9.4 14.6L2 12L9.4 9.4Z" fill="#c98f2a" stroke="#1b2440" stroke-width="1.4" stroke-linejoin="round"/></svg>
+  </div><!-- /shift -->
+
+  <div class="hint" aria-hidden="true">
+    <svg viewBox="0 0 20 20" width="18" height="18"><path d="M10 0L12.5 7.5L20 10L12.5 12.5L10 20L7.5 12.5L0 10L7.5 7.5Z" fill="#fff4cf"/></svg>
     <span>Click the logo</span>
-  </button>
+  </div>
 
   <div class="status" aria-live="polite">
     <input id="fileInput" type="file" accept=".iso" hidden>
@@ -286,6 +352,35 @@ body{display:flex;align-items:center;justify-content:center;font-family:'Nunito'
       <div class="bar" role="progressbar" aria-label="Build progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="bar"><div id="barFill"></div></div>
     </div>
   </div>
+
+  <button class="mods-tab" id="modsTab" type="button" aria-label="Mods" aria-expanded="false">
+    <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 3h4v3a2 2 0 1 0 4 0V3h3v7h-3a2 2 0 1 0 0 4h3v7h-7v-3a2 2 0 1 0-4 0v3H3v-7h3a2 2 0 1 0 0-4H3V3h7Z"/></svg>
+    <span class="vt">MODS</span>
+    <span class="count" id="modsCount" hidden>0</span>
+  </button>
+
+  <section class="mods" id="mods" role="dialog" aria-label="Mods" inert>
+    <div class="m-head m-in d1">
+      <div class="m-title">Mods</div>
+      <button class="m-close" id="modsClose" type="button" aria-label="Close mods"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    </div>
+    <div class="m-sub m-in d1">Add mods from your own .zip files. Changes apply the next time you press Play.</div>
+    <div class="m-in d2">
+      <button class="drop" id="dropZone" type="button">
+        <svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="#3fd0d8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V3M7 8l5-5 5 5"/><path d="M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/></svg>
+        <span>Install from .zip<small>Click to choose a file, or drop a .zip here</small></span>
+      </button>
+      <input type="file" id="zipInput" accept=".zip,application/zip" hidden>
+      <div class="prog" id="modProg" hidden>
+        <div class="prog-row"><span id="progName"></span><span id="progPct">0%</span></div>
+        <div class="bar" role="progressbar" aria-label="Mod install progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="modBar"><div id="modBarFill"></div></div>
+        <div class="prog-row" style="margin:8px 0 0"><span id="progStage">Reading zip…</span><span></span></div>
+      </div>
+      <div class="m-err" id="modErr" role="alert" hidden></div>
+    </div>
+    <div class="m-list m-in d3" id="modList"></div>
+    <div class="m-foot m-in d4">Mods are stored in %APPDATA%\Wonderpark\mods. Only install mods you trust.</div>
+  </section>
 
   <div class="legal">Unofficial fan project. Not affiliated with Nintendo, The Pokémon Company or Creatures. Requires your own disc.</div>
   <div class="layer" id="confettiLayer" aria-hidden="true" hidden></div>
@@ -364,7 +459,6 @@ body{display:flex;align-items:center;justify-content:center;font-family:'Nunito'
 
   function openMenu() { root.classList.replace('is-title', 'is-menu'); }
   $('logoBtn').addEventListener('click', openMenu);
-  $('hintBtn').addEventListener('click', openMenu);
 
   $('mainBtn').addEventListener('click', () => {
     if (state === 'noIso') { $('fileInput').value = ''; $('fileInput').click(); }
@@ -400,6 +494,92 @@ body{display:flex;align-items:center;justify-content:center;font-family:'Nunito'
     }, 60);
   }
 
+
+  // ---------- Mods page ----------
+  // Mock behavior. The real launcher installs to %APPDATA%\Wonderpark\mods\<id>\ and stores on/off in mods.ini.
+  const modsEl = $('mods'), tab = $('modsTab');
+  let mods = [];
+  try { mods = JSON.parse(localStorage.getItem('wp-mods') || '[]'); } catch (e) { mods = []; }
+  const saveMods = () => { try { localStorage.setItem('wp-mods', JSON.stringify(mods)); } catch (e) {} };
+  let freshId = null, installing = false;
+  const esc = t => String(t).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  const starSvg = '<svg viewBox="0 0 20 20" width="11" height="11" aria-hidden="true"><path d="M10 0L12.5 7.5L20 10L12.5 12.5L10 20L7.5 12.5L0 10L7.5 7.5Z"/></svg>';
+
+  function setModsOpen(open) {
+    root.classList.toggle('mods-open', open);
+    tab.setAttribute('aria-expanded', open);
+    if (open) { modsEl.removeAttribute('inert'); setTimeout(() => $('dropZone').focus(), 450); }
+    else { modsEl.setAttribute('inert', ''); freshId = null; renderMods(); tab.focus(); }
+  }
+  tab.addEventListener('click', () => setModsOpen(true));
+  $('modsClose').addEventListener('click', () => setModsOpen(false));
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && root.classList.contains('mods-open')) setModsOpen(false); });
+
+  function renderMods() {
+    const c = $('modsCount'); c.hidden = !mods.length; c.textContent = mods.length;
+    const ordered = freshId ? [mods.find(m => m.id === freshId), ...mods.filter(m => m.id !== freshId)] : mods;
+    $('modList').innerHTML = (mods.length ? '<div class="m-label">Installed</div>' : '<div class="m-label">Installed</div><div class="m-empty">No mods yet.</div>') +
+      ordered.map(m => `
+        <div class="mod${m.id === freshId ? ' fresh' : ''}${m.enabled ? '' : ' off'}">
+          <div class="mod-text">
+            <div class="mod-name" title="${esc(m.name)}">${esc(m.name)}</div>
+            <div class="mod-sum" title="${esc(m.summary)}">${esc(m.summary)}</div>
+          </div>
+          <button class="sw" type="button" role="switch" data-id="${esc(m.id)}" aria-checked="${m.enabled}" aria-label="${esc(m.name)} ${m.enabled ? 'on' : 'off'}"><span>${starSvg}</span></button>
+        </div>`).join('');
+  }
+  $('modList').addEventListener('click', e => {
+    const sw = e.target.closest('.sw'); if (!sw) return;
+    const m = mods.find(x => x.id === sw.dataset.id); if (!m) return;
+    m.enabled = !m.enabled; saveMods(); renderMods();
+    const again = $('modList').querySelector(`.sw[data-id="${CSS.escape(m.id)}"]`); if (again) again.focus();
+  });
+
+  const setProg = (pct, stage) => {
+    $('modBarFill').style.width = pct + '%'; $('progPct').textContent = Math.round(pct) + '%';
+    $('modBar').setAttribute('aria-valuenow', Math.round(pct)); if (stage) $('progStage').textContent = stage;
+  };
+  const wait = ms => new Promise(r => setTimeout(r, ms));
+  const niceName = f => f.replace(/\.zip$/i, '').replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim().replace(/\b\w/g, c => c.toUpperCase()) || 'Unnamed mod';
+
+  async function installZip(file) {
+    if (installing || !file) return;
+    $('modErr').hidden = true;
+    if (!/\.zip$/i.test(file.name)) { $('modErr').textContent = 'That isn’t a .zip file. Choose a mod packaged as .zip.'; $('modErr').hidden = false; return; }
+    installing = true; $('dropZone').disabled = true; $('modProg').hidden = false;
+    $('progName').textContent = file.name; setProg(0, 'Reading zip…');
+    try {
+      const buf = await new Promise((res, rej) => {
+        const r = new FileReader();
+        r.onprogress = e => { if (e.lengthComputable) setProg(e.loaded / e.total * 45); };
+        r.onload = () => res(r.result); r.onerror = () => rej(r.error); r.readAsArrayBuffer(file);
+      });
+      setProg(50, 'Checking mod.json…');
+      let man = {}, files = 1;
+      if (window.JSZip) {
+        const zip = await JSZip.loadAsync(buf);
+        files = Object.values(zip.files).filter(f => !f.dir).length;
+        const mf = zip.file(/(^|\/)mod\.json$/i)[0];
+        if (mf) { try { man = JSON.parse(await mf.async('string')); } catch (e) { man = {}; } }
+      }
+      await wait(250);
+      for (let p = 60; p <= 100; p += 8) { setProg(Math.min(p, 100), p < 100 ? 'Copying files…' : 'Done'); await wait(110); }
+      const name = (man.name || niceName(file.name)).toString().slice(0, 80);
+      const id = (man.id || name).toString().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'mod-' + Date.now();
+      const mod = { id, name, summary: (man.summary || man.description || 'No description included with this mod.').toString().slice(0, 240),
+        version: man.version ? String(man.version) : '', author: man.author ? String(man.author) : '', files, enabled: true };
+      mods = [mod, ...mods.filter(m => m.id !== id)]; freshId = id; saveMods();
+      await wait(250); $('modProg').hidden = true; renderMods(); $('modList').scrollTop = 0;
+    } catch (err) {
+      $('modProg').hidden = true; $('modErr').textContent = 'Couldn’t read that .zip. It may be damaged or not a Wonderpark mod.'; $('modErr').hidden = false;
+    } finally { installing = false; $('dropZone').disabled = false; }
+  }
+  $('dropZone').addEventListener('click', () => { $('zipInput').value = ''; $('zipInput').click(); });
+  $('zipInput').addEventListener('change', e => installZip(e.target.files[0]));
+  ['dragenter', 'dragover'].forEach(t => $('dropZone').addEventListener(t, e => { e.preventDefault(); $('dropZone').classList.add('over'); }));
+  ['dragleave', 'drop'].forEach(t => $('dropZone').addEventListener(t, e => { e.preventDefault(); $('dropZone').classList.remove('over'); }));
+  $('dropZone').addEventListener('drop', e => installZip(e.dataTransfer.files[0]));
+  renderMods();
   render();
 })();
 </script>

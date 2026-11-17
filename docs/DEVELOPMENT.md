@@ -71,12 +71,52 @@ executable can ship in a release.
 - Esc, or closing the window, during a build asks whether to stop it.
 - Controller A, Enter and Space press the main button. With Windows'
   "Animation effects" off (or `--reduced-motion`), nothing moves.
+- "Click the logo" is a label in the top-left corner (not clickable).
 
-Test options: `--test-iso <file>` (instead of the file picker) and
+### The Mods page
+
+The MODS tab on the right edge (with the number of installed mods) opens
+it; so do M, Tab then Enter, a controller's Y or d-pad right, or dragging a
+file onto the window. X, Esc or the controller's B close it. Up/Down (or
+Tab, or the d-pad) move between the drop zone, the close button and the
+switches; Enter, Space or A choose. The mouse wheel scrolls the list.
+
+- **Install from .zip** (click for a file picker, or drop a .zip anywhere
+  on the window) runs on a worker thread with stages Reading zip…,
+  Checking mod.json…, Copying files…, Done (`builder/launcher/mods.cpp`).
+  The new mod goes to the top of the list, switched on.
+- A mod is a .zip with `mod.json` `{id, name, summary, version, author,
+  game: "S2LE01"}` at its root or in one top folder, `textures\` and
+  `files\`. Only those are copied; nothing else in the zip is used (no code
+  mods). Without a mod.json, the name comes from the file name and the
+  summary is "No description included with this mod."; installing the same
+  id again replaces the old copy.
+- Refused, with a message: not a .zip, damaged or not a zip, paths that are
+  absolute or contain `..`, encrypted entries, zip64, other compression than
+  stored/deflate, a file over 512 MB, over 2 GB in all, over 20,000 entries,
+  entries that unpack to over 1000x their size, a mod.json for another game.
+- Installed to `%APPDATA%\Wonderpark\mods\<id>\` (through a
+  `.install-<id>` folder, moved into place at the end); on/off and order in
+  `mods.ini`. Switches apply the next time Play is pressed.
+- The game (`runtime/host/mods.cpp`) reads `mods.ini` at start and uses only
+  the mods switched on, the first listed winning where two change the same
+  thing. `files\<path>` replaces the disc's `files/<path>` (the FST in
+  memory gets its size; a larger file is placed past the end of the disc's
+  data). `textures\<hash>.png` (or `<hash>_anything.png`; PNG, BMP or JPEG,
+  up to 8192x8192) replaces the texture with that hash, the one
+  `RECOMP_GX_DUMP_TEXTURES=<dir>` names its dumps by; it's read on a
+  background thread and shown from the frame after it's ready. Replacing
+  only: a mod can't add new disc files.
+
+Test options: `--test-iso <file>` (instead of the file picker), `--test-zip
+<file>` (instead of the Mods page's file picker) and
 `--test-script "<seconds>:<action>,..."` with actions `logo`, `press`,
 `cancel` (no question), `shot=<file.png>` (saves the next frame),
-`wait-state=ready|built|noiso|building`, `wait-progress=<0-100>`, `quit`;
-`+N` times are after the previous action. `WONDERPARK_LAUNCHER_STATS=<file>`
+`wait-state=ready|built|noiso|building`, `wait-progress=<0-100>`, `mods`,
+`mods-close`, `install=<file>`, `toggle=<n>` (the n-th card's switch, from
+0), `wait-install=<0-100>` (101: until it ends), `quit`;
+`+N` times are after the previous action. `WONDERPARK_DATA_DIR` moves
+`mods\` and `mods.ini` too. `WONDERPARK_LAUNCHER_STATS=<file>`
 writes the average time per frame spent drawing, in `EndDraw` and in
 `Present`. It draws 30 frames a second while idle and 60 after input and
 during transitions: about 4% of one core on the menu (0.2% with reduced
@@ -90,6 +130,8 @@ them every frame was most of its CPU time.
 | `settings.ini` | `%APPDATA%\Wonderpark` | options |
 | `bindings.ini` | `%APPDATA%\Wonderpark` | keyboard and controller bindings, two each per Wii Remote button |
 | `nand\` | `%APPDATA%\Wonderpark` | the emulated NAND: saves (`title\00010000\53324c45\data`) and system settings |
+| `mods.ini` | `%APPDATA%\Wonderpark` | the installed mods in order, `id = 1` on / `0` off (written by the launcher, read by the game at start) |
+| `mods\<id>\` | `%APPDATA%\Wonderpark` | installed mods: `mod.json`, `textures\`, `files\` |
 | `shadercache\gl.bin` | `%APPDATA%\Wonderpark` | only with `WONDERPARK_SHADERS=spec`: the TEV setups seen, compiled again in the background at each start (numbers, made on the player's PC; starts over when the shader source changes; safe to delete) |
 | `cache\nandtmp\` | beside `Wonderpark.exe` | the NAND's `/tmp` (the game copies ~41 MB there at each start; emptied at start) |
 
@@ -223,6 +265,7 @@ keys (f1 esc up down left right enter q e backspace, a letter or digit) or
 | `WONDERPARK_SHADERS=spec` | also a fragment program specialised for each TEV setup, compiled by the driver in the background (`=thread`: on a second GL context) while the ubershader draws, and the setups kept in `shadercache\`. Off by default: on AMD's GL driver the first draw with each new program blocks for 50-300 ms (`runtime/gpu/gl_backend.c`, "Specialised draw programs") |
 | `RECOMP_GL_SIMPLE_FS=1` | measurements only, the picture is wrong: a trivial fragment shader instead of TEV, to see what TEV costs the GPU |
 | `RECOMP_WIDESCREEN` | 16:9 |
+| `WONDERPARK_NO_MODS=1` | start without any mods, whatever `mods.ini` says |
 | `WONDERPARK_DISC_UNCACHED=1` | tests: read the disc's files past Windows' file cache, every read from the drive, as on a cold start |
 | `RECOMP_WINDOW_SIZE=WxH` | tests: the window's inside at start (a hidden `--headless` window keeps it), e.g. `2128x912` for 21:9 |
 
@@ -230,7 +273,7 @@ keys (f1 esc up down left right enter q e backspace, a letter or digit) or
 
 ### `WONDERPARK_LOG` categories
 
-`adxcheck audioq audiostats axramp framerate axvoice axvoices dec dsp efbcopy exc gxhw gxirq hook gxpe hostprof hwmisc idle ios ipc irq kpad memcpywatch mmio mmiostat movie mqwatch nandio pi pointer prof stalls steps threads waits wpad wpadbtn`
+`adxcheck audioq audiostats axramp framerate axvoice axvoices dec dsp efbcopy exc gxhw gxirq hook gxpe hostprof hwmisc idle ios ipc irq kpad memcpywatch mmio mmiostat mods movie mqwatch nandio pi pointer prof stalls steps threads waits wpad wpadbtn`
 
 The most useful: `waits` (where threads block), `steps` (the game's logic
 steps per tick), `idle`, `efbcopy`, `gxirq`, `mmiostat` (slow memory
