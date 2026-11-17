@@ -45,6 +45,7 @@ python tools/build_launcher.py               # build build/launcher/WonderparkLa
 | `[path]` | main.dol to run (default `game/sys/main.dol`) |
 | `--headless` | no visible window, no sound device, no input |
 | `--exit-after N` | stop after N real seconds: frames, average fps, retraces |
+| `--prepare-shaders` | the build's last step ("Preparing shaders…", `builder/pipeline.py`): runs the boot hidden and silent at game speed x10 for 8 s, through the title, with a data folder of its own (`cache\prepare\` beside the exe), no mods and no preloading, then exits. The graphics driver compiles each new shader and draw state the first time it sees one (AMD: ~0.45 s for the ubershader, then ~0.4 s pauses at the first frame and at the title) and keeps them in its own cache; after this step the player's first start has none of those pauses. Areas past the title can still pause once the very first time (the driver meets new draw states there) |
 | `--help` | usage |
 
 ## The launcher (`builder/launcher/`)

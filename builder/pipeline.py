@@ -10,7 +10,8 @@ Stages (the launcher relights one star point per finished stage):
   1. Verifying disc                  tools/extract_disc.py (game ID, revision, image hash)
   2. Extracting main.dol and files   tools/extract_disc.py
   3. Recompiling PowerPC to C++      tools/recomp.py
-  4. Compiling Wonderpark.exe        tools/build_game.py (clang-cl when available)
+  4. Compiling Wonderpark.exe        tools/build_game.py (clang-cl when available),
+     ending with "Preparing shaders…" (Wonderpark.exe --prepare-shaders, a few seconds)
 Stages 1-2 are skipped (shown as done) when game/ already holds this disc.
 
 Machine-readable lines for the launcher, one each (everything else is log):
@@ -147,6 +148,26 @@ def run_stage(i: int, cmd: list[str], fail: str, phases: dict[str, int] | None =
     emit(f"@progress {overall(stage, 100)} {STAGES[stage]}")
 
 
+def prepare_shaders(exe: Path) -> None:
+    """The end of stage 4, "Preparing shaders…": runs the new build's boot
+    hidden for a few seconds (Wonderpark.exe --prepare-shaders), so the
+    graphics driver compiles and caches its shaders now instead of pausing
+    the player's first start. Not needed for the game to work: a failure is
+    only noted in the log."""
+    emit(f"@progress {overall(3, 100)} Preparing shaders…")
+    t = time.time()
+    try:
+        p = subprocess.run([str(exe), "--prepare-shaders"], cwd=REPO, capture_output=True, text=True,
+                           encoding="utf-8", errors="replace", timeout=120)
+        print(p.stdout + p.stderr, flush=True)  # the log
+        if p.returncode:
+            emit(f"Preparing shaders ended with code {p.returncode}; the first start may pause briefly")
+        else:
+            emit(f"Shaders prepared in {time.time() - t:.1f} s")
+    except (OSError, subprocess.TimeoutExpired) as e:
+        emit(f"Preparing shaders didn't finish ({type(e).__name__}); the first start may pause briefly")
+
+
 def disc_failure(err: str) -> str:
     low = err.lower()
     if "wrong disc" in low:
@@ -214,6 +235,7 @@ def main() -> int:
         exe = find_exe()
         if not exe:
             raise StageError("The build finished but Wonderpark.exe is missing. The log has the details.")
+        prepare_shaders(exe)
         STAMP.write_text(json.dumps({"sources": source_stamp(), "image": str(image),
                                      "built": time.strftime("%Y-%m-%d %H:%M:%S")}, indent=2))
         emit(f"Done in {(time.time() - t0) / 60:.1f} min")

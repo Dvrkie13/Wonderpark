@@ -153,6 +153,7 @@ int main(int argc, char** argv) {
     static CPUState cpu;
     const char* dol = DEFAULT_DOL;
     unsigned long long max_slices = 0;
+    int prepare_shaders = 0; /* --prepare-shaders */
     uint32_t entry = 0;
     const char* env;
     int i;
@@ -172,14 +173,37 @@ int main(int argc, char** argv) {
     /* Wonderpark [main.dol] [--headless] [--exit-after <seconds>] */
     for (i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--headless")) g_wp_headless = 1;
+        else if (!strcmp(argv[i], "--prepare-shaders")) prepare_shaders = g_wp_headless = 1;
         else if (!strcmp(argv[i], "--exit-after") && i + 1 < argc) g_wp_exit_after = atof(argv[++i]);
         else if (!strcmp(argv[i], "--help") || !strcmp(argv[i], "-h")) {
             printf("Wonderpark [path/to/sys/main.dol] [--headless] [--exit-after <seconds>]\n"
                    "  --headless          no visible window, no sound device, no input (automated runs)\n"
                    "  --exit-after N      stop after N seconds and print a summary\n"
+                   "  --prepare-shaders   compile and draw with the shaders once, then exit (the build's last step)\n"
                    "Settings: settings.ini in %%APPDATA%%\\Wonderpark; WONDERPARK_<KEY> overrides any of them.\n");
             return 0;
         } else if (argv[i][0] != '-') dol = argv[i];
+    }
+    if (prepare_shaders) {
+        /* The build's "Preparing shaders" step (builder/pipeline.py): the
+         * game's own boot, hidden and silent, at x10 for 8 s (through the
+         * title). The graphics driver compiles each new shader and draw
+         * state the first time it sees one (on AMD ~0.4 s each, three times
+         * by the title) and keeps them in its own cache, so the player's
+         * first start doesn't pause. A data folder of its own (in the cache
+         * folder), no mods, no preloading: saves and settings untouched. */
+        char data[1100];
+        snprintf(data, sizeof(data), "%s/prepare", wp_cache_dir());
+#ifdef _WIN32
+#define WP_SETENV(k, v) _putenv_s(k, v)
+#else
+#define WP_SETENV(k, v) setenv(k, v, 1)
+#endif
+        WP_SETENV("WONDERPARK_DATA_DIR", data);
+        WP_SETENV("WONDERPARK_GAME_SPEED", "10");
+        WP_SETENV("WONDERPARK_NO_MODS", "1");
+        WP_SETENV("WONDERPARK_FAST_LOADING", "0");
+        if (g_wp_exit_after <= 0) g_wp_exit_after = 8;
     }
     if ((env = getenv("WONDERPARK_MAX_SLICES")) != NULL) max_slices = strtoull(env, NULL, 10);
     if (g_wp_headless) fprintf(stderr, "wonderpark: headless\n");
