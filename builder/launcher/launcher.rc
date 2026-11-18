@@ -1,3 +1,7 @@
+// The Wonderpark app icon (our own art, assets/icon/). The lowest-numbered
+// icon is the one Explorer, the taskbar and shortcuts show.
+1 ICON "../../assets/icon/wonderpark.ico"
+
 // The launcher's fonts (SIL Open Font License; see fonts/*-OFL.txt), built
 // into the executable so it needs nothing beside it.
 101 RCDATA "fonts/Fredoka.ttf"

@@ -1,0 +1,183 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="Wonderpark">
+  <title>Wonderpark</title>
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="42%" r="75%">
+      <stop offset="0" stop-color="#2e4388"/>
+      <stop offset="0.55" stop-color="#16224f"/>
+      <stop offset="1" stop-color="#0a1029"/>
+    </radialGradient>
+    <radialGradient id="purple" cx="22%" cy="18%" r="60%">
+      <stop offset="0" stop-color="#8b5bd2" stop-opacity="0.45"/>
+      <stop offset="1" stop-color="#8b5bd2" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="teal" cx="85%" cy="90%" r="55%">
+      <stop offset="0" stop-color="#3fd0d8" stop-opacity="0.28"/>
+      <stop offset="1" stop-color="#3fd0d8" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="warm" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#fff6dc" stop-opacity="0.55"/>
+      <stop offset="0.6" stop-color="#fff6dc" stop-opacity="0.12"/>
+      <stop offset="1" stop-color="#fff6dc" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="disc" cx="50%" cy="40%" r="62%">
+      <stop offset="0" stop-color="#34488a"/>
+      <stop offset="1" stop-color="#121b3a"/>
+    </radialGradient>
+    <linearGradient id="goldEdge" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffe7a3"/>
+      <stop offset="1" stop-color="#c98f2a"/>
+    </linearGradient>
+    <radialGradient id="kLong" gradientUnits="userSpaceOnUse" cx="0" cy="0" r="60">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="0.15" stop-color="#ffffff" stop-opacity="0.95"/>
+      <stop offset="0.5" stop-color="#fff4cf" stop-opacity="0.5"/>
+      <stop offset="1" stop-color="#fff4cf" stop-opacity="0"/>
+    </radialGradient>
+    <clipPath id="tile"><rect width="512" height="512" rx="112"/></clipPath>
+  </defs>
+
+  <!-- Night-sky tile -->
+  <g clip-path="url(#tile)">
+    <rect width="512" height="512" fill="url(#bg)"/>
+    <rect width="512" height="512" fill="url(#purple)"/>
+    <rect width="512" height="512" fill="url(#teal)"/>
+    <!-- Scattered stars -->
+    <g>
+      <circle cx="170.7" cy="87.0" r="0.7" fill="#ffffff" opacity="0.5"/>
+      <circle cx="329.1" cy="49.1" r="0.7" fill="#ffffff" opacity="0.5"/>
+      <circle cx="273.4" cy="191.0" r="0.9" fill="#fff4cf" opacity="0.82"/>
+      <circle cx="42.1" cy="259.6" r="1.7" fill="#cdf6f8" opacity="0.57"/>
+      <circle cx="32.1" cy="223.9" r="1.4" fill="#fff4cf" opacity="0.74"/>
+      <circle cx="47.8" cy="57.9" r="0.7" fill="#cdf6f8" opacity="0.38"/>
+      <circle cx="219.5" cy="414.2" r="1.7" fill="#ffffff" opacity="0.58"/>
+      <circle cx="73.9" cy="122.0" r="0.7" fill="#cdf6f8" opacity="0.87"/>
+      <circle cx="317.7" cy="472.7" r="1.7" fill="#ffffff" opacity="0.79"/>
+      <circle cx="486.5" cy="36.5" r="0.7" fill="#ffffff" opacity="0.39"/>
+      <circle cx="429.5" cy="154.2" r="0.7" fill="#fff4cf" opacity="0.36"/>
+      <circle cx="83.8" cy="71.0" r="1.4" fill="#fff4cf" opacity="0.86"/>
+      <circle cx="163.3" cy="409.0" r="1.1" fill="#ffffff" opacity="0.37"/>
+      <circle cx="101.5" cy="295.5" r="1.7" fill="#ffffff" opacity="0.87"/>
+      <circle cx="323.2" cy="194.2" r="0.9" fill="#cdf6f8" opacity="0.38"/>
+      <circle cx="279.1" cy="44.4" r="0.9" fill="#cdf6f8" opacity="0.7"/>
+      <circle cx="42.8" cy="113.7" r="1.4" fill="#ffffff" opacity="0.51"/>
+      <circle cx="343.3" cy="221.0" r="1.4" fill="#ffffff" opacity="0.5"/>
+      <circle cx="166.0" cy="297.4" r="0.7" fill="#cdf6f8" opacity="0.37"/>
+      <circle cx="233.3" cy="159.1" r="0.7" fill="#ffffff" opacity="0.63"/>
+      <circle cx="398.5" cy="352.3" r="0.9" fill="#fff4cf" opacity="0.41"/>
+      <circle cx="132.1" cy="292.0" r="1.7" fill="#fff4cf" opacity="0.71"/>
+      <circle cx="268.2" cy="437.6" r="1.4" fill="#fff4cf" opacity="0.88"/>
+      <circle cx="367.1" cy="153.4" r="1.1" fill="#ffffff" opacity="0.89"/>
+      <circle cx="488.4" cy="71.1" r="1.1" fill="#ffffff" opacity="0.81"/>
+      <circle cx="216.4" cy="380.5" r="1.7" fill="#ffffff" opacity="0.57"/>
+      <circle cx="87.6" cy="250.7" r="1.1" fill="#ffffff" opacity="0.81"/>
+      <circle cx="33.0" cy="337.4" r="0.7" fill="#ffffff" opacity="0.69"/>
+      <circle cx="384.1" cy="291.3" r="1.1" fill="#fff4cf" opacity="0.44"/>
+      <circle cx="350.5" cy="301.7" r="0.7" fill="#fff4cf" opacity="0.83"/>
+      <circle cx="294.7" cy="234.8" r="1.7" fill="#cdf6f8" opacity="0.68"/>
+      <circle cx="420.5" cy="471.2" r="1.7" fill="#cdf6f8" opacity="0.37"/>
+      <circle cx="243.5" cy="335.4" r="0.9" fill="#ffffff" opacity="0.5"/>
+      <circle cx="200.7" cy="337.6" r="0.7" fill="#cdf6f8" opacity="0.55"/>
+      <circle cx="42.5" cy="385.8" r="1.1" fill="#cdf6f8" opacity="0.48"/>
+      <circle cx="203.2" cy="435.8" r="1.1" fill="#ffffff" opacity="0.55"/>
+      <circle cx="410.5" cy="432.2" r="0.7" fill="#cdf6f8" opacity="0.56"/>
+      <circle cx="148.8" cy="215.0" r="1.1" fill="#cdf6f8" opacity="0.63"/>
+      <circle cx="126.9" cy="248.7" r="0.9" fill="#ffffff" opacity="0.63"/>
+      <circle cx="299.1" cy="141.2" r="0.7" fill="#ffffff" opacity="0.5"/>
+      <circle cx="192.7" cy="288.1" r="0.7" fill="#ffffff" opacity="0.57"/>
+      <circle cx="475.3" cy="348.2" r="0.7" fill="#fff4cf" opacity="0.36"/>
+      <circle cx="263.5" cy="312.9" r="1.1" fill="#ffffff" opacity="0.4"/>
+      <circle cx="449.4" cy="391.5" r="1.4" fill="#ffffff" opacity="0.71"/>
+      <circle cx="203.9" cy="207.1" r="1.7" fill="#fff4cf" opacity="0.77"/>
+      <circle cx="64.1" cy="321.0" r="1.7" fill="#fff4cf" opacity="0.43"/>
+      <circle cx="115.0" cy="92.6" r="1.7" fill="#ffffff" opacity="0.37"/>
+      <circle cx="178.6" cy="39.4" r="1.7" fill="#fff4cf" opacity="0.75"/>
+      <circle cx="14.1" cy="87.2" r="1.4" fill="#ffffff" opacity="0.85"/>
+      <circle cx="63.1" cy="190.0" r="1.4" fill="#ffffff" opacity="0.8"/>
+      <circle cx="26.3" cy="437.2" r="1.4" fill="#ffffff" opacity="0.4"/>
+      <circle cx="311.2" cy="85.9" r="0.7" fill="#ffffff" opacity="0.7"/>
+      <circle cx="136.1" cy="182.1" r="0.7" fill="#fff4cf" opacity="0.81"/>
+      <circle cx="239.5" cy="248.2" r="1.4" fill="#ffffff" opacity="0.7"/>
+      <circle cx="179.8" cy="142.1" r="1.7" fill="#ffffff" opacity="0.62"/>
+      <circle cx="415.2" cy="92.1" r="0.7" fill="#fff4cf" opacity="0.79"/>
+      <circle cx="25.2" cy="474.3" r="1.7" fill="#ffffff" opacity="0.71"/>
+      <circle cx="269.7" cy="85.0" r="0.7" fill="#fff4cf" opacity="0.49"/>
+      <circle cx="269.6" cy="487.6" r="0.7" fill="#cdf6f8" opacity="0.48"/>
+      <circle cx="431.8" cy="351.0" r="0.9" fill="#ffffff" opacity="0.76"/>
+      <circle cx="94.8" cy="387.6" r="1.1" fill="#fff4cf" opacity="0.82"/>
+      <circle cx="271.8" cy="391.1" r="0.7" fill="#fff4cf" opacity="0.85"/>
+      <circle cx="27.5" cy="149.2" r="1.1" fill="#ffffff" opacity="0.69"/>
+      <circle cx="139.4" cy="349.2" r="1.7" fill="#ffffff" opacity="0.39"/>
+      <circle cx="477.0" cy="230.5" r="0.9" fill="#cdf6f8" opacity="0.49"/>
+      <circle cx="467.5" cy="492.2" r="1.7" fill="#cdf6f8" opacity="0.69"/>
+      <circle cx="476.2" cy="190.5" r="0.9" fill="#ffffff" opacity="0.62"/>
+      <circle cx="120.7" cy="123.8" r="1.1" fill="#cdf6f8" opacity="0.88"/>
+      <circle cx="420.8" cy="246.1" r="0.7" fill="#ffffff" opacity="0.72"/>
+      <circle cx="330.0" cy="401.0" r="1.1" fill="#cdf6f8" opacity="0.61"/>
+      <circle cx="377.1" cy="245.4" r="1.1" fill="#ffffff" opacity="0.9"/>
+      <circle cx="208.3" cy="472.2" r="1.4" fill="#ffffff" opacity="0.52"/>
+      <circle cx="364.8" cy="96.3" r="0.7" fill="#fff4cf" opacity="0.36"/>
+      <circle cx="84.7" cy="414.0" r="1.1" fill="#ffffff" opacity="0.8"/>
+      <circle cx="77.4" cy="20.9" r="1.1" fill="#cdf6f8" opacity="0.56"/>
+      <circle cx="135.9" cy="155.8" r="0.9" fill="#ffffff" opacity="0.67"/>
+      <circle cx="77.4" cy="454.4" r="0.9" fill="#cdf6f8" opacity="0.87"/>
+      <circle cx="185.2" cy="235.7" r="0.9" fill="#cdf6f8" opacity="0.84"/>
+      <circle cx="296.3" cy="451.7" r="1.7" fill="#cdf6f8" opacity="0.48"/>
+      <circle cx="256.8" cy="271.4" r="1.1" fill="#fff4cf" opacity="0.36"/>
+      <circle cx="227.0" cy="102.6" r="0.7" fill="#fff4cf" opacity="0.72"/>
+      <circle cx="15.9" cy="400.8" r="1.1" fill="#cdf6f8" opacity="0.75"/>
+      <circle cx="171.8" cy="264.9" r="1.1" fill="#cdf6f8" opacity="0.56"/>
+      <circle cx="65.4" cy="285.2" r="0.7" fill="#cdf6f8" opacity="0.35"/>
+      <circle cx="310.5" cy="258.7" r="1.1" fill="#fff4cf" opacity="0.42"/>
+      <circle cx="245.4" cy="469.7" r="0.9" fill="#ffffff" opacity="0.85"/>
+      <circle cx="352.4" cy="438.2" r="1.1" fill="#cdf6f8" opacity="0.55"/>
+      <circle cx="470.0" cy="139.6" r="1.1" fill="#fff4cf" opacity="0.9"/>
+      <circle cx="72.9" cy="228.0" r="1.4" fill="#ffffff" opacity="0.55"/>
+      <circle cx="88.8" cy="360.6" r="1.1" fill="#cdf6f8" opacity="0.82"/>
+      <circle cx="120.3" cy="475.0" r="1.1" fill="#ffffff" opacity="0.38"/>
+      <circle cx="493.1" cy="416.9" r="1.7" fill="#cdf6f8" opacity="0.7"/>
+      <circle cx="108.7" cy="168.2" r="0.9" fill="#ffffff" opacity="0.88"/>
+      <circle cx="363.5" cy="23.4" r="1.1" fill="#cdf6f8" opacity="0.45"/>
+      <circle cx="395.6" cy="484.3" r="1.1" fill="#fff4cf" opacity="0.84"/>
+    </g>
+    <circle cx="256" cy="256" r="230" fill="url(#warm)"/>
+  </g>
+  <rect x="5" y="5" width="502" height="502" rx="108" fill="none" stroke="url(#goldEdge)" stroke-opacity="0.55" stroke-width="6"/>
+
+  <!-- Compass-star emblem (launcher art, scaled to the tile) -->
+  <g transform="translate(256 256) scale(0.74) translate(-300 -300)">
+    <polygon points="300,8 380,220 592,300 380,380 300,592 220,380 8,300 220,220" fill="#c98f2a" stroke="#f3cf6b" stroke-width="8" stroke-linejoin="round"/>
+    <g stroke="#f3cf6b" stroke-width="3" stroke-linejoin="round">
+      <polygon points="300,40 300,212 238,212" fill="#f27aa5"/><polygon points="300,40 362,212 300,212" fill="#c9346c"/>
+      <polygon points="560,300 388,300 388,238" fill="#fbe27a"/><polygon points="560,300 388,362 388,300" fill="#e3ad26"/>
+      <polygon points="300,560 238,388 300,388" fill="#7ad68a"/><polygon points="300,560 300,388 362,388" fill="#3f9e55"/>
+      <polygon points="40,300 212,238 212,300" fill="#79a5f0"/><polygon points="40,300 212,300 212,362" fill="#3d68c8"/>
+    </g>
+    <circle cx="300" cy="300" r="150" fill="#c98f2a" stroke="#f3cf6b" stroke-width="8"/>
+    <g stroke="#f3cf6b" stroke-width="4" stroke-linejoin="round">
+      <path d="M300 160A140 140 0 0 1 370 178.76L356 203A112 112 0 0 0 300 188Z" fill="#e2457f"/>
+      <path d="M370 178.76A140 140 0 0 1 421.24 230L397 244A112 112 0 0 0 356 203Z" fill="#f39a2b"/>
+      <path d="M421.24 230A140 140 0 0 1 440 300L412 300A112 112 0 0 0 397 244Z" fill="#f6d44a"/>
+      <path d="M440 300A140 140 0 0 1 421.24 370L397 356A112 112 0 0 0 412 300Z" fill="#5bc26a"/>
+      <path d="M421.24 370A140 140 0 0 1 370 421.24L356 397A112 112 0 0 0 397 356Z" fill="#4a7fe0"/>
+      <path d="M370 421.24A140 140 0 0 1 300 440L300 412A112 112 0 0 0 356 397Z" fill="#8b5bd2"/>
+      <path d="M300 440A140 140 0 0 1 230 421.24L244 397A112 112 0 0 0 300 412Z" fill="#e2457f"/>
+      <path d="M230 421.24A140 140 0 0 1 178.76 370L203 356A112 112 0 0 0 244 397Z" fill="#f39a2b"/>
+      <path d="M178.76 370A140 140 0 0 1 160 300L188 300A112 112 0 0 0 203 356Z" fill="#f6d44a"/>
+      <path d="M160 300A140 140 0 0 1 178.76 230L203 244A112 112 0 0 0 188 300Z" fill="#5bc26a"/>
+      <path d="M178.76 230A140 140 0 0 1 230 178.76L244 203A112 112 0 0 0 203 244Z" fill="#4a7fe0"/>
+      <path d="M230 178.76A140 140 0 0 1 300 160L300 188A112 112 0 0 0 244 203Z" fill="#8b5bd2"/>
+    </g>
+    <circle cx="300" cy="300" r="112" fill="url(#disc)" stroke="#f3cf6b" stroke-width="5"/>
+    <circle cx="300" cy="300" r="101" fill="none" stroke="rgba(243,207,107,0.45)" stroke-width="2"/>
+  </g>
+
+  <!-- Sparkle in the middle (same style as the banner's k) -->
+  <g transform="translate(256 256) rotate(12)">
+    <polygon points="0,-62 3.4,0 0,62 -3.4,0" fill="url(#kLong)"/>
+    <polygon points="-58,0 0,3 58,0 0,-3" fill="url(#kLong)"/>
+    <polygon points="0,-20 2,0 0,20 -2,0" fill="#ffffff" opacity="0.7" transform="rotate(45)"/>
+    <polygon points="0,-20 2,0 0,20 -2,0" fill="#ffffff" opacity="0.7" transform="rotate(-45)"/>
+    <path d="M0 -15 C1.2 -1.2 1.2 -1.2 15 0 C1.2 1.2 1.2 1.2 0 15 C-1.2 1.2 -1.2 1.2 -15 0 C-1.2 -1.2 -1.2 -1.2 0 -15Z" fill="#ffffff"/>
+    <circle r="4" fill="#ffffff"/>
+  </g>
+</svg>

@@ -2646,7 +2646,11 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show) {
     wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
     wc.hbrBackground = CreateSolidBrush(RGB(6, 10, 28));
     wc.lpszClassName = L"WonderparkLauncher";
-    wc.hIcon = LoadIcon(nullptr, IDI_APPLICATION);
+    // The app icon (launcher.rc, id 1) at the sizes the title bar and taskbar want.
+    wc.hIcon = (HICON)LoadImageW(inst, MAKEINTRESOURCEW(1), IMAGE_ICON, GetSystemMetrics(SM_CXICON),
+                                 GetSystemMetrics(SM_CYICON), LR_DEFAULTCOLOR);
+    wc.hIconSm = (HICON)LoadImageW(inst, MAKEINTRESOURCEW(1), IMAGE_ICON, GetSystemMetrics(SM_CXSMICON),
+                                   GetSystemMetrics(SM_CYSMICON), LR_DEFAULTCOLOR);
     RegisterClassExW(&wc);
     UINT dpi = GetDpiForSystem();
     RECT r = {0, 0, (LONG)(1280 * dpi / 96), (LONG)(720 * dpi / 96)};

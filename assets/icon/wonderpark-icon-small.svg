@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Wonderpark">
+  <title>Wonderpark (small sizes)</title>
+  <!-- Simplified for 16-32 px: bold shapes, no fine ring or stars, so it stays crisp in the taskbar. -->
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="40%" r="75%">
+      <stop offset="0" stop-color="#2e4388"/>
+      <stop offset="1" stop-color="#0d1533"/>
+    </radialGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="url(#bg)"/>
+  <g transform="translate(32 32)">
+    <!-- 4-point gold star -->
+    <polygon points="0,-29 6.5,-6.5 29,0 6.5,6.5 0,29 -6.5,6.5 -29,0 -6.5,-6.5" fill="#f3cf6b"/>
+    <!-- two-tone gem points: top magenta, right yellow, bottom green, left blue -->
+    <polygon points="0,-25 0,-8 -5,-8" fill="#f27aa5"/><polygon points="0,-25 5,-8 0,-8" fill="#c9346c"/>
+    <polygon points="25,0 8,0 8,-5" fill="#fbe27a"/><polygon points="25,0 8,5 8,0" fill="#e3ad26"/>
+    <polygon points="0,25 -5,8 0,8" fill="#7ad68a"/><polygon points="0,25 0,8 5,8" fill="#3f9e55"/>
+    <polygon points="-25,0 -8,-5 -8,0" fill="#79a5f0"/><polygon points="-25,0 -8,0 -8,5" fill="#3d68c8"/>
+    <!-- gold ring with a navy center and a white spark -->
+    <circle r="11" fill="#c98f2a" stroke="#f3cf6b" stroke-width="1.5"/>
+    <circle r="7.5" fill="#1b2a5c"/>
+    <path d="M0 -5 L1.1 -1.1 L5 0 L1.1 1.1 L0 5 L-1.1 1.1 L-5 0 L-1.1 -1.1Z" fill="#ffffff"/>
+  </g>
+</svg>

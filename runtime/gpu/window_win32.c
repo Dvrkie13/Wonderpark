@@ -138,10 +138,19 @@ void win_create(void) {
     wc.hInstance = GetModuleHandleA(NULL);
     wc.lpszClassName = "Wonderpark";
     wc.hCursor = LoadCursor(NULL, IDC_ARROW);
+    /* The app icon (runtime/host/wonderpark.rc, id 1) for the title bar,
+     * taskbar and Alt+Tab. */
+    wc.hIcon = (HICON)LoadImageA(wc.hInstance, MAKEINTRESOURCEA(1), IMAGE_ICON, GetSystemMetrics(SM_CXICON),
+                                 GetSystemMetrics(SM_CYICON), LR_DEFAULTCOLOR);
     RegisterClassA(&wc);
     AdjustWindowRect(&r, WS_OVERLAPPEDWINDOW, FALSE);
     sWnd = CreateWindowA("Wonderpark", "Wonderpark", WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT,
                          r.right - r.left, r.bottom - r.top, NULL, NULL, wc.hInstance, NULL);
+    {
+        HICON sm = (HICON)LoadImageA(wc.hInstance, MAKEINTRESOURCEA(1), IMAGE_ICON, GetSystemMetrics(SM_CXSMICON),
+                                     GetSystemMetrics(SM_CYSMICON), LR_DEFAULTCOLOR);
+        if (sm) SendMessageA(sWnd, WM_SETICON, ICON_SMALL, (LPARAM)sm);
+    }
     v = getenv("RECOMP_GX_HIDDEN");
     {
         extern int g_wp_headless; /* --headless (main.c) */
