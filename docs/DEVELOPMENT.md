@@ -246,7 +246,9 @@ keys (f1 esc up down left right enter q e backspace, a letter or digit) or
 | `WONDERPARK_OVERLAY=1` | debug overlay open at start |
 | `WONDERPARK_GAME_SPEED=N` | game speed 1, 2, 4 or 10 at start |
 | `WONDERPARK_PAD_SCRIPT` | scripted Wii Remote input, timed from start: `40:2,40.4:,45:down,45.3:` (time in seconds, then buttons joined by `+`: up down left right a b 1 2 plus minus home shake shake2; empty = release). `f3000:2,f3010:` counts the game's finished frames instead (waits for the disc don't shift it) |
-| `WONDERPARK_RAMDUMP=f<frame>:<file>,...` | at the game's n-th finished frame, save guest memory (MEM1 then MEM2, 88 MB) to a file, written by a thread of its own; compare dumps to find where the game keeps a value (`runtime/core/ramdump.c`) |
+| `WONDERPARK_RAMDUMP=f<frame>:<file>,...` | at the game's n-th finished frame, save guest memory (MEM1 then MEM2, 88 MB) to a file, written by a thread of its own; compare dumps to find where the game keeps a value (`runtime/core/ramdump.c`). `t<seconds>:<file>` instead takes it that many seconds after start, lining up with `WONDERPARK_PAD_SCRIPT` |
+| `WONDERPARK_POKE=<s>:<addr hex>:<float>,...;...` | tests: writes floats into guest memory for half a second from that time (`runtime/hle/hle_poke.c`) |
+| `WONDERPARK_MOVE=<s>:<x>,<y>,<z>:<x>,<y>,<z>[,<facing>];<s>::<x>,<y>,<z>[,<facing>];...` | tests: moves the object whose position record is nearest the first point (within 20; the player at its spawn point) to the second, and later entries move it again; facing in degrees, atan2(dx, dz). Works for the player in Cove Town (spawn after loading the 100% save, slot 1: -226.6, 0, 148.7); at Seasong Beach which record is the player isn't known yet (`runtime/hle/hle_poke.c`) |
 | `WONDERPARK_LOG` | debug log categories, comma-separated (below) |
 | `WONDERPARK_MAX_SLICES` | stop after N dispatcher slices, printing where |
 | `WONDERPARK_PEEK=addr,len` | with `WONDERPARK_MAX_SLICES`: dump guest memory at the stop |

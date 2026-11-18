@@ -72,6 +72,10 @@ WP_HOOK(0x8000F190, frame_timers) {
     extern void hle_balance_tick(CPUState * c); /* hle_balance.c */
     hle_volume_tick(c);
     hle_balance_tick(c);
+    {
+        extern void hle_poke_tick(void); /* hle_poke.c: WONDERPARK_POKE, tests */
+        hle_poke_tick();
+    }
     if (hi == 0 && lo != sWeWrote) sGameAsked = lo; /* the scene's own request */
     /* Movies (Movie/*.mo, the title's and the story's) play one picture a
      * drawn frame: at 60 they ran twice as fast (the title's was read 1.8x
