@@ -1349,6 +1349,8 @@ static GLuint sDrawFbo, sMsFbo, sMsColor, sMsDepth;
 static int sMsDirty;
 /* 3D glasses: the eye drawn now (gl_eye_mask): 0 both, 1 red alone, 2 green and blue. */
 static int sEye;
+/* 3D glasses, side by side: 1 the left eye's picture is being presented, 2 the right's, 0 neither. */
+static int sSideBySide;
 static GLuint sWhite;
 static const char* sDumpDir;
 static int sDumpEvery = 30;
@@ -2709,10 +2711,21 @@ static int gl_present(int x, int y, int cw, int ch, int may_drop) {
     glViewport(0, 0, w, h);
     glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
     glClearColor(0, 0, 0, 1);
-    glClear(GL_COLOR_BUFFER_BIT);
-    p_glBlitFramebuffer(GLX(x), GLY(EFB_H - y - ch), GLX(x + cw), GLY(EFB_H - y), (w - dw) / 2, (h - dh) / 2,
-                        (w - dw) / 2 + dw, (h - dh) / 2 + dh, GL_COLOR_BUFFER_BIT,
-                        g_x[X_SCALING_FILTER] ? GL_NEAREST : GL_LINEAR);
+    if (sSideBySide) {
+        /* 3D glasses, side by side (3D TVs): each eye's picture squeezed
+         * into its half of the window, the full height; shown after the
+         * right one. */
+        int half = w / 2, x0 = sSideBySide == 1 ? 0 : half;
+        if (sSideBySide == 1) glClear(GL_COLOR_BUFFER_BIT);
+        p_glBlitFramebuffer(GLX(x), GLY(EFB_H - y - ch), GLX(x + cw), GLY(EFB_H - y), x0, (h - dh) / 2, x0 + half,
+                            (h - dh) / 2 + dh, GL_COLOR_BUFFER_BIT, GL_LINEAR);
+        if (sSideBySide == 1) return 0;
+    } else {
+        glClear(GL_COLOR_BUFFER_BIT);
+        p_glBlitFramebuffer(GLX(x), GLY(EFB_H - y - ch), GLX(x + cw), GLY(EFB_H - y), (w - dw) / 2, (h - dh) / 2,
+                            (w - dw) / 2 + dw, (h - dh) / 2 + dh, GL_COLOR_BUFFER_BIT,
+                            g_x[X_SCALING_FILTER] ? GL_NEAREST : GL_LINEAR);
+    }
     keep_last(w, h);
     if (sLookProgram && look_needed()) draw_look(w, h);
     return finish_present(w, h, may_drop);
@@ -2812,8 +2825,12 @@ static int finish_present(int w, int h, int may_drop) {
 /* 3D glasses: the colours the next draws and clears write (gx_frames.c
  * draws the frame once per eye). */
 static void gl_eye_mask(int eye) {
-    if (eye == sEye) return;
-    sEye = eye;
+    /* 3 and 4: side by side, all colours; the picture presented into the
+     * left half (not shown yet), then the right half (shown). */
+    int colours = eye == 1 || eye == 2 ? eye : 0;
+    sSideBySide = eye == 3 ? 1 : eye == 4 ? 2 : 0;
+    if (colours == sEye) return;
+    sEye = colours;
     gl_forget(); /* the colour mask set again at the next draw */
 }
 

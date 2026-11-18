@@ -696,7 +696,7 @@ static void eye_xf(uint32_t* out, const uint32_t* in, float shift) {
 
 static void render_frame(float t) {
     static uint32_t xf[GX_XF_WORDS];
-    int i, pass, stereo = g_x[X_STEREO_3D] == 1 && sDev->eye_mask;
+    int i, pass, mode = sDev->eye_mask ? g_x[X_STEREO_3D] : 0, stereo = mode != 0;
     if (stereo && sEyeSeparation < 0) {
         const char* s = getenv("WONDERPARK_3D_SEPARATION");
         const char* d = getenv("WONDERPARK_3D_DEPTH");
@@ -706,7 +706,7 @@ static void render_frame(float t) {
     for (pass = stereo ? 1 : 0; pass <= (stereo ? 2 : 0); pass++) {
         /* The left eye's camera is to the left: the world to its right. */
         float shift = pass == 1 ? sEyeSeparation / 2 : -sEyeSeparation / 2;
-        if (stereo) sDev->eye_mask(pass);
+        if (stereo) sDev->eye_mask(mode == 2 ? pass + 2 : pass); /* red, cyan; or the left half, the right */
         for (i = 0; i < sCur->count; i++) {
             const RecOp* r = &sCur->ops[i];
             switch (r->op) {
@@ -726,10 +726,10 @@ static void render_frame(float t) {
             case OP_CLEAR: sDev->clear(r->a[0], r->a[1], r->a[2], (uint32_t)r->a[3], (uint32_t)r->a[4]); break;
             case OP_COPY: sDev->copy(r->a[0], r->a[1], r->a[2], r->a[3], r->a[4], r->a[5], r->a[6], r->a[7]); break;
             default:
-                if (pass == 1) break; /* shown after the second eye */
-                if (stereo) sDev->eye_mask(0);
+                if (mode == 1 && pass == 1) break; /* red-cyan: shown after the second eye */
+                if (mode == 1) sDev->eye_mask(0);
                 show(r->a[0], r->a[1], r->a[2], r->a[3]);
-                if (stereo) sDev->eye_mask(pass);
+                if (mode == 1) sDev->eye_mask(pass);
                 break;
             }
         }
@@ -846,7 +846,7 @@ int display_msaa(void) { return sDev->msaa(); }
 int display_renderer(void) { return sDev == &g_vk_device ? RENDERER_VULKAN : RENDERER_OPENGL; }
 
 int gxb_recording(void) {
-    int want = sOutputRate > 60 || (g_x[X_STEREO_3D] == 1 && sDev->eye_mask); /* 3D glasses: drawn twice from the recording */
+    int want = sOutputRate > 60 || (g_x[X_STEREO_3D] && sDev->eye_mask); /* 3D glasses: drawn twice from the recording */
     if (sRecording && !want && sHaveFrame) {
         /* Stopping: show the newest frame as it is. */
         GL_ENTER();
