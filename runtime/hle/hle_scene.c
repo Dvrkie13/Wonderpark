@@ -27,7 +27,8 @@ static unsigned sChanges;
 /* BOOL fn_80210660(s32 scene): picks the next scene. */
 WP_HOOK(0x80210660, NextScene) {
     if ((int)c->gpr[3] != sScene) {
-        WP_LOG("scene", "next scene: %d", (int)c->gpr[3]);
+        extern unsigned gxb_game_frames(void); /* gx_frames.c */
+        WP_LOG("scene", "next scene: %d (frame %u)", (int)c->gpr[3], gxb_game_frames());
         sScene = (int)c->gpr[3];
         sChanges++;
     }

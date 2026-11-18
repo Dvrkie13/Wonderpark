@@ -115,6 +115,21 @@ needs the "redraw while paused" piece worked out first.
   Gameplay page (`runtime/hle/hle_friends.c`, `settings_ui.cpp`): "194 of
   194" with the 100% save, "2 of 194" with the Wish Park save (its Pad says
   Friends 2), icons and English names from the disc. Not grouped by zone.
+- **K (2026-11-18): save backups done, autosave shelved.** Backups: before a
+  save slot is written, a copy goes to `backups\` (last 10 per slot, no
+  duplicates); checked with a real save through the PokéPark Pad on the
+  100% save ("You saved the game!", reloads with play time 23:55, no
+  "corrupted" message). Autosave was ported from MildRain's
+  `hle_autosave.c` (save started through the Pad's own routine,
+  `0x802165A0`, with the game held by `0x8002EAB0`), but **the slot it wrote
+  was corrupted**: on reload the game said "Saved Game 1 is corrupted". The
+  written GD0 and GD0M differed in 13 bytes (around +0x253, +0x28A, +0x12B6,
+  +0x14C0), so the game's data kept changing while the save was written:
+  the hold doesn't freeze everything the Pad's own pause does (play time,
+  at least). Tested with `WONDERPARK_AUTOSAVE_NOW` (a save as soon as the
+  field is up), on a test copy only. It's out of the build until it can
+  save from a paused state; the port is kept outside the repo
+  (`build/re/shelved/hle_autosave.c`, git-ignored) for that.
 
 ## Notes for the battle and chase work (F1 balance rows)
 

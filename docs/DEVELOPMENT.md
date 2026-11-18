@@ -189,6 +189,7 @@ also `WONDERPARK_<KEY>`, key in capitals, for example `WONDERPARK_WINDOW_MODE=1`
 | `[audio] voice_language` | | not yet |
 | `[audio] mute_background` | 0, 1 | works: silent while another window is in front |
 | `[gameplay] pause_background` | 0, 1 | works: the game pauses while another window is in front |
+| `[gameplay] save_backups` | 0, 1 (default 1) | works: before the game writes a save slot (opened for writing, deleted, or replaced by a rename; `GD0`, `GD1`...), the file is copied to `backups\` in the data folder as `GD<n>-<date>-<time>.bin`, unless the newest backup of that slot is the same; the newest 10 per slot are kept. On the IOS thread (`runtime/ios/nand.c`). To restore one, copy it over `nand\title\00010000\53324c45\data\GD<n>` and `GD<n>M` with the game closed |
 | `[gameplay] skip_logos` | | not yet |
 | `[silly] mirror_world` | 0, 1 | works, at once: the shown picture flipped left to right, with left and right (and the pointer's left and right) swapped to match (`runtime/host/input_win32.c`) |
 | `[silly] voice_pitch` | -50..50 % of the frequency | works, from the next thing a Pokémon says: voices (sounds from the `*_VOICE` banks) get CRI pitch on top of the game's own (`runtime/hle/hle_voice_pitch.c`). The game's two voice pools are made with a 49,152 Hz limit instead of 32,768, so +50% isn't clamped. The attractions' own voice banks (`M_*_AT_VOICE`) aren't covered |

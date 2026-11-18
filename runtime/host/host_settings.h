@@ -90,6 +90,7 @@ enum {
     X_AUDIO_LATENCY,    /* 0 low, 1 normal, 2 safe */
     /* [gameplay] */
     X_PAUSE_BACKGROUND, X_SKIP_LOGOS,
+    X_SAVE_BACKUPS,     /* copy a save slot to backups\ before it's written (nand.c) */
     /* [silly] */
     X_POKEMON_SIZE,     /* 0 mini, 1 normal, 2 giant */
     X_VOICE_PITCH,      /* -50..50 % */

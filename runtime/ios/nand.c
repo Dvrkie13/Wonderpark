@@ -129,6 +129,91 @@ static void ensure_parent(const char* host) {
 /* ------------------------------------------------------------------------ */
 /* Files */
 
+/* Save backups (the Save backups setting, g_x[X_SAVE_BACKUPS]): before the
+ * game writes a save slot (GD0, GD1...; not its copy GD0M), the file as it
+ * is is copied to backups\ in the data folder (beside nand\), as
+ * GD<n>-<date>-<time>.bin, and only the newest BACKUPS_KEPT of each slot
+ * are kept. This runs on the IOS thread, never the game's or the
+ * renderer's. */
+#define BACKUPS_KEPT 10
+
+static int is_save_slot(const char* nand) {
+    const char* d = "/title/00010000/53324c45/data/GD";
+    size_t n = strlen(d);
+    return strncmp(nand, d, n) == 0 && nand[n] >= '0' && nand[n] <= '9' && nand[n + 1] == 0;
+}
+
+#ifdef _WIN32
+static int backup_cmp(const void* a, const void* b) { return strcmp((const char*)a, (const char*)b); }
+
+/* Whether two small files hold the same bytes. */
+static int same_file(const char* a, const char* b) {
+    FILE *fa = fopen(a, "rb"), *fb = fopen(b, "rb");
+    int same = fa && fb, ca = 0, cb = 0;
+    while (same && ca != EOF) {
+        ca = fgetc(fa);
+        cb = fgetc(fb);
+        if (ca != cb) same = 0;
+    }
+    if (fa) fclose(fa);
+    if (fb) fclose(fb);
+    return same;
+}
+
+static void back_up(const char* nand, const char* host) {
+    char dir[600], to[700], pattern[700];
+    char names[64][64];
+    int n = 0, i;
+    WIN32_FIND_DATAA fd;
+    HANDLE h;
+    SYSTEMTIME st;
+    const char* slot = strrchr(nand, '/') + 1; /* GD0 */
+    const char* cut = strrchr(sRoot, '/');
+    const char* cut2 = strrchr(sRoot, '\\');
+    if (cut2 > cut) cut = cut2;
+    if (!g_x[X_SAVE_BACKUPS]) return;
+    if (cut) snprintf(dir, sizeof(dir), "%.*s/backups", (int)(cut - sRoot), sRoot);
+    else snprintf(dir, sizeof(dir), "backups");
+    mkdirs(dir);
+    /* The newest backup of this slot: the game opens its slots for writing
+     * at every start, so an unchanged slot isn't copied again. */
+    snprintf(pattern, sizeof(pattern), "%s/%s-*.bin", dir, slot);
+    h = FindFirstFileA(pattern, &fd);
+    if (h != INVALID_HANDLE_VALUE) {
+        char newest[64] = "";
+        do {
+            if (strcmp(fd.cFileName, newest) > 0) snprintf(newest, sizeof(newest), "%s", fd.cFileName);
+        } while (FindNextFileA(h, &fd));
+        FindClose(h);
+        snprintf(to, sizeof(to), "%s/%s", dir, newest);
+        if (same_file(host, to)) return;
+    }
+    GetLocalTime(&st);
+    snprintf(to, sizeof(to), "%s/%s-%04d%02d%02d-%02d%02d%02d.bin", dir, slot, st.wYear, st.wMonth, st.wDay, st.wHour,
+             st.wMinute, st.wSecond);
+    if (!CopyFileA(host, to, FALSE)) {
+        fprintf(stderr, "nand: the backup of %s couldn't be made (%lu)\n", slot, (unsigned long)GetLastError());
+        return;
+    }
+    HLE_LOG("NAND backup %s -> %s", nand, to);
+    /* The oldest go: names sort by date. */
+    snprintf(pattern, sizeof(pattern), "%s/%s-*.bin", dir, slot);
+    h = FindFirstFileA(pattern, &fd);
+    if (h == INVALID_HANDLE_VALUE) return;
+    do {
+        if (n < 64) snprintf(names[n++], sizeof(names[0]), "%s", fd.cFileName);
+    } while (FindNextFileA(h, &fd));
+    FindClose(h);
+    qsort(names, (size_t)n, sizeof(names[0]), backup_cmp);
+    for (i = 0; i < n - BACKUPS_KEPT; i++) {
+        snprintf(to, sizeof(to), "%s/%s", dir, names[i]);
+        remove(to);
+    }
+}
+#else
+static void back_up(const char* nand, const char* host) { (void)nand, (void)host; }
+#endif
+
 FILE* hle_nand_open(const char* nand, int mode, int32_t* err) {
     char host[600];
     FILE* f;
@@ -141,6 +226,7 @@ FILE* hle_nand_open(const char* nand, int mode, int32_t* err) {
         *err = FS_ENOENT;
         return NULL;
     }
+    if ((mode & 2) && is_save_slot(nand)) back_up(nand, host);
     f = fopen(host, mode & 2 ? "r+b" : "rb");
     if (!f) {
         *err = FS_EACCESS;
@@ -251,6 +337,7 @@ int32_t hle_nand_ioctl(uint32_t type, uint32_t in, uint32_t out, uint32_t outsiz
         if (!host_path(nand, host, sizeof(host))) return FS_EINVAL;
         if (!exists(host)) return FS_ENOENT;
         HLE_LOG("NAND delete %s", nand);
+        if (is_save_slot(nand) && !is_dir(host)) back_up(nand, host); /* a save rewritten, or deleted */
         return remove_path(host);
     case 8: /* Rename */
         hle_read_str(in, nand, sizeof(nand));
@@ -259,6 +346,7 @@ int32_t hle_nand_ioctl(uint32_t type, uint32_t in, uint32_t out, uint32_t outsiz
         if (!exists(host)) return FS_ENOENT;
         HLE_LOG("NAND rename %s -> %s", nand, nand2);
         ensure_parent(host2);
+        if (is_save_slot(nand2) && exists(host2) && !is_dir(host2)) back_up(nand2, host2); /* saved via /tmp */
         remove(host2);
 #ifdef _WIN32
         /* /tmp may be on another drive than the rest of the NAND. */

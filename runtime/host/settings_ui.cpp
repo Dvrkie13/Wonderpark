@@ -403,6 +403,8 @@ void build_rows() {
         c.rows.push_back(head(L"Comfort"));
         c.rows.push_back(xrow(TOGGLE, X_PAUSE_BACKGROUND, L"Pause in the background", L"Pauses when the window loses focus."));
         c.rows.push_back(xrow(TOGGLE, X_SKIP_LOGOS, L"Skip startup logos", nullptr, {}, true));
+        c.rows.push_back(xrow(TOGGLE, X_SAVE_BACKUPS, L"Save backups",
+                              L"Keeps a copy of your slot before each save (the last 10), in the backups folder."));
         // The friends list (refresh_friend_rows adds a row per Pokémon after this).
         Row fh;
         fh.kind = FRIENDHEAD;
