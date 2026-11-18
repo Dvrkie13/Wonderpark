@@ -111,6 +111,10 @@ needs the "redraw while paused" piece worked out first.
   middle of Cove Town drops the dev build (no LTO or PGO) from about 25 to
   7-17 fps: the game drawing much more in that direction (the camera's own
   collision rays cost about 5 ms a second).
+- **D, friendship tracker (2026-11-17):** a Friends list at the end of F1's
+  Gameplay page (`runtime/hle/hle_friends.c`, `settings_ui.cpp`): "194 of
+  194" with the 100% save, "2 of 194" with the Wish Park save (its Pad says
+  Friends 2), icons and English names from the disc. Not grouped by zone.
 
 ## Notes for the battle and chase work (F1 balance rows)
 

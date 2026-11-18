@@ -111,7 +111,9 @@ bool reduced_motion() {
 // ------------------------------------------------------------------------
 // The settings, as rows
 
-enum Kind { HEAD, CHOICE, TOGGLE, SLIDER, BINDHEAD, BIND, FIXEDBIND };
+// FRIENDHEAD and FRIEND: the Gameplay page's friends list (act: its index in
+// g_friends), shown only, never focused.
+enum Kind { HEAD, CHOICE, TOGGLE, SLIDER, BINDHEAD, BIND, FIXEDBIND, FRIENDHEAD, FRIEND };
 
 struct Row {
     Kind kind = HEAD;
@@ -401,6 +403,10 @@ void build_rows() {
         c.rows.push_back(head(L"Comfort"));
         c.rows.push_back(xrow(TOGGLE, X_PAUSE_BACKGROUND, L"Pause in the background", L"Pauses when the window loses focus."));
         c.rows.push_back(xrow(TOGGLE, X_SKIP_LOGOS, L"Skip startup logos", nullptr, {}, true));
+        // The friends list (refresh_friend_rows adds a row per Pokémon after this).
+        Row fh;
+        fh.kind = FRIENDHEAD;
+        c.rows.push_back(fh);
         g_cats.push_back(c);
     }
     // Silly
@@ -718,8 +724,10 @@ void place_rows() {
         const Row& r = c.rows[i];
         Placed& p = g_placed[i];
         p.y = y;
-        if (r.kind == HEAD) {
+        if (r.kind == HEAD || r.kind == FRIENDHEAD) {
             p.h = 18 + 18 + 6;
+        } else if (r.kind == FRIEND) {
+            p.h = 46;
         } else if (r.kind == BINDHEAD) {
             p.h = 6 + 16 + 4;
         } else if (r.kind == BIND || r.kind == FIXEDBIND) {
@@ -803,7 +811,8 @@ std::vector<int> focusables() {
     f.push_back(FOCUS_TOP);
     const Category& c = g_cats[U.tab];
     for (size_t i = 0; i < c.rows.size(); i++)
-        if (c.rows[i].kind != HEAD && c.rows[i].kind != BINDHEAD) f.push_back((int)i);
+        // (Friend rows too, with nothing to change: so the list scrolls by keys and controller.)
+        if (c.rows[i].kind != HEAD && c.rows[i].kind != BINDHEAD && c.rows[i].kind != FRIENDHEAD) f.push_back((int)i);
     f.push_back(-2);
     return f;
 }
@@ -860,6 +869,9 @@ void draw_focus(D2D1_RECT_F r, float radius) {
                                brush(rgb(0x3fd0d8)), 3);
 }
 
+void draw_friend_head(float x, float y, float w, uint32_t acc);  // below, with the friends list
+void draw_friend_row(int index, float x, float y, float w, float h);
+
 void draw_rows(float listTop, float t) {
     const Category& c = g_cats[U.tab];
     uint32_t acc = c.acc;
@@ -876,6 +888,15 @@ void draw_rows(float listTop, float t) {
             std::wstring up = r.label;
             for (auto& ch : up) ch = towupper(ch);
             text(up, fmt(L"Fredoka", 600, 14), ROW_X, y0 + 18, ROW_W, rgb(acc), DWRITE_TEXT_ALIGNMENT_LEADING, 14 * .12f);
+            continue;
+        }
+        if (r.kind == FRIENDHEAD) {
+            draw_friend_head(ROW_X, y0 + 18, ROW_W, acc);
+            continue;
+        }
+        if (r.kind == FRIEND) {
+            draw_friend_row(r.act, ROW_X, y0, ROW_W, p.h);
+            if (focused) draw_focus(RectF(ROW_X - 4, y0 + 3, ROW_X + ROW_W + 4, y0 + p.h - 3), 10);
             continue;
         }
         if (r.kind == BINDHEAD) {
@@ -1763,6 +1784,198 @@ ID2D1Bitmap* bitmap(Img& img) {
     return img.bmp.Get();
 }
 
+// ---- The friendship tracker (Gameplay page, Friends; hle_friends.c)
+//
+// The Pokémon that can be befriended, in the PokéPark Pad's order, with
+// their English names and icons read once on a thread of their own from the
+// player's extracted disc (Archive/ResidentMessage.dac: Pokemon.msbt,
+// labelled NAME_<NAME>; Archive/PokemonIcon.dac: Ic<character>.tpl), as
+// MildRain479/PokePark-2-Wiicompiled's hle_pad_art.c (CC0) reads them.
+// Whether each is a friend is read live from the loaded save.
+
+extern "C" {
+int hle_friends_pokemon(void);
+int hle_friends_first(void);
+int hle_friend_found(int p);
+void hle_friend_label(int p, char* out, int size);
+int hle_characters(void);
+void hle_character_name(int c, char* out, int size);
+int hle_friend_points(int p);
+}
+
+struct Friend {
+    int pokemon = 0;
+    std::wstring name;
+    Img icon;
+};
+std::vector<Friend>* g_friends;      // set once the thread is done
+std::atomic<int> g_friendsState{0};  // 0 not started, 1 loading, 2 ready, 3 failed
+const int FRIEND_POINTS = 100;
+
+// An MSBT's text for each label (LBL1's labels give TXT2's UTF-16 texts;
+// tags, 0x0E group kind size data, left out).
+std::map<std::string, std::wstring> msbt_texts(const std::vector<uint8_t>& m) {
+    std::map<std::string, std::wstring> out;
+    if (m.size() < 0x20 || memcmp(m.data(), "MsgStdBn", 8) || m[8] != 0xFE) return out;
+    const uint8_t *lbl = nullptr, *txt = nullptr;
+    uint32_t sections = be16(&m[0x0E]);
+    size_t p = 0x20;
+    for (uint32_t s = 0; s < sections && p + 16 <= m.size(); s++) {
+        uint32_t len = be32(&m[p + 4]);
+        if (p + 16 + len > m.size()) break;
+        if (!memcmp(&m[p], "LBL1", 4)) lbl = &m[p + 16];
+        if (!memcmp(&m[p], "TXT2", 4)) txt = &m[p + 16];
+        p += 16 + ((len + 15) & ~15u);
+    }
+    if (!lbl || !txt) return out;
+    uint32_t texts = be32(txt);
+    for (uint32_t i = 0; i < be32(lbl); i++) {
+        const uint8_t* e = lbl + be32(lbl + 8 + i * 8);
+        for (uint32_t k = 0; k < be32(lbl + 4 + i * 8); k++) {
+            uint32_t ln = e[0], idx = be32(e + 1 + ln);
+            std::string label((const char*)e + 1, ln);
+            e += 5 + ln;
+            if (idx >= texts) continue;
+            std::wstring s;
+            const uint8_t* t = txt + be32(txt + 4 + idx * 4);
+            for (int guard = 0; guard < 256; guard++) {
+                uint32_t ch = be16(t);
+                t += 2;
+                if (!ch) break;
+                if (ch == 0x0E) {
+                    t += 4 + be16(t + 4);
+                    continue;
+                }
+                if (ch >= 32) s += (wchar_t)ch;
+            }
+            out[label] = s;
+        }
+    }
+    return out;
+}
+
+void load_friends() {
+    int expected = 0;
+    if (!g_friendsState.compare_exchange_strong(expected, 1)) return;
+    std::thread([] {
+        std::string root = dvd_root() ? dvd_root() : "";
+        auto icons = lz11(read_file(root + "/files/Archive/PokemonIcon.dac"));
+        auto msgs = u8_pick(lz11(read_file(root + "/files/Archive/ResidentMessage.dac")), {"Pokemon.msbt"});
+        auto names = msbt_texts(msgs["Pokemon.msbt"]);
+        // Every icon in the archive, by character name (Ic<name>.tpl).
+        std::vector<std::string> want;
+        std::vector<std::string> chars;
+        for (int c = 0; c < hle_characters(); c++) {
+            char buf[32];
+            hle_character_name(c, buf, sizeof(buf));
+            chars.push_back(buf);
+            if (buf[0]) want.push_back(std::string("Ic") + buf + ".tpl");
+        }
+        auto files = u8_pick(icons, want);
+        auto* list = new std::vector<Friend>();
+        for (int p = hle_friends_first(); p < hle_friends_pokemon(); p++) {
+            char label[40];
+            hle_friend_label(p, label, sizeof(label));
+            if (strncmp(label, "NAME_", 5) || !hle_friend_found(p)) continue;
+            const char* inner = label + 5;
+            // Its icon: the character of its name, or failing that the one
+            // whose name starts the most like it (Onond for ONONDO).
+            std::string best;
+            size_t bestN = 4;
+            for (auto& ch : chars) {
+                size_t n = 0;
+                while (n < ch.size() && inner[n] && tolower((unsigned char)ch[n]) == tolower((unsigned char)inner[n])) n++;
+                if (n == ch.size() && !inner[n]) n = 99;
+                if (n > bestN && files.count("Ic" + ch + ".tpl")) bestN = n, best = ch;
+            }
+            Friend f;
+            f.pokemon = p;
+            auto nm = names.find(label);
+            f.name = nm != names.end() && !nm->second.empty() ? nm->second : widen(best.empty() ? inner : best.c_str());
+            if (!best.empty()) tpl(files["Ic" + best + ".tpl"], f.icon);
+            list->push_back(std::move(f));
+        }
+        if (list->empty()) {
+            fprintf(stderr, "settings: the friends list couldn't be read from %s/files/Archive\n", root.c_str());
+            delete list;
+            g_friendsState = 3;
+            return;
+        }
+        g_friends = list;
+        g_friendsState = 2;
+    }).detach();
+}
+
+int friends_made() {
+    int n = 0;
+    if (g_friendsState != 2) return 0;
+    for (auto& f : *g_friends) n += hle_friend_points(f.pokemon) >= FRIEND_POINTS;
+    return n;
+}
+
+void draw_friend_head(float x, float y, float w, uint32_t acc) {
+    text(L"FRIENDS", fmt(L"Fredoka", 600, 14), x, y, w, rgb(acc), DWRITE_TEXT_ALIGNMENT_LEADING, 14 * .12f);
+    std::wstring right;
+    if (g_friendsState == 3) right = L"Couldn't read the disc";
+    else if (g_friendsState != 2) right = L"Reading…";
+    else if (hle_friend_points(g_friends->front().pokemon) < 0) right = L"Load a save first";
+    else right = std::to_wstring(friends_made()) + L" of " + std::to_wstring(g_friends->size());
+    text(right, fmt(L"Nunito", 800, 14), x, y - 1, w, rgb(0xffe7a3), DWRITE_TEXT_ALIGNMENT_TRAILING);
+}
+
+void draw_friend_row(int index, float x, float y, float w, float h) {
+    if (g_friendsState != 2 || index < 0 || index >= (int)g_friends->size()) return;
+    Friend& f = (*g_friends)[index];
+    bool made = hle_friend_points(f.pokemon) >= FRIEND_POINTS;
+    float op = made ? 1 : .55f;
+    float s = 38, iy = y + (h - s) / 2;
+    G.rt->FillEllipse(D2D1::Ellipse(Point2F(x + s / 2, iy + s / 2), s / 2, s / 2), brush(rgb(0x2a3760, op)));
+    if (ID2D1Bitmap* b = bitmap(f.icon))
+        G.rt->DrawBitmap(b, RectF(x, iy, x + s, iy + s), op, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
+    text(f.name, fmt(L"Nunito", 800, 15), x + s + 12, y + (h - 20) / 2, w - s - 12 - 110, rgb(0xf4efe1, op));
+    if (made) {
+        static ComPtr<ID2D1PathGeometry> star;
+        if (!star) star = svg_path("M10 0L12.5 7.5L20 10L12.5 12.5L10 20L7.5 12.5L0 10L7.5 7.5Z");
+        Matrix3x2F old;
+        G.rt->GetTransform(&old);
+        G.rt->SetTransform(Matrix3x2F::Scale(.9f, .9f) * Matrix3x2F::Translation(x + w - 92, y + (h - 18) / 2) * old);
+        G.rt->FillGeometry(star.Get(), brush(rgb(0xf3cf6b)));
+        G.rt->SetTransform(old);
+        text(L"Friend", fmt(L"Nunito", 800, 13), x + w - 66, y + (h - 18) / 2, 66, rgb(0xf3cf6b), DWRITE_TEXT_ALIGNMENT_TRAILING);
+    } else {
+        text(L"Not yet", fmt(L"Nunito", 700, 13), x + w - 80, y + (h - 18) / 2, 80, rgb(0xc6d0e6, .7f), DWRITE_TEXT_ALIGNMENT_TRAILING);
+    }
+    G.rt->DrawLine(Point2F(x, y + h), Point2F(x + w, y + h), brush(rgb(0xf3cf6b, .08f)), 1);
+}
+
+// The Gameplay page's friend rows, rebuilt when what they'd show changes:
+// not yet befriended first, then friends, each in the Pad's order.
+void refresh_friend_rows() {
+    static int shownState = -1, shownMade = -1, shownLoaded = -1;
+    if (g_cats.size() < 5) return;
+    Category& c = g_cats[4];  // Gameplay
+    int state = g_friendsState, made = friends_made();
+    int loaded = state == 2 && hle_friend_points(g_friends->front().pokemon) >= 0;
+    size_t have = 0, want = loaded ? g_friends->size() : 0;
+    for (auto& r : c.rows) have += r.kind == FRIEND;
+    if (state == shownState && made == shownMade && loaded == shownLoaded && have == want) return;
+    shownState = state, shownMade = made, shownLoaded = loaded;
+    while (!c.rows.empty() && c.rows.back().kind == FRIEND) c.rows.pop_back();
+    if (loaded) {
+        for (int pass = 0; pass < 2; pass++)
+            for (size_t i = 0; i < g_friends->size(); i++) {
+                bool isFriend = hle_friend_points((*g_friends)[i].pokemon) >= FRIEND_POINTS;
+                if (isFriend != (pass == 1)) continue;
+                Row r;
+                r.kind = FRIEND;
+                r.act = (int)i;
+                c.rows.push_back(r);
+            }
+    }
+    if (U.tab == 4) place_rows(), clamp_scroll();
+    U.gen++;
+}
+
 // Text in the game's font: white with the menu's dark red outline, `h`
 // pixels for the font's cell height. Returns the width drawn.
 float game_text(const std::wstring& s, float x, float y, float h, float opacity = 1, bool measureOnly = false,
@@ -2047,6 +2260,9 @@ extern "C" const uint32_t* settings_ui_draw(int w, int h) {
     static int dw, dh;
     if (!U.open || w <= 0 || h <= 0) return nullptr;
     if (!ensure_target(w, h)) return nullptr;
+    // The friends list: read from the disc the first time, kept current.
+    load_friends();
+    refresh_friend_rows();
     // Rows available only sometimes: greyed (soon) while they can't be used.
     for (auto& r : g_cats[U.tab].rows)
         if (r.off) {

@@ -197,6 +197,16 @@ also `WONDERPARK_<KEY>`, key in capitals, for example `WONDERPARK_WINDOW_MODE=1`
 ## The F1 settings tab
 
 `runtime/host/settings_ui.cpp`, matching `docs/settings/ingame-f1-settings.html`.
+
+The Gameplay page ends with a **Friends** list (the friendship tracker): "N
+of 194" and a row per Pokémon that can be befriended, not yet first, each
+with its icon and English name. Those are read once, on a thread of their
+own, from the player's extracted disc (`Archive/PokemonIcon.dac`,
+`Archive/ResidentMessage.dac`'s `Pokemon.msbt`); whether each is a friend
+(100 friendship points or more) is read live from the loaded save
+(`runtime/hle/hle_friends.c`, from MildRain479/PokePark-2-Wiicompiled, CC0).
+With no save loaded it says so. Not grouped by zone yet.
+
 F1 or a controller's Back + Start opens it; F1, Esc, Close or the
 controller's B close it. It's drawn by the runtime with Direct2D and
 DirectWrite (software, into an image the overlay path lays over the frame;
