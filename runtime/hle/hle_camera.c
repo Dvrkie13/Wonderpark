@@ -40,6 +40,7 @@
 #include "host_settings.h"
 
 int hle_in_minigame(void);         /* hle_scene.c */
+int hle_in_park(void);             /* hle_scene.c */
 unsigned hle_scene_changes(void);  /* hle_scene.c */
 extern uint32_t g_wpad_held;       /* hle_wpad.c */
 
@@ -176,16 +177,19 @@ static float wall_along(CPUState* c, const float from[3], const float along[3]) 
     return len > 0 && dot < len ? (dot > 0 ? dot / len : 0) : 1;
 }
 
+/* WONDERPARK_MOUSE's updates left: counted where a turn is applied (the
+ * follow camera's update), so none are spent while it isn't on screen. */
+static int sTestLeft = -1;
+
 static void read_turn(float* dx, float* dy) {
-    static int env = -1, left = -1;
+    static int env = -1;
     static float ex, ey;
     if (env < 0) {
         const char* e = getenv("WONDERPARK_MOUSE");
-        env = e && sscanf(e, "%f,%f,%d", &ex, &ey, &left) >= 2;
+        env = e && sscanf(e, "%f,%f,%d", &ex, &ey, &sTestLeft) >= 2;
     }
     *dx = *dy = 0;
-    if (env && left != 0) {
-        if (left > 0) left--; /* WONDERPARK_MOUSE=<dx>,<dy>,<updates>: only that many */
+    if (env && sTestLeft != 0) {
         *dx = ex;
         *dy = ey;
     } else if (g_host_mouse_read) {
@@ -308,6 +312,7 @@ WP_HOOK(0x80024EE0, CameraFollow_Update) {
         sTurn = wrap180(sTurn + sYawStep);
         sTilt += sTiltStep;
         sYawStep = sTiltStep = 0;
+        if (sTestLeft > 0) sTestLeft--; /* WONDERPARK_MOUSE=<dx>,<dy>,<updates>: only that many */
     }
     if (ours && sRecenter) {
         sRecenter = 0;

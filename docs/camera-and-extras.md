@@ -107,10 +107,15 @@ needs the "redraw while paused" piece worked out first.
   culling matches; the projection scaling in `gx_fifo.c` is gone). Checked
   in Cove Town: turning and tilting by a scripted mouse, B's look-around
   bringing it back, field of view 130% wider. Not yet: aiming at the
-  player's real position instead of the trailing point. Turning toward the
-  middle of Cove Town drops the dev build (no LTO or PGO) from about 25 to
-  7-17 fps: the game drawing much more in that direction (the camera's own
-  collision rays cost about 5 ms a second).
+  player's real position instead of the trailing point. Frame rate
+  (optimised build, Cove Town): the camera turned and held at 90, 180 or 270
+  degrees stays at 30 fps (70-82% busy, against 65-69% unturned), but while
+  it keeps turning (a test mouse at about 36 degrees a second, without stop)
+  it dips to about 10 fps for a few seconds each turn and comes back. Not
+  from the camera's collision rays (about 5 ms a second in all); the cause
+  is still to be found (the game reacting to a camera that moves every
+  frame?). Short, ordinary turns are what players will mostly do, but this
+  needs looking at.
 - **D, friendship tracker (2026-11-17):** a Friends list at the end of F1's
   Gameplay page (`runtime/hle/hle_friends.c`, `settings_ui.cpp`): "194 of
   194" with the 100% save, "2 of 194" with the Wish Park save (its Pad says
@@ -132,10 +137,12 @@ needs the "redraw while paused" piece worked out first.
   (`build/re/shelved/hle_autosave.c`, git-ignored) for that.
 - **C, speed-up (2026-11-18):** Tab / the left trigger, hold or toggle, 2x or
   3x, park only (not attractions, movies or event scripts), silent while on
-  (`runtime/host/input_win32.c`). The game's clock ran 2x as fast (retraces
-  doubled), but in the dev build, already CPU-bound at normal speed, the
-  park's Pokémon only covered 1.34x the ground: the real speed-up depends on
-  headroom. Not yet: sound while sped up, an on-screen marker.
+  (`runtime/host/input_win32.c`). It switches on and off as it should, but
+  the gain is small: each extra step is a whole frame, drawing included,
+  and in Cove Town the optimised build is already 65-69% busy at 30 fps, so
+  2x gave 34 game frames a second (1.13x). A real 2x needs the in-between
+  steps' drawing left out: the next thing to do for C. Not yet either: sound
+  while sped up, an on-screen marker.
 
 ## Notes for the battle and chase work (F1 balance rows)
 
