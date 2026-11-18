@@ -403,6 +403,10 @@ void build_rows() {
         c.rows.push_back(head(L"Comfort"));
         c.rows.push_back(xrow(TOGGLE, X_PAUSE_BACKGROUND, L"Pause in the background", L"Pauses when the window loses focus."));
         c.rows.push_back(xrow(TOGGLE, X_SKIP_LOGOS, L"Skip startup logos", nullptr, {}, true));
+        c.rows.push_back(xrow(CHOICE, X_SPEED_UP, L"Speed-up",
+                              L"Tab or the left trigger runs the park faster. Not in attractions or story scenes; quiet meanwhile.",
+                              {L"Off", L"2×", L"3×"}));
+        c.rows.push_back(xrow(CHOICE, X_SPEED_TOGGLE, L"Speed-up key", nullptr, {L"Hold", L"Toggle"}));
         c.rows.push_back(xrow(TOGGLE, X_SAVE_BACKUPS, L"Save backups",
                               L"Keeps a copy of your slot before each save (the last 10), in the backups folder."));
         // The friends list (refresh_friend_rows adds a row per Pokémon after this).

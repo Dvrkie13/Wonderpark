@@ -130,6 +130,12 @@ needs the "redraw while paused" piece worked out first.
   field is up), on a test copy only. It's out of the build until it can
   save from a paused state; the port is kept outside the repo
   (`build/re/shelved/hle_autosave.c`, git-ignored) for that.
+- **C, speed-up (2026-11-18):** Tab / the left trigger, hold or toggle, 2x or
+  3x, park only (not attractions, movies or event scripts), silent while on
+  (`runtime/host/input_win32.c`). The game's clock ran 2x as fast (retraces
+  doubled), but in the dev build, already CPU-bound at normal speed, the
+  park's Pokémon only covered 1.34x the ground: the real speed-up depends on
+  headroom. Not yet: sound while sped up, an on-screen marker.
 
 ## Notes for the battle and chase work (F1 balance rows)
 

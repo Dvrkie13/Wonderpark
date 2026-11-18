@@ -258,6 +258,43 @@ int input_controller_last(void) {
 
 static void preview_tick(void);
 
+/* Speed-up (Gameplay: Speed-up, Speed-up key): Tab, or the controller's
+ * left trigger when no action is bound to it, runs the park 2 or 3 times as
+ * fast (the game's clock, so it runs that many more of its fixed steps),
+ * while held or switched by presses. Only in the park (hle_scene.c), never
+ * in an attraction, a movie, or while a story scene or talk runs; the
+ * sound is silent meanwhile (audio_win32.c). Our speed only: one set from
+ * the debug overlay (F7) is left alone. */
+static void speed_up(uint32_t buttons) {
+    extern int hle_in_park(void), hle_event_running(void);
+    extern const char* wp_movie_playing(void);
+    extern void wp_set_game_speed(int times);
+    extern int wp_game_speed(void);
+    static int on, prevHeld, ours = 1, test = -1;
+    int held = 0, want, i, k, ltBound = 0;
+    if (test < 0) {
+        const char* e = getenv("WONDERPARK_SPEED_HELD"); /* tests: as if the key were held */
+        test = e && *e == '1';
+    }
+    if (test) held = 1;
+    for (i = 0; i < ACT_COUNT; i++)
+        for (k = 0; k < BIND_SLOTS; k++) ltBound |= g_settings.pad[i][k] == XPAD_LT;
+    if (has_focus() && !menu_is_open() && (GetAsyncKeyState(VK_TAB) & 0x8000)) held = 1;
+    if (!ltBound && (buttons & XPAD_LT)) held = 1;
+    if (g_x[X_SPEED_TOGGLE]) {
+        if (held && !prevHeld) on = !on;
+    } else {
+        on = held;
+    }
+    prevHeld = held;
+    want = on && g_x[X_SPEED_UP] && hle_in_park() && !hle_event_running() && !wp_movie_playing() ? g_x[X_SPEED_UP] + 1 : 1;
+    if (wp_game_speed() != ours) return; /* someone else's (F7) */
+    if (want != ours) {
+        wp_set_game_speed(want);
+        ours = want;
+    }
+}
+
 static int read_pad(int chan, uint32_t* held) {
     static int menuHeld;
     uint32_t buttons, stick, keys, pad;
@@ -265,6 +302,7 @@ static int read_pad(int chan, uint32_t* held) {
     preview_tick();
     mouse();
     controller_state(&buttons, &stick);
+    speed_up(buttons);
     menu_controller(buttons, buttons | stick);
     keys = keyboard();
     pad = controller(buttons, stick);

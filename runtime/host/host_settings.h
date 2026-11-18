@@ -91,6 +91,8 @@ enum {
     /* [gameplay] */
     X_PAUSE_BACKGROUND, X_SKIP_LOGOS,
     X_SAVE_BACKUPS,     /* copy a save slot to backups\ before it's written (nand.c) */
+    X_SPEED_UP,         /* the speed-up key's speed: 0 off, 1 2x, 2 3x (input_win32.c) */
+    X_SPEED_TOGGLE,     /* 0 while held, 1 on and off by presses */
     /* [silly] */
     X_POKEMON_SIZE,     /* 0 mini, 1 normal, 2 giant */
     X_VOICE_PITCH,      /* -50..50 % */

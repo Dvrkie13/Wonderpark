@@ -107,6 +107,8 @@ static const struct {
     {"gameplay", "pause_background", 1, 0, 1, "1: the game pauses while another window is in front"},
     {"gameplay", "skip_logos", 0, 0, 1, "not yet"},
     {"gameplay", "save_backups", 1, 0, 1, "1: a copy of a save slot in backups\\ before each save (the last 10)"},
+    {"gameplay", "speed_up", 1, 0, 2, "Tab / left trigger runs the park faster: 0 off, 1 2x, 2 3x"},
+    {"gameplay", "speed_toggle", 0, 0, 1, "0: while held, 1: pressed on and off"},
     {"silly", "pokemon_size", 1, 0, 2, "0 mini, 1 normal, 2 giant (not yet)"},
     {"silly", "voice_pitch", 0, -50, 50, "percent of the frequency: Pokemon voices higher or deeper"},
     {"silly", "mirror_world", 0, 0, 1, "the picture flipped left to right (and left and right swapped)"},

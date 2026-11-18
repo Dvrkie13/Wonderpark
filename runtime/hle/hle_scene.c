@@ -40,3 +40,12 @@ int hle_in_park(void) { return sScene == SCENE_PARK; }
 int hle_in_minigame(void) { return sScene == SCENE_ATTRACTION; }
 /* Changes whenever the scene does (the camera starts over). */
 unsigned hle_scene_changes(void) { return sChanges; }
+
+/* Whether an event script (a story scene, a talk, a favour) is running:
+ * the script interface's (pointer at 0x804B04F0) +0x248 is nonzero while
+ * one runs, as the EventManager checks before it starts one (from
+ * MildRain479/PokePark-2-Wiicompiled's hle_autosave.c, CC0). */
+int hle_event_running(void) {
+    u32 esi = LD32(0x804B04F0u);
+    return wp_mem_ptr(esi, 0x24C) && LD32(esi + 0x248) != 0;
+}
