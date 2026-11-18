@@ -319,8 +319,8 @@ void build_rows() {
                              0, 30, 1, L" s", false);
             c.rows.push_back(rc);
         }
-        c.rows.push_back(xrow(CHOICE, X_RIGHT_STICK, L"Right stick", L"Auto switches to the pointer when the game asks for one.",
-                              {L"Camera", L"Pointer", L"Auto"}, true));
+        c.rows.push_back(xrow(CHOICE, X_RIGHT_STICK, L"Right stick", L"Auto moves the pointer when the game uses one (aiming, pointing at menus), else the camera.",
+                              {L"Camera", L"Pointer", L"Auto"}));
         c.rows.push_back(xrow(TOGGLE, X_AIM_ASSIST, L"Aim assist", L"Controller aiming leans toward targets (Cake Contraption).", {}, true));
         c.rows.push_back(vchoice(L"Rumble", nullptr, {L"Off", L"Light", L"Normal", L"Strong"}, {0, 1, 2, 3},
                                  &g_settings.rumble, 2, [] { input_rumble_preview(); }));
@@ -344,7 +344,7 @@ void build_rows() {
         c.rows.push_back(fb);
         c.rows.push_back(head(L"Feel"));
         c.rows.push_back(xslider(X_STEER_SENSITIVITY, L"Steering sensitivity", nullptr, 25, 200, 5, L"%", true));
-        c.rows.push_back(xslider(X_AIM_SPEED, L"Aim speed", nullptr, 25, 200, 5, L"%", true));
+        c.rows.push_back(xslider(X_AIM_SPEED, L"Aim speed", L"How fast the right stick moves the pointer.", 25, 200, 5, L"%", false));
         c.rows.push_back(xslider(X_RHYTHM_OFFSET, L"Dance timing offset", L"Shift if your presses feel early or late.", -100, 100,
                                  5, L" ms", true, true));
         g_cats.push_back(c);
@@ -425,7 +425,8 @@ void build_rows() {
     // Silly
     {
         Category c{L"silly", L"Silly", L"Just for fun", 0xe2457f, 0xf27aa5, 0xffffff, {}};
-        c.rows.push_back(xrow(CHOICE, X_POKEMON_SIZE, L"Pokémon size", nullptr, {L"Mini", L"Normal", L"Giant"}, true));
+        c.rows.push_back(xrow(CHOICE, X_POKEMON_SIZE, L"Pokémon size", L"The park's Pokémon at half or twice their size. Just for looks: they bump into things as before.",
+                              {L"Mini", L"Normal", L"Giant"}));
         c.rows.push_back(xslider(X_VOICE_PITCH, L"Voice pitch", L"From deep and grumbly to tiny and squeaky. Changes the next thing a Pokémon says.", -50, 50, 5, L"%", false, true));
         c.rows.push_back(xrow(TOGGLE, X_MIRROR_WORLD, L"Mirror world", L"Flips the whole park left to right. Left and right swap too."));
         c.rows.push_back(xrow(TOGGLE, X_VICTORY_CONFETTI, L"Victory confetti", L"A burst of confetti when you clear an attraction."));

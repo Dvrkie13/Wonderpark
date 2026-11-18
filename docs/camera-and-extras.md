@@ -115,7 +115,10 @@ needs the "redraw while paused" piece worked out first.
   from the camera's collision rays (about 5 ms a second in all); the cause
   is still to be found (the game reacting to a camera that moves every
   frame?). Short, ordinary turns are what players will mostly do, but this
-  needs looking at.
+  needs looking at. **Fixed 2026-11-18** (docs/handoff/PERFORMANCE.md, "The
+  camera turning dip"): the display-list cache was too small and the vertex
+  arena was sent to the GPU in one huge range; turning nonstop now averages
+  29.3 fps (2 of 30 seconds under 25, was 21 of 30).
 - **D, friendship tracker (2026-11-17):** a Friends list at the end of F1's
   Gameplay page (`runtime/hle/hle_friends.c`, `settings_ui.cpp`): "194 of
   194" with the 100% save, "2 of 194" with the Wish Park save (its Pad says

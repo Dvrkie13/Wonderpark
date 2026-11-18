@@ -26,6 +26,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 
+#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -127,10 +128,40 @@ static void mouse(void) {
     sButtonsLive = 1;
 }
 
+static void read_sticks(float* lx, float* ly, float* rx, float* ry);
+
+/* Right stick (Controls; [controls] right_stick): 0 the camera, 1 the
+ * pointer, 2 auto: the pointer while the game has it on (minigames that
+ * aim, menus pointed at), else the camera. */
+static int stick_is_pointer(void) {
+    extern int hle_pointer_on(void); /* hle_wpad.c */
+    return g_x[X_RIGHT_STICK] == 1 || (g_x[X_RIGHT_STICK] == 2 && hle_pointer_on());
+}
+
+/* The right stick moves the pointer this many mouse pixels a second at
+ * full push (across the screen in about 2 s), times Aim speed; the push
+ * squared, so small pushes aim finely. */
+#define AIM_STICK_PIXELS_PER_SECOND 900.0f
+
 static void read_pointer(float* dx, float* dy) {
-    *dx = sPointerX * g_settings.mouse_sensitivity * (g_x[X_MIRROR_WORLD] ? -1 : 1);
+    static LARGE_INTEGER last;
+    LARGE_INTEGER now, freq;
+    float lx, ly, rx, ry, dt = 0;
+    QueryPerformanceCounter(&now);
+    QueryPerformanceFrequency(&freq);
+    if (last.QuadPart) dt = (float)(now.QuadPart - last.QuadPart) / (float)freq.QuadPart;
+    if (dt > 0.1f) dt = 0.1f;
+    last = now;
+    *dx = sPointerX * g_settings.mouse_sensitivity;
     *dy = sPointerY * g_settings.mouse_sensitivity;
     sPointerX = sPointerY = 0;
+    if (stick_is_pointer() && has_focus()) {
+        float speed = AIM_STICK_PIXELS_PER_SECOND * dt * g_x[X_AIM_SPEED] / 100.0f;
+        read_sticks(&lx, &ly, &rx, &ry);
+        *dx += rx * fabsf(rx) * speed;
+        *dy -= ry * fabsf(ry) * speed;
+    }
+    if (g_x[X_MIRROR_WORLD]) *dx = -*dx;
 }
 
 /* A stick axis, -32768 to 32767, as -1 to 1 past a dead zone. */
@@ -169,7 +200,7 @@ static void read_mouse(float* dx, float* dy) {
     if (dt > 0.1f) dt = 0.1f; /* not a jump after a stall */
     last = now;
     read_sticks(&lx, &ly, &rx, &ry);
-    if (!has_focus()) rx = ry = 0;
+    if (!has_focus() || stick_is_pointer()) rx = ry = 0; /* the stick moving the pointer instead */
     {
         /* Wonderpark: the camera's settings (hle_camera.c): Camera speed for
          * the mouse, Stick speed for the stick, both inverts; Mirror world

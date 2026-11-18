@@ -2182,7 +2182,13 @@ typedef struct Span {
 } Span;
 static GXVertex* sArenaMem;
 static int sArenaVerts, sArenaSize; /* vertices in the copy; in the buffer */
-static int sArenaDirtyLo = 0x7FFFFFFF, sArenaDirtyHi;
+/* The parts of the copy written since the buffer was last brought up to
+ * date: separate ranges, as freed spans are reused anywhere in the arena.
+ * (One range from the lowest write to the highest sent tens of MB at a
+ * time when lists were decoded far apart, as turning the camera does.) */
+#define ARENA_DIRTY 64
+static struct { int lo, hi; } sArenaDirty[ARENA_DIRTY];
+static int sArenaDirtyCount;
 static Span* sSpans;
 static int sSpanCount, sSpanCap;
 
@@ -2245,8 +2251,34 @@ static int gl_arena_alloc(int n) {
 static void gl_arena_write(int first, const GXVertex* v, int n) {
     if (n <= 0) return;
     memcpy(sArenaMem + first, v, (size_t)n * sizeof(GXVertex));
-    if (first < sArenaDirtyLo) sArenaDirtyLo = first;
-    if (first + n > sArenaDirtyHi) sArenaDirtyHi = first + n;
+    {
+        int i, lo = first, hi = first + n;
+        /* Joined to a range it touches or overlaps (usually the last). */
+        for (i = sArenaDirtyCount - 1; i >= 0; i--) {
+            if (lo <= sArenaDirty[i].hi && hi >= sArenaDirty[i].lo) {
+                if (lo < sArenaDirty[i].lo) sArenaDirty[i].lo = lo;
+                if (hi > sArenaDirty[i].hi) sArenaDirty[i].hi = hi;
+                return;
+            }
+        }
+        if (sArenaDirtyCount == ARENA_DIRTY) {
+            /* Full: the two ranges closest together made one. */
+            int a = 0, b = 1, j;
+            long long best = -1;
+            for (i = 0; i < sArenaDirtyCount; i++)
+                for (j = i + 1; j < sArenaDirtyCount; j++) {
+                    long long gap = sArenaDirty[i].lo > sArenaDirty[j].hi ? (long long)sArenaDirty[i].lo - sArenaDirty[j].hi
+                                                                          : (long long)sArenaDirty[j].lo - sArenaDirty[i].hi;
+                    if (best < 0 || gap < best) best = gap, a = i, b = j;
+                }
+            if (sArenaDirty[b].lo < sArenaDirty[a].lo) sArenaDirty[a].lo = sArenaDirty[b].lo;
+            if (sArenaDirty[b].hi > sArenaDirty[a].hi) sArenaDirty[a].hi = sArenaDirty[b].hi;
+            sArenaDirty[b] = sArenaDirty[--sArenaDirtyCount];
+        }
+        sArenaDirty[sArenaDirtyCount].lo = lo;
+        sArenaDirty[sArenaDirtyCount].hi = hi;
+        sArenaDirtyCount++;
+    }
 }
 
 static void gl_arena_free(int first, int n) {
@@ -2277,14 +2309,16 @@ static void arena_upload(void) {
                     sArenaVerts * (double)sizeof(GXVertex) / 1048576.0);
         sArenaSize = sArenaVerts;
     }
-    if (sArenaDirtyLo < sArenaDirtyHi) {
+    if (sArenaDirtyCount) {
+        int i;
         p_glBindBuffer(GL_ARRAY_BUFFER, sArenaVbo);
-        p_glBufferSubData(GL_ARRAY_BUFFER, (GLintptr)sArenaDirtyLo * sizeof(GXVertex),
-                          (GLsizeiptr)(sArenaDirtyHi - sArenaDirtyLo) * sizeof(GXVertex), sArenaMem + sArenaDirtyLo);
+        for (i = 0; i < sArenaDirtyCount; i++)
+            p_glBufferSubData(GL_ARRAY_BUFFER, (GLintptr)sArenaDirty[i].lo * sizeof(GXVertex),
+                              (GLsizeiptr)(sArenaDirty[i].hi - sArenaDirty[i].lo) * sizeof(GXVertex),
+                              sArenaMem + sArenaDirty[i].lo);
         p_glBindBuffer(GL_ARRAY_BUFFER, sVbo);
     }
-    sArenaDirtyLo = 0x7FFFFFFF;
-    sArenaDirtyHi = 0;
+    sArenaDirtyCount = 0;
 }
 
 

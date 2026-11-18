@@ -86,6 +86,10 @@ WP_HOOK(0x80206A70, SceneManager_RunBegin) {
     static int state = -1; /* -1 not read, 0 nothing to do, else the attraction */
     static double at, parkSince = -1;
     boot_speed();
+    {
+        extern void hle_size_frame(void); /* hle_size.c: Pokémon size */
+        hle_size_frame();
+    }
     if (state < 0) {
         const char* e = getenv("WONDERPARK_ATTRACTION");
         const char* comma = e ? strchr(e, ',') : NULL;

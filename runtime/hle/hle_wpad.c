@@ -96,6 +96,10 @@ static int hle_motion(uint32_t held, uint32_t reports, int16_t acc[3], int16_t d
     return 2;
 }
 
+/* Whether the game has remote 0's pointer on (the right stick's Auto
+ * setting moves it then, input_win32.c). */
+int hle_pointer_on(void) { return sChan[0].dpdCommand != 0; }
+
 static uint32_t sReports;
 /* Remote 0's buttons (HOST_PAD_*) at the last WPADRead. */
 uint32_t g_wpad_held;

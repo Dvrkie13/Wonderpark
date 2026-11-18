@@ -1415,7 +1415,7 @@ typedef struct ListEntry {
     int changed;         /* calls in a row it was different */
 } ListEntry;
 
-#define LIST_SETS 4096
+#define LIST_SETS 16384 /* 65536 lists: Cove Town calls about 26,000 a frame (16,384 were too few: turning the camera pushed lists out, and a third of each frame was decoded again) */
 #define LIST_WAYS 4
 /* A list not called for this many frames (5 s) is let go of, its vertices
  * freed: kept for 20 s, the park's walk filled 216 MB of video memory. */
