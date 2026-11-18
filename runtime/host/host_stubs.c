@@ -31,8 +31,8 @@ void (*g_host_mouse_read)(float* dx, float* dy);
 void (*g_host_pointer_read)(float* dx, float* dy);
 void (*g_host_sticks_read)(float* lx, float* ly, float* rx, float* ry);
 
-/* The reference's in-game Options menu and button-prompt icons (Phase 3):
+/* The reference's in-game Options menu (Phase 3):
  * no scripted menu input. (menu_is_open and menu_controller: the F1 tab,
  * overlay_win32.c.) */
 int options_script(uint32_t held) { (void)held; return 0; }
-void prompts_init(void) {}
+

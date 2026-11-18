@@ -35,7 +35,8 @@ file(GLOB WP_RUNTIME_SOURCES CONFIGURE_DEPENDS
     runtime/core/*.c runtime/hw/*.c runtime/hle/*.c runtime/ios/*.c
     runtime/gpu/*.c runtime/host/*.c runtime/host/*.cpp config/patches/*.c "${WP_GENERATED_DIR}/wp_hooks.c")
 # wonderpark.rc: the F1 tab's fonts (Fredoka, Nunito; SIL OFL), shared with the launcher.
-add_executable(Wonderpark ${WP_RUNTIME_SOURCES} runtime/host/wonderpark.rc)
+# pad_icons.rc: the controller icons (assets/ui/pad-icons/, CC BY-SA 4.0; tools/pad_icons_rc.py).
+add_executable(Wonderpark ${WP_RUNTIME_SOURCES} runtime/host/wonderpark.rc runtime/host/pad_icons.rc)
 target_include_directories(Wonderpark PRIVATE runtime/core runtime/gpu runtime/host)
 target_link_libraries(Wonderpark PRIVATE wp_generated)
 if(WIN32)

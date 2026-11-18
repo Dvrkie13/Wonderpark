@@ -214,8 +214,17 @@ static uint32_t keyboard(void) {
  * gets the same reading. */
 static void controller_state(uint32_t* buttons, uint32_t* stick) {
     XPadState s;
+    static int wasConnected = -1;
+    int connected;
     *buttons = *stick = 0;
-    if (!pXInputGetState || pXInputGetState(0, &s) != ERROR_SUCCESS) return;
+    connected = pXInputGetState && pXInputGetState(0, &s) == ERROR_SUCCESS;
+    if (connected != wasConnected) {
+        /* A pad came or went: look at its type again (pad_icons.cpp). */
+        extern void pad_icons_hotplug(void);
+        if (wasConnected >= 0) pad_icons_hotplug();
+        wasConnected = connected;
+    }
+    if (!connected) return;
     *buttons = s.Gamepad.wButtons;
     if (s.Gamepad.bLeftTrigger > 128) *buttons |= XPAD_LT;
     if (s.Gamepad.bRightTrigger > 128) *buttons |= XPAD_RT;
@@ -306,7 +315,7 @@ static int read_pad(int chan, uint32_t* held) {
     menu_controller(buttons, buttons | stick);
     keys = keyboard();
     pad = controller(buttons, stick);
-    if (pad) sControllerLast = 1;
+    if (pad || buttons || stick) sControllerLast = 1; /* any button, or the stick past half */
     else if (keys) sControllerLast = 0;
     *held = keys | pad;
     if (g_x[X_MIRROR_WORLD]) {

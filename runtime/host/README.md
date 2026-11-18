@@ -3,6 +3,7 @@
 The Windows side.
 
 - `input_win32.c`: keyboard, mouse and XInput controller to Wii Remote buttons and pointer; mouse capture.
+- `pad_icons_core.cpp` (shared with the launcher) and `pad_icons.cpp`: controller button icons (Flat Gamepad Icons, CC BY-SA 4.0, built in by `pad_icons.rc` from `assets/ui/pad-icons/`), the connected pad's type (HID, by maker), the Button icons setting, key caps and the game's prompt icons.
 - `audio_win32.c`: sound output (waveOut, 48 kHz, upsampled from the game's 32 kHz).
 - `settings.c`: `settings.ini` and `bindings.ini`, `WONDERPARK_<KEY>` overrides.
 - `overlay_win32.c`: the debug overlay (backtick) and game speed (F7); routes the window's messages and the overlay image to the F1 tab while it's open.

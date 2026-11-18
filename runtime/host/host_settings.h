@@ -83,6 +83,8 @@ enum {
     X_FREE_CAMERA,      /* the mouse and right stick turn the camera (hle_camera.c) */
     X_STICK_SENSITIVITY, /* 10-300 %: the right stick's turning */
     X_CAMERA_RECENTER,  /* seconds without turning before the camera eases back; 0 never */
+    /* [input] */
+    X_BUTTON_ICONS,     /* 0 auto, 1 Xbox, 2 PlayStation, 3 Nintendo, 4 keyboard only (pad_icons.cpp) */
     /* [audio] */
     X_VOLUME_MASTER, X_VOLUME_MUSIC, X_VOLUME_SFX, X_VOLUME_VOICES, /* 0-100 % */
     X_VOICE_LANGUAGE,   /* 0 English, 1 Japanese */

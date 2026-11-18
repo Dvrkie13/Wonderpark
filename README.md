@@ -115,7 +115,13 @@ Disc extraction alone: `python tools/extract_disc.py path\to\your\disc.iso`
   (a recomp of PokéPark 2: Wonders Beyond, CC0 1.0). Wonderpark's free
   camera and field of view (`hle_camera.c`), scene tracking (`hle_game.c`),
   battle damage and chase speed options (`hle_modifiers.c`) and friends list
-  (`hle_friends.c`, `hle_pad_art.c`) are adapted from its code.
+  (`hle_friends.c`, `hle_pad_art.c`) and in-game button prompts
+  (`hle_prompts.c`, `boot/prompts.c`) are adapted from its code.
+- Controller icons: Flat Gamepad Icons by RobTheFiveNine
+  (https://robthefivenine.itch.io/flat-gamepad-icons), CC BY-SA 4.0. Home icon
+  adapted in the same style. They're in `assets/ui/pad-icons/` with the
+  license (`LICENSE.txt`); the CC BY-SA license covers those icons only, not
+  Wonderpark's code. The pack's platform-logo icons are not included.
 - **ExpansionPak, [DolRecomp](https://github.com/ExpansionPak/DolRecomp)**
   (GPL-3.0-or-later), the PowerPC-to-C recompiler, used as a git submodule.
   A `Wonderpark.exe` you build contains GPL-3.0 code from DolRecomp (its CPU

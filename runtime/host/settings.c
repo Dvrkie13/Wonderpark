@@ -97,6 +97,7 @@ static const struct {
     {"controls", "free_camera", 1, 0, 1, "1: the mouse and right stick turn the camera"},
     {"controls", "stick_sensitivity", 100, 10, 300, "percent: how fast the right stick turns the camera"},
     {"controls", "camera_recenter", 0, 0, 30, "seconds without turning before the camera eases back behind; 0 never"},
+    {"input", "button_icons", 0, 0, 4, "button icons: 0 auto (the pad used last), 1 Xbox, 2 PlayStation, 3 Nintendo, 4 keyboard only"},
     {"audio", "volume_master", 100, 0, 100, "percent"},
     {"audio", "volume_music", 100, 0, 100, "percent: music and jingles"},
     {"audio", "volume_sfx", 100, 0, 100, "percent: sound effects"},
@@ -393,6 +394,8 @@ void settings_save(void) {
     emit_x(&s, "graphics");
     tprintf(&s, "\n[controls]\n");
     emit_x(&s, "controls");
+    tprintf(&s, "\n[input]\n");
+    emit_x(&s, "input");
     tprintf(&s, "\n[audio]\n");
     emit_x(&s, "audio");
     tprintf(&s, "\n[silly]\n");

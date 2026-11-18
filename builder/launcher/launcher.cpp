@@ -39,6 +39,7 @@
 #include <wincodec.h>
 
 #include "mods.h"
+#include "../../runtime/host/pad_icons.h"  // controller icons (pad_icons_core.cpp, shared with the game)
 
 #include <algorithm>
 #include <atomic>
@@ -488,6 +489,35 @@ struct Gfx {
 static Gfx G;
 
 static Matrix3x2F root_m() { return Matrix3x2F::Scale(G.k, G.k) * Matrix3x2F::Translation(G.ox, G.oy); }
+
+// A controller icon (pad_icons_core.cpp), h scene units high, its top-left
+// at (x, y): made at the window's pixel size, once per icon and size.
+// Returns its width in scene units (0 if not read yet); draws it if draw.
+static bool g_padOn;  // a pad is connected (poll_controller)
+static float pad_icon(const char* name, float x, float y, float h, float op, bool draw) {
+    static std::map<std::string, ComPtr<ID2D1Bitmap>> cache;
+    static void* cacheFor;
+    if (!name || !G.dc) return 0;
+    if (cacheFor != G.dc.Get()) cache.clear(), cacheFor = G.dc.Get();
+    int ph = std::max(1, (int)std::lround(h * G.k));
+    int pw = pad_icons_width(name, ph);
+    if (pw <= 0) return 0;
+    if (!draw) return pw / G.k;
+    auto& b = cache[std::string(name) + "|" + std::to_string(ph)];
+    if (!b) {
+        std::vector<uint8_t> rgba((size_t)pw * ph * 4);
+        if (!pad_icons_rgba(name, ph, rgba.data(), pw)) return 0;
+        std::vector<uint32_t> px((size_t)pw * ph);
+        for (size_t i = 0; i < px.size(); i++) {
+            uint32_t r = rgba[i * 4], g = rgba[i * 4 + 1], bl = rgba[i * 4 + 2], a = rgba[i * 4 + 3];
+            px[i] = a << 24 | (r * a / 255) << 16 | (g * a / 255) << 8 | (bl * a / 255);
+        }
+        D2D1_BITMAP_PROPERTIES p = D2D1::BitmapProperties(D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED));
+        if (FAILED(G.dc->CreateBitmap(D2D1::SizeU(pw, ph), px.data(), pw * 4, p, &b))) return 0;
+    }
+    G.dc->DrawBitmap(b.Get(), RectF(x, y, x + pw / G.k, y + ph / G.k), op);
+    return pw / G.k;
+}
 
 // The shared solid brush, set to colour c: use it in the very next draw call
 // (two at once need their own brushes).
@@ -1912,6 +1942,39 @@ static void render(double t, const Shared& s) {
         }
     }
 
+    // ---- The controller's buttons, top right, while a pad is connected: its
+    // own icons (pad_icons_core.cpp: Xbox, PlayStation or Nintendo, from the
+    // pad's maker). Fades with the Mods page, like the logo hint.
+    {
+        float op = (1 - mk) * (1 - fade(.5f));
+        if (g_padOn && op > 0) {
+            int set = pad_icons_detected();
+            struct Item { uint32_t b; const wchar_t* label; } items[] = {{0x1000, L"Choose"}, {0x8000, L"Mods"}};
+            float ih = 30, gap = 8, sep = 22, x = 0, total = 0;
+            std::vector<float> iw;
+            for (auto& it : items) {
+                float tw = 0;
+                text_height(it.label, G.tfPill.Get(), 1000, &tw);
+                float w = pad_icon(pad_icons_name(it.b, set), 0, 0, ih, 0, false);
+                iw.push_back(w);
+                total += w + gap + tw + sep;
+            }
+            total -= sep;
+            if (iw[0] > 0) {
+                dc->SetTransform(R);
+                x = W - 32 - total;
+                float cy = 28 + 21;
+                for (size_t i = 0; i < 2; i++) {
+                    pad_icon(pad_icons_name(items[i].b, set), x, cy - ih / 2, ih, op, true);
+                    x += iw[i] + gap;
+                    float tw = 0, th = text_height(items[i].label, G.tfPill.Get(), 1000, &tw);
+                    draw_text(items[i].label, G.tfPill.Get(), x, cy - th / 2, tw + 4, th, rgb(0xffe7a3, op));
+                    x += tw + sep;
+                }
+            }
+        }
+    }
+
     // Status and the legal line fade out with the Mods page open.
     bool uiLayer = mk > 0;
     if (uiLayer) {
@@ -2593,11 +2656,19 @@ static void poll_controller() {
     static WORD prev[4];
     if (!g_xinput) return;
     struct { DWORD packet; WORD buttons; BYTE lt, rt; SHORT lx, ly, rx, ry; } st;
+    // (Asking about an empty slot is slow: the others only every second.)
+    static int connected = 0, wasConnected = -1;
+    static ULONGLONG lastAll;
+    bool all = GetTickCount64() - lastAll > 1000;
+    if (all) lastAll = GetTickCount64();
     for (DWORD i = 0; i < 4; i++) {
+        if (!all && !(connected >> i & 1)) continue;
         if (g_xinput(i, &st) != 0) {
             prev[i] = 0;
+            connected &= ~(1 << i);
             continue;
         }
+        connected |= 1 << i;
         WORD down = st.buttons & ~prev[i];
         prev[i] = st.buttons;
         if (down) V.keys = true;
@@ -2613,6 +2684,12 @@ static void poll_controller() {
             continue;
         }
         if (down & 0x1000) press_main();  // A
+    }
+    if (connected != wasConnected) {
+        // A pad came or went: its buttons shown (top right), its type looked at again.
+        if (wasConnected >= 0) pad_icons_hotplug();
+        wasConnected = connected;
+        g_padOn = connected != 0 || _wgetenv(L"WONDERPARK_TEST_PAD");  // (tests: as if a pad were connected)
     }
 }
 
@@ -2639,6 +2716,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show) {
     HMODULE xi = LoadLibraryW(L"xinput1_4.dll");
     if (!xi) xi = LoadLibraryW(L"xinput9_1_0.dll");
     if (xi) g_xinput = (XInputGetState_t)GetProcAddress(xi, "XInputGetState");
+    pad_icons_core_init();  // the controller icons and the pad's type, on a thread of their own
 
     WNDCLASSEXW wc = {sizeof(wc)};
     wc.lpfnWndProc = wndproc;

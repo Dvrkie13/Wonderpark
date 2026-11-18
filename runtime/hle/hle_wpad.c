@@ -28,7 +28,7 @@
 #define MA(a) wp_mem_ptr((uint32_t)(a), 1)
 #define HLE_LOG(...) WP_LOG("wpad", __VA_ARGS__)
 static int hle_motion(uint32_t held, uint32_t reports, int16_t acc[3], int16_t dots[4][2]);
-static void hle_prompts_update(void) {}
+void hle_prompts_update(void); /* hle_prompts.c: the button prompts redrawn when they change */
 
 int (*g_host_pad_read)(int chan, uint32_t* held);
 void (*g_host_pad_rumble)(int chan, int on);

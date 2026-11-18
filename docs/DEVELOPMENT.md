@@ -73,6 +73,10 @@ executable can ship in a release.
 - Controller A, Enter and Space press the main button. With Windows'
   "Animation effects" off (or `--reduced-motion`), nothing moves.
 - "Click the logo" is a label in the top-left corner (not clickable).
+- While a controller is connected, its A ("Choose") and Y ("Mods") show in
+  the top-right corner as that pad's own icons (`runtime/host/pad_icons_core.cpp`,
+  shared with the game; the icons are built in from `runtime/host/pad_icons.rc`).
+  `WONDERPARK_TEST_PAD=1` (tests) shows them without a pad.
 
 ### The Mods page
 
@@ -183,6 +187,7 @@ also `WONDERPARK_<KEY>`, key in capitals, for example `WONDERPARK_WINDOW_MODE=1`
 | `[controls] invert_x` | 0, 1 | works: the camera's left and right, mouse and stick (Mirror world flips it too) |
 | `[controls] camera_recenter` | 0-30 s (0 never) | works: that long without turning, the camera eases back behind |
 | `[controls] right_stick`, `aim_assist`, `steer_sensitivity`, `aim_speed`, `rhythm_offset` | | not yet |
+| `[input] button_icons` (`WONDERPARK_BUTTON_ICONS`) | 0 auto, 1 Xbox, 2 PlayStation, 3 Nintendo, 4 keyboard only | works: the button icons in F1's Controls (pad columns), the game's prompts and the launcher. Auto: the connected pad's type, from the game controllers Windows lists (HID) by maker (Sony: PlayStation; Nintendo, and Hori/PowerA/PDP Switch pads: Nintendo; else Xbox), since XInput doesn't say; a PlayStation or Switch pad behind a mapper (Steam Input, DS4Windows) still lists itself. Looked at again when a pad connects or goes away. Face buttons go by position (XInput's A is the bottom one: a cross, or a Nintendo pad's B). The game's prompts show the device used last (any pad button or the stick past half; a bound key or mouse button), key caps for the keyboard; 4 never shows a pad's (`runtime/host/pad_icons.cpp`, `pad_icons_core.cpp`, `runtime/hle/hle_prompts.c`). The log says what was found ("pad icons: ...") |
 | `[audio] volume_master` | 0-100 % | works |
 | `[audio] audio_latency` | 0 low, 1 normal, 2 safe | works: 48, 84 (as before) or 132 ms queued before playback starts; lower at once, higher from the next refill (`runtime/host/audio_win32.c`) |
 | `[audio] volume_music`, `volume_sfx`, `volume_voices` | 0-100 % | work, at once, through the game's own CRI categories (`runtime/hle/hle_volume.c`): music is BGM and JGL (jingles), voices PK_VOICE and PC_VOICE, effects the other five. The game's own category changes are kept and multiplied. Movies (the title's too) play their sound outside CRI and aren't affected |
@@ -237,9 +242,9 @@ in the game's own style: its row texture, icon frame and font, read at run
 time from the player's extracted disc (`game/files/Archive/MenuStartMenu.dac`,
 `PrepareMessageRes.dac`) on a thread of its own, never copied into the
 repo. Down from the last game item moves to it (the game's own row is drawn
-again unselected); pressing ② (or A) shows the seven PC settings in the
+again unselected); pressing ② (or A) shows the eight PC settings in the
 same rows (display mode, resolution, frame rate, anti-aliasing, graphics
-quality, widescreen, V-Sync; left/right change them, up/down scroll), with
+quality, widescreen, V-Sync, button icons; left/right change them, up/down scroll), with
 "In game, press F1 for every setting" under them; ① (or B) goes back. While
 one of these rows has the focus the game gets no buttons
 (`options_rows_filter`, called from `hle_wpad.c` WPADRead). The page, cursor
@@ -297,13 +302,14 @@ keys (f1 esc up down left right enter q e backspace, a letter or digit) or
 | `RECOMP_WIDESCREEN` | 16:9 |
 | `WONDERPARK_NO_MODS=1` | start without any mods, whatever `mods.ini` says |
 | `WONDERPARK_DISC_UNCACHED=1` | tests: read the disc's files past Windows' file cache, every read from the drive, as on a cold start |
+| `RECOMP_PROMPTS=controller` | tests: the game's button prompts as if the controller were used last (scripted input is no device's) |
 | `RECOMP_WINDOW_SIZE=WxH` | tests: the window's inside at start (a hidden `--headless` window keeps it), e.g. `2128x912` for 21:9 |
 
 (`RECOMP_*` names come from the reference runtime and still work.)
 
 ### `WONDERPARK_LOG` categories
 
-`adxcheck audioq audiostats axramp balance bloom camera framerate axvoice axvoices dec dsp efbcopy exc gxhw gxirq hook gxpe hostprof hwmisc idle ios ipc irq kpad memcpywatch mmio mmiostat modifiers mods movie mqwatch nandio pi pointer prof scene stalls steps threads voicepitch volume waits wpad wpadbtn`
+`adxcheck audioq audiostats axramp balance bloom camera framerate axvoice axvoices dec dsp efbcopy exc gxhw gxirq hook gxpe hostprof hwmisc idle ios ipc irq kpad memcpywatch mmio mmiostat modifiers mods movie mqwatch nandio pi pointer prof prompts scene stalls steps threads voicepitch volume waits wpad wpadbtn`
 
 The most useful: `waits` (where threads block), `steps` (the game's logic
 steps per tick), `idle`, `efbcopy`, `gxirq`, `mmiostat` (slow memory

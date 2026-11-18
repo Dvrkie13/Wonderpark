@@ -49,6 +49,7 @@
 extern "C" {
 #include "host_input.h"
 #include "host_settings.h"
+#include "pad_icons.h"
 char g_dump_next[512];  // a frame for gl_backend.c to save as shown (test shots)
 extern int g_picture_rect[4];  // gl_backend.c: where the game's picture is in the window
 int win_has_focus(void);
@@ -322,6 +323,9 @@ void build_rows() {
         c.rows.push_back(vchoice(L"Rumble", nullptr, {L"Off", L"Light", L"Normal", L"Strong"}, {0, 1, 2, 3},
                                  &g_settings.rumble, 2, [] { input_rumble_preview(); }));
         c.rows.push_back(head(L"Buttons"));
+        c.rows.push_back(xrow(CHOICE, X_BUTTON_ICONS, L"Button icons",
+                              L"The buttons the game's prompts and this page show. Auto: your controller's own. Keys show while you use the keyboard.",
+                              {L"Auto", L"Xbox", L"PlayStation", L"Nintendo", L"Keyboard only"}));
         Row bh;
         bh.kind = BINDHEAD;
         c.rows.push_back(bh);
@@ -875,6 +879,50 @@ void draw_focus(D2D1_RECT_F r, float radius) {
                                brush(rgb(0x3fd0d8)), 3);
 }
 
+// A controller icon (pad_icons.cpp), h scene units high, centred on (cx,
+// cy): made at the window's real pixel size, once per icon, size and render
+// target. Returns its width in scene units; 0 if it isn't there (not read
+// yet), and then nothing is drawn.
+struct PadIconBmp {
+    ComPtr<ID2D1Bitmap> bmp;
+    void* rtFor = nullptr;
+    int w = 0, h = 0;
+};
+std::map<std::string, PadIconBmp> g_padIconBmps;
+float draw_pad_icon(const char* name, float cx, float cy, float h, float op = 1) {
+    if (!name) return 0;
+    float k = G.h / 720.f;
+    int ph = std::max(1, (int)std::lround(h * k));
+    std::string key = std::string(name) + "|" + std::to_string(ph);
+    PadIconBmp& b = g_padIconBmps[key];
+    if (b.rtFor != G.rt.Get()) b.bmp.Reset(), b.rtFor = G.rt.Get();
+    if (!b.bmp) {
+        int pw = pad_icons_width(name, ph);
+        if (pw <= 0) return 0;
+        std::vector<uint8_t> rgba((size_t)pw * ph * 4);
+        if (!pad_icons_rgba(name, ph, rgba.data(), pw)) return 0;
+        std::vector<uint32_t> px((size_t)pw * ph);
+        for (size_t i = 0; i < px.size(); i++) {
+            uint32_t r = rgba[i * 4], g = rgba[i * 4 + 1], bl = rgba[i * 4 + 2], a = rgba[i * 4 + 3];
+            px[i] = a << 24 | (r * a / 255) << 16 | (g * a / 255) << 8 | (bl * a / 255);
+        }
+        D2D1_BITMAP_PROPERTIES p = D2D1::BitmapProperties(D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED));
+        if (FAILED(G.rt->CreateBitmap(D2D1::SizeU(pw, ph), px.data(), pw * 4, p, &b.bmp))) return 0;
+        b.w = pw, b.h = ph;
+    }
+    float w = b.w / k, hh = b.h / k;
+    G.rt->DrawBitmap(b.bmp.Get(), RectF(cx - w / 2, cy - hh / 2, cx + w / 2, cy + hh / 2), op,
+                     D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
+    return w;
+}
+// Its width, without drawing it.
+float pad_icon_w(const char* name, float h) {
+    float k = G.h / 720.f;
+    int ph = std::max(1, (int)std::lround(h * k));
+    int pw = name ? pad_icons_width(name, ph) : 0;
+    return pw / k;
+}
+
 void draw_friend_head(float x, float y, float w, uint32_t acc);  // below, with the friends list
 void draw_friend_row(int index, float x, float y, float w, float h);
 
@@ -926,12 +974,38 @@ void draw_rows(float listTop, float t) {
                 bool listen = U.listenRow == (int)i && U.listenSlot == s;
                 bool hov = U.hoverRow == (int)i && U.hoverPart == s && r.kind == BIND;
                 float bw = b.right - b.left;
+                // Pad slots: the pad's own icons (the Button icons setting or
+                // the connected pad's type), combinations as icon + icon.
+                std::vector<const char*> icons;
+                if (s >= 2 && r.kind == FIXEDBIND && s == 2)
+                    icons = {pad_icons_name(XPAD_BACK, pad_icons_pad_set()), pad_icons_name(XPAD_START, pad_icons_pad_set())};
+                else if (s >= 2 && r.kind == BIND && g_settings.pad[r.act][s - 2])
+                    icons = {pad_icons_name(g_settings.pad[r.act][s - 2], pad_icons_pad_set())};
+                for (auto* n : icons)
+                    if (pad_icon_w(n, 26) <= 0) icons.clear();  // not read yet: the name, as before
                 if (listen) {
                     float blink = U.reduced ? 1 : .6f + .4f * (.5f + .5f * std::cos((float)(t - U.listenT) * 2 * PI));
                     G.rt->FillRoundedRectangle(rr(b.left - 6, b.top - 6, bw + 12, 46, 14), rglow((b.left + b.right) / 2, b.top + 17, bw * .7f, rgb(acc, .6f)).Get());
                     G.rt->FillRoundedRectangle(rr(b.left, b.top, bw, 34, 10), brush(rgb(acc, blink)));
                     G.rt->DrawRoundedRectangle(rr(b.left + 1, b.top + 1, bw - 2, 32, 9), brush(rgb(0xfff1c2)), 2);
-                    text_fit(L"Press…", fmt(L"Nunito", 800, 12), b.left + 6, b.top + 8, bw - 12, rgb(0x1b2440), DWRITE_TEXT_ALIGNMENT_CENTER);
+                    text_fit(s >= 2 ? L"Press a button…" : L"Press a key…", fmt(L"Nunito", 800, s >= 2 ? 10.5f : 12), b.left + 4,
+                             b.top + (s >= 2 ? 9 : 8), bw - 8, rgb(0x1b2440), DWRITE_TEXT_ALIGNMENT_CENTER);
+                } else if (!icons.empty()) {
+                    float op = r.kind == FIXEDBIND ? .7f : 1;
+                    if (hov) G.rt->FillRoundedRectangle(rr(b.left, b.top, bw, 34, 10), brush(ColorF(1, 1, 1, .08f)));
+                    float ih = 28, plus = icons.size() > 1 ? 12 : 0, total = plus;
+                    for (auto* n : icons) total += pad_icon_w(n, ih);
+                    if (total > bw - 4) ih = ih * (bw - 4 - plus) / (total - plus), total = bw - 4;
+                    float x = (b.left + b.right) / 2 - total / 2, cy = b.top + 17;
+                    for (size_t k = 0; k < icons.size(); k++) {
+                        if (k) {
+                            text(L"+", fmt(L"Nunito", 800, 13), x, cy - 10, plus, rgb(0xe6ebf5, op), DWRITE_TEXT_ALIGNMENT_CENTER);
+                            x += plus;
+                        }
+                        float iw = pad_icon_w(icons[k], ih);
+                        draw_pad_icon(icons[k], x + iw / 2, cy, ih, op);
+                        x += iw;
+                    }
                 } else if (v.empty()) {
                     G.rt->DrawRoundedRectangle(rr(b.left + 1, b.top + 1, bw - 2, 32, 9), brush(rgb(0xd6deef, hov ? .7f : .45f)), 2,
                                                G.dashed.Get());
@@ -1753,6 +1827,7 @@ void build_pc_rows() {
     add(L"Graphics quality", {L"Auto", L"Original", L"2×", L"3×", L"4×"}, 0, field(&g_settings.scale, {0, 1, 2, 3, 4}));
     add(L"Widescreen", {L"Off", L"On"}, 0, x(X_WIDESCREEN));
     add(L"V-Sync", {L"Off", L"On"}, 3, x(X_VSYNC));
+    add(L"Button icons", {L"Auto", L"Xbox", L"PlayStation", L"Nintendo", L"Keyboard only"}, 0, x(X_BUTTON_ICONS));
 }
 
 void pc_step(PcRow& r, int d) {
@@ -2269,6 +2344,13 @@ extern "C" const uint32_t* settings_ui_draw(int w, int h) {
     // The friends list: read from the disc the first time, kept current.
     load_friends();
     refresh_friend_rows();
+    // The pad icons: drawn again once read, and when the pad's type or the
+    // setting changes.
+    {
+        static uint32_t iconsGen;
+        uint32_t g = pad_icons_generation() ^ (uint32_t)pad_icons_pad_set() << 9;
+        if (g != iconsGen) iconsGen = g, U.gen++;
+    }
     // Rows available only sometimes: greyed (soon) while they can't be used.
     for (auto& r : g_cats[U.tab].rows)
         if (r.off) {

@@ -9,9 +9,11 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # Static runtime: the launcher runs with nothing else installed.
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
-add_executable(WonderparkLauncher WIN32 launcher.cpp mods.cpp launcher.rc)
+# The controller icons (CC BY-SA 4.0) and the pad's type, shared with the game.
+add_executable(WonderparkLauncher WIN32 launcher.cpp mods.cpp launcher.rc
+               ../../runtime/host/pad_icons_core.cpp ../../runtime/host/pad_icons.rc)
 target_compile_definitions(WonderparkLauncher PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
 if(MSVC)
   target_compile_options(WonderparkLauncher PRIVATE /W3 /utf-8)
 endif()
-target_link_libraries(WonderparkLauncher PRIVATE d2d1 dwrite d3d11 dxgi dxguid windowscodecs ole32 shell32 shlwapi uuid)
+target_link_libraries(WonderparkLauncher PRIVATE d2d1 dwrite d3d11 dxgi dxguid windowscodecs ole32 shell32 shlwapi uuid setupapi)
