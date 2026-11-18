@@ -100,7 +100,7 @@ Disc extraction alone: `python tools/extract_disc.py path\to\your\disc.iso`
 | `config/` | Recompiler config, function names, patches | yes |
 | `runtime/` | Graphics, audio, input, file I/O | yes |
 | `docs/` | Design notes, launcher mockup | yes |
-| `assets/` | The app icon (our own art) | yes |
+| `assets/` | The app icons (our own art) | yes |
 | `game/` | Your extracted disc | no |
 | `generated/` | Recompiled code | no |
 | `build/` | Compiled program | no |
@@ -119,9 +119,12 @@ Disc extraction alone: `python tools/extract_disc.py path\to\your\disc.iso`
   for disc extraction.
 - Fonts: [Fredoka](https://fonts.google.com/specimen/Fredoka) and
   [Nunito](https://fonts.google.com/specimen/Nunito) (SIL Open Font License).
-- The app icon (`assets/icon/`) is part of the Wonderpark project: our own
-  art, drawn in code, with no game assets. Its "Wonderpark" name is Fredoka
-  Bold converted to outlines (SIL Open Font License, `assets/icon/OFL-Fredoka.txt`).
+- The icons (`assets/icon/`) are part of the Wonderpark project: our own
+  art, drawn in code, with no game assets. Windows uses the compass-star
+  emblem (`wonderpark.ico`, `png-emblem/`). The rounded space tile with the
+  "Wonderpark" name is kept for a later Android version; its wordmark is
+  Fredoka Bold converted to outlines (SIL Open Font License,
+  `assets/icon/OFL-Fredoka.txt`).
 
 ## License
 

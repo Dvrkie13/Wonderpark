@@ -1,4 +1,5 @@
-// The Wonderpark app icon (our own art, assets/icon/). The lowest-numbered
+// The Wonderpark app icon: the compass-star emblem (our own art,
+// assets/icon/; not the Android tile in png-named/). The lowest-numbered
 // icon is the one Explorer, the taskbar and shortcuts show.
 1 ICON "../../assets/icon/wonderpark.ico"
 

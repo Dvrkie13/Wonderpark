@@ -1,0 +1,118 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="Wonderpark">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="42%" r="75%">
+      <stop offset="0" stop-color="#2e4388"/>
+      <stop offset="0.55" stop-color="#16224f"/>
+      <stop offset="1" stop-color="#0a1029"/>
+    </radialGradient>
+    <radialGradient id="purple" cx="22%" cy="18%" r="60%">
+      <stop offset="0" stop-color="#8b5bd2" stop-opacity="0.45"/>
+      <stop offset="1" stop-color="#8b5bd2" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="teal" cx="85%" cy="90%" r="55%">
+      <stop offset="0" stop-color="#3fd0d8" stop-opacity="0.28"/>
+      <stop offset="1" stop-color="#3fd0d8" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="warm" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#fff6dc" stop-opacity="0.55"/>
+      <stop offset="0.6" stop-color="#fff6dc" stop-opacity="0.12"/>
+      <stop offset="1" stop-color="#fff6dc" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="disc" cx="50%" cy="40%" r="62%">
+      <stop offset="0" stop-color="#34488a"/>
+      <stop offset="1" stop-color="#121b3a"/>
+    </radialGradient>
+    <linearGradient id="goldEdge" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffe7a3"/>
+      <stop offset="1" stop-color="#c98f2a"/>
+    </linearGradient>
+    <radialGradient id="kLong" gradientUnits="userSpaceOnUse" cx="0" cy="0" r="60">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="0.15" stop-color="#ffffff" stop-opacity="0.95"/>
+      <stop offset="0.5" stop-color="#fff4cf" stop-opacity="0.5"/>
+      <stop offset="1" stop-color="#fff4cf" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff7d6"/>
+      <stop offset="0.5" stop-color="#f7d164"/>
+      <stop offset="1" stop-color="#d48f26"/>
+    </linearGradient>
+    <radialGradient id="kTip" gradientUnits="userSpaceOnUse" cx="0" cy="0" r="40">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="0.15" stop-color="#ffffff" stop-opacity="0.95"/>
+      <stop offset="0.5" stop-color="#fff4cf" stop-opacity="0.5"/>
+      <stop offset="1" stop-color="#fff4cf" stop-opacity="0"/>
+    </radialGradient>
+
+    <radialGradient id="ibhGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#ffb35c" stop-opacity="0.5"/>
+      <stop offset="0.4" stop-color="#e2457f" stop-opacity="0.16"/>
+      <stop offset="1" stop-color="#8b5bd2" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="ibhDisk" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#ff7a2e" stop-opacity="0"/>
+      <stop offset="0.18" stop-color="#ff8a3d" stop-opacity="0.7"/>
+      <stop offset="0.38" stop-color="#ffc86b"/>
+      <stop offset="0.5" stop-color="#ffffff"/>
+      <stop offset="0.62" stop-color="#ffc86b"/>
+      <stop offset="0.82" stop-color="#ff8a3d" stop-opacity="0.7"/>
+      <stop offset="1" stop-color="#ff7a2e" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="ibhCore" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0.15" stop-color="#ffffff" stop-opacity="0"/>
+      <stop offset="0.5" stop-color="#ffffff"/>
+      <stop offset="0.85" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="ibhHalo" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff4cf"/>
+      <stop offset="0.28" stop-color="#ffb35c" stop-opacity="0.75"/>
+      <stop offset="0.5" stop-color="#ff8a3d" stop-opacity="0.35"/>
+      <stop offset="0.72" stop-color="#ffb35c" stop-opacity="0.75"/>
+      <stop offset="1" stop-color="#fff4cf"/>
+    </linearGradient>
+    <filter id="ibhSoft" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="2.2"/></filter>
+    <filter id="ibhFine" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="0.7"/></filter>
+
+    <radialGradient id="ipA" cx="35%" cy="30%" r="75%"><stop offset="0" stop-color="#ffe2a0"/><stop offset="0.5" stop-color="#f39a2b"/><stop offset="1" stop-color="#7a3d0e"/></radialGradient>
+    <radialGradient id="ipB" cx="35%" cy="30%" r="75%"><stop offset="0" stop-color="#d9fdff"/><stop offset="0.5" stop-color="#3fd0d8"/><stop offset="1" stop-color="#14505e"/></radialGradient>
+    <radialGradient id="ipC" cx="35%" cy="30%" r="75%"><stop offset="0" stop-color="#ffc4da"/><stop offset="0.55" stop-color="#e2457f"/><stop offset="1" stop-color="#6e1838"/></radialGradient>
+    <radialGradient id="ipM" cx="35%" cy="30%" r="75%"><stop offset="0" stop-color="#e3d2ff"/><stop offset="0.6" stop-color="#8b5bd2"/><stop offset="1" stop-color="#3b2370"/></radialGradient>
+    <radialGradient id="ipNebP" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="#8b5bd2" stop-opacity="0.42"/><stop offset="1" stop-color="#8b5bd2" stop-opacity="0"/></radialGradient>
+    <radialGradient id="ipNebM" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="#e2457f" stop-opacity="0.26"/><stop offset="1" stop-color="#e2457f" stop-opacity="0"/></radialGradient>
+    <radialGradient id="ipNebT" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="#3fd0d8" stop-opacity="0.24"/><stop offset="1" stop-color="#3fd0d8" stop-opacity="0"/></radialGradient>
+  </defs>
+  <!-- Compass-star emblem on a transparent background (Windows .exe icon) -->
+  <g transform="translate(256 256) scale(0.838) translate(-300 -300)">
+    <polygon points="300,8 380,220 592,300 380,380 300,592 220,380 8,300 220,220" fill="#c98f2a" stroke="#f3cf6b" stroke-width="8" stroke-linejoin="round"/>
+    <g stroke="#f3cf6b" stroke-width="3" stroke-linejoin="round">
+      <polygon points="300,40 300,212 238,212" fill="#f27aa5"/><polygon points="300,40 362,212 300,212" fill="#c9346c"/>
+      <polygon points="560,300 388,300 388,238" fill="#fbe27a"/><polygon points="560,300 388,362 388,300" fill="#e3ad26"/>
+      <polygon points="300,560 238,388 300,388" fill="#7ad68a"/><polygon points="300,560 300,388 362,388" fill="#3f9e55"/>
+      <polygon points="40,300 212,238 212,300" fill="#79a5f0"/><polygon points="40,300 212,300 212,362" fill="#3d68c8"/>
+    </g>
+    <circle cx="300" cy="300" r="150" fill="#c98f2a" stroke="#f3cf6b" stroke-width="8"/>
+    <g stroke="#f3cf6b" stroke-width="4" stroke-linejoin="round">
+      <path d="M300 160A140 140 0 0 1 370 178.76L356 203A112 112 0 0 0 300 188Z" fill="#e2457f"/>
+      <path d="M370 178.76A140 140 0 0 1 421.24 230L397 244A112 112 0 0 0 356 203Z" fill="#f39a2b"/>
+      <path d="M421.24 230A140 140 0 0 1 440 300L412 300A112 112 0 0 0 397 244Z" fill="#f6d44a"/>
+      <path d="M440 300A140 140 0 0 1 421.24 370L397 356A112 112 0 0 0 412 300Z" fill="#5bc26a"/>
+      <path d="M421.24 370A140 140 0 0 1 370 421.24L356 397A112 112 0 0 0 397 356Z" fill="#4a7fe0"/>
+      <path d="M370 421.24A140 140 0 0 1 300 440L300 412A112 112 0 0 0 356 397Z" fill="#8b5bd2"/>
+      <path d="M300 440A140 140 0 0 1 230 421.24L244 397A112 112 0 0 0 300 412Z" fill="#e2457f"/>
+      <path d="M230 421.24A140 140 0 0 1 178.76 370L203 356A112 112 0 0 0 244 397Z" fill="#f39a2b"/>
+      <path d="M178.76 370A140 140 0 0 1 160 300L188 300A112 112 0 0 0 203 356Z" fill="#f6d44a"/>
+      <path d="M160 300A140 140 0 0 1 178.76 230L203 244A112 112 0 0 0 188 300Z" fill="#5bc26a"/>
+      <path d="M178.76 230A140 140 0 0 1 230 178.76L244 203A112 112 0 0 0 203 244Z" fill="#4a7fe0"/>
+      <path d="M230 178.76A140 140 0 0 1 300 160L300 188A112 112 0 0 0 244 203Z" fill="#8b5bd2"/>
+    </g>
+    <circle cx="300" cy="300" r="112" fill="url(#disc)" stroke="#f3cf6b" stroke-width="5"/>
+    <circle cx="300" cy="300" r="101" fill="none" stroke="rgba(243,207,107,0.45)" stroke-width="2"/>
+  </g>
+  <!-- Sparkle in the middle -->
+  <g transform="translate(256 256) scale(1.676)">
+    <polygon points="0,-42 2.4,0 0,42 -2.4,0" fill="url(#kLong)"/>
+    <polygon points="-39,0 0,2.1 39,0 0,-2.1" fill="url(#kLong)"/>
+    <path d="M0 -10 C.8 -.8 .8 -.8 10 0 C.8 .8 .8 .8 0 10 C-.8 .8 -.8 .8 -10 0 C-.8 -.8 -.8 -.8 0 -10Z" fill="#ffffff"/>
+    <circle r="2.8" fill="#ffffff"/>
+  </g>
+</svg>
