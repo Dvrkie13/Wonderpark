@@ -87,7 +87,38 @@ WP_HOOK(0x80296090, SelectThread_idle) {
     if (g_gx_game_tick) g_gx_game_tick(); /* the render thread has all that was sent */
     wp_clock_tick();
     start = wp_host_time();
-    sleep_until(next_event(start));
+    {
+        /* Frames shown between the game's (above 60 fps, and the 3D
+         * glasses' two eyes: gx_frames.c records the game's frames and
+         * draws them here) are drawn while it waits, but only when one is
+         * due before the wait is over: a late wake-up slows the game
+         * itself. Otherwise it waits for the next one (or is left out).
+         * From MildRain479/PokePark-2-Wiicompiled's hle_irq.c (CC0). Their
+         * times are the guest's time base, ours the host's: the same clock
+         * with an offset. */
+        extern uint64_t (*g_host_frame_due)(void);
+        extern void (*g_host_frame_render)(void);
+        uint64_t deadline = next_event(start);
+        if (g_host_frame_due) {
+            static uint64_t cost; /* a frame's drawing, smoothed, in ticks */
+            uint64_t due;
+            while ((due = g_host_frame_due()) != 0) {
+                uint64_t s;
+                due -= wp_timebase() - wp_host_time(); /* to host time */
+                if ((int64_t)(due - deadline) >= 0) break;
+                if ((int64_t)(deadline - due) < (int64_t)(cost + cost / 2)) {
+                    cost -= cost / 16; /* so one slow stretch doesn't leave them out for good */
+                    break;
+                }
+                sleep_until(due);
+                s = wp_host_time();
+                g_host_frame_render();
+                wp_clock_tick();
+                cost = (cost * 7 + (wp_host_time() - s)) / 8;
+            }
+        }
+        sleep_until(deadline);
+    }
     wp_clock_tick();
     g_wait_ticks += wp_host_time() - start;
     if (wp_host_time() - start > TB_HZ / 1000)

@@ -737,6 +737,12 @@ static uint32_t texture_for_map(int map) {
         break;
     }
     if (!addr || size <= 0) return 0;
+    {
+        /* Victory confetti (confetti.c): the "Attraction Cleared!" banner drawn. */
+        extern uint32_t g_confetti_texture;
+        extern void confetti_texture_drawn(void);
+        if (g_confetti_texture && (addr & 0x3FFFFFFFu) == g_confetti_texture) confetti_texture_drawn();
+    }
     /* With a mipmap filter, the levels down to the LOD limit follow the
      * texture in memory, each half the last's size: all are used (as the
      * Wii would), not just the first, which shimmers in the distance. */

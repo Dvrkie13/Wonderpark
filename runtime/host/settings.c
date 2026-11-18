@@ -57,7 +57,7 @@ static void apply_gameplay(void) {
     hle_set_chase_speed(g_settings.chase_speed);
 }
 
-#define FOV_MIN 80
+#define FOV_MIN 70
 #define FOV_MAX 150
 
 static void apply_frame_rate(void) {
@@ -97,6 +97,7 @@ static const struct {
     {"controls", "free_camera", 1, 0, 1, "1: the mouse and right stick turn the camera"},
     {"controls", "stick_sensitivity", 100, 10, 300, "percent: how fast the right stick turns the camera"},
     {"controls", "camera_recenter", 0, 0, 30, "seconds without turning before the camera eases back behind; 0 never"},
+    {"display", "fov_attractions", 0, 0, 1, "1: the field of view applies in attractions too"},
     {"input", "button_icons", 0, 0, 4, "button icons: 0 auto (the pad used last), 1 Xbox, 2 PlayStation, 3 Nintendo, 4 keyboard only"},
     {"audio", "volume_master", 100, 0, 100, "percent"},
     {"audio", "volume_music", 100, 0, 100, "percent: music and jingles"},
@@ -106,15 +107,15 @@ static const struct {
     {"audio", "mute_background", 1, 0, 1, "1: silent while another window is in front"},
     {"audio", "audio_latency", 1, 0, 2, "sound delay: 0 low (48 ms), 1 normal (84 ms), 2 safe (132 ms)"},
     {"gameplay", "pause_background", 1, 0, 1, "1: the game pauses while another window is in front"},
-    {"gameplay", "skip_logos", 0, 0, 1, "not yet"},
+    {"gameplay", "skip_logos", 0, 0, 1, "1: the title as soon as the park has loaded (the wrist strap screen cut short)"},
     {"gameplay", "save_backups", 1, 0, 1, "1: a copy of a save slot in backups\\ before each save (the last 10)"},
     {"gameplay", "speed_up", 1, 0, 2, "Tab / left trigger runs the park faster: 0 off, 1 2x, 2 3x"},
     {"gameplay", "speed_toggle", 0, 0, 1, "0: while held, 1: pressed on and off"},
     {"silly", "pokemon_size", 1, 0, 2, "0 mini, 1 normal, 2 giant (not yet)"},
     {"silly", "voice_pitch", 0, -50, 50, "percent of the frequency: Pokemon voices higher or deeper"},
     {"silly", "mirror_world", 0, 0, 1, "the picture flipped left to right (and left and right swapped)"},
-    {"silly", "victory_confetti", 0, 0, 1, "not yet"},
-    {"silly", "stereo_3d", 0, 0, 2, "0 off, 1 red-cyan, 2 side by side (not yet)"},
+    {"silly", "victory_confetti", 0, 0, 1, "1: a burst of confetti when an attraction is cleared"},
+    {"silly", "stereo_3d", 0, 0, 2, "0 off, 1 red-cyan, 2 side by side (side by side not yet)"},
 };
 int g_x[X_COUNT];
 static int sXOverridden[X_COUNT];

@@ -334,6 +334,216 @@ static void draw_tpls(void) {
     }
 }
 
+/* ------------------------------------------------------------------------ */
+/* Attraction pictures, found by their names in the archive they're in (the
+ * attractions' HUD, Archive/MenuAttraction.dac): Dance Inferno's move icons
+ * (At01UIDanceIcon00-07.tpl, 160x160), whose moves are danced with the
+ * shake keys here, get the shake key in their lower right corner; the
+ * attractions' "A" button (AtAButton00.tpl, 57x56: Power Bash's bomb and
+ * the like) is redrawn as the button bound to A, and so are the menus' key
+ * guide buttons (MenuCommon.dac KeyButtonTwo, One, Plus, Minus, B: 32x32).
+ * All as a key: the icon's
+ * lines in the picture's darkest colour, inside it white, with a white edge
+ * all round, so it reads over anything (as MildRain479/PokePark-2-
+ * Wiicompiled's hle_dance.c, CC0, labels its dance icons). */
+
+typedef struct {
+    const char* prefix; /* the file's name starts so */
+    int w, h;
+    uint32_t button;
+    int badge; /* the key's box in the lower right corner; 0: the whole picture */
+} NamedKind;
+
+static const NamedKind kNamed[] = {
+    {"At01UIDanceIcon", 160, 160, HOST_PAD_SHAKE, 58},
+    {"AtAButton00.tpl", 57, 56, HOST_PAD_A, 0},
+    /* The menus' key guide (MenuCommon.dac: "+ Skip", "1 Back", "2 Next"). */
+    {"KeyButtonTwo.tpl", 32, 32, HOST_PAD_2, 0},
+    {"KeyButtonOne.tpl", 32, 32, HOST_PAD_1, 0},
+    {"KeyButtonPlus.tpl", 32, 32, HOST_PAD_PLUS, 0},
+    {"KeyButtonMinus.tpl", 32, 32, HOST_PAD_MINUS, 0},
+    {"KeyButtonB.tpl", 32, 32, HOST_PAD_B, 0},
+};
+#define NAMED_KINDS ((int)(sizeof(kNamed) / sizeof(kNamed[0])))
+#define MAX_NAMED 24
+#define EDGE 3
+
+typedef struct {
+    const NamedKind* kind;
+    u32 tpl, header, image;
+    int colours;
+    uint8_t rgba[MAX_COLOURS][4];
+    uint8_t* original;
+} Named;
+
+static Named sNamed[MAX_NAMED];
+static int sNamedCount;
+
+static int name_starts(u32 at, const char* s) {
+    for (; *s; s++, at++)
+        if (LD8(at) != (u32)(uint8_t)*s) return 0;
+    return 1;
+}
+
+/* The name of the file at tpl in the U8 archive it was loaded with (the
+ * archive's header found backwards, within 8 MB); 0 if it isn't in one. */
+static u32 archive_name_of(u32 tpl) {
+    u32 h;
+    for (h = (tpl & ~3u) - 4; h + 0x800000u > tpl && h >= 0x80000000u; h -= 4) {
+        u32 n, names, i;
+        if (LD32(h) != 0x55AA382Du || LD32(h + 4) != 0x20) continue;
+        n = LD32(h + 0x28);
+        if (n < 2 || n > 20000) continue;
+        names = h + 0x20 + n * 12;
+        for (i = 1; i < n; i++) {
+            u32 node = h + 0x20 + i * 12;
+            if (LD8(node) == 0 && h + LD32(node + 4) == tpl) return names + (LD32(node) & 0xFFFFFF);
+        }
+        return 0; /* its archive doesn't list it */
+    }
+    return 0;
+}
+
+static int named_nearest(const Named* b, int r, int g, int bl, int a) {
+    int i, best = 0;
+    long bestD = -1;
+    for (i = 0; i < b->colours; i++) {
+        const uint8_t* p = b->rgba[i];
+        long da = (long)(p[3] - a) * 2, dr = p[0] - r, dg = p[1] - g, db = p[2] - bl;
+        long d = da * da + (dr * dr + dg * dg + db * db) * (a + p[3]) / 510;
+        if (bestD < 0 || d < bestD) {
+            bestD = d;
+            best = i;
+        }
+    }
+    return best;
+}
+
+static void draw_named(Named* b) {
+    enum { MAX_BOX = 64 };
+    static uint8_t cov[MAX_BOX * MAX_BOX], inside[MAX_BOX * MAX_BOX];
+    static int stack[MAX_BOX * MAX_BOX];
+    const NamedKind* k = b->kind;
+    int W = k->w, box = k->badge ? k->badge : (k->w < k->h ? k->w : k->h);
+    int bx = k->w - box, by = k->h - box, s = box - 2 * EDGE;
+    int x, y, i, n = 0, dark = 0, darkness = -1, clear = named_nearest(b, 0, 0, 0, 0);
+    /* The game's picture back first. */
+    for (y = 0; y < k->h; y++)
+        for (x = 0; x < k->w; x++) ST8(ci8_byte(b->image, W, x, y), b->original[y * W + x]);
+    if (s <= 0 || box > MAX_BOX || !g_host_prompt_icon || !g_host_prompt_icon(k->button, cov, s, s)) return;
+    for (i = 0; i < b->colours; i++) {
+        const uint8_t* p = b->rgba[i];
+        int v = p[3] == 255 ? 765 - p[0] - p[1] - p[2] : -1;
+        if (v > darkness) darkness = v, dark = i;
+    }
+    /* Inside the key: what can't be reached from the box's edge without
+     * crossing its outline. */
+    memset(inside, 1, (size_t)s * s);
+    for (i = 0; i < s * s; i++) {
+        x = i % s;
+        y = i / s;
+        if ((x == 0 || y == 0 || x == s - 1 || y == s - 1) && cov[i] < 128) inside[i] = 0, stack[n++] = i;
+    }
+    while (n) {
+        static const int kStep[4][2] = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
+        int at = stack[--n], d;
+        for (d = 0; d < 4; d++) {
+            int nx = at % s + kStep[d][0], ny = at / s + kStep[d][1], j = ny * s + nx;
+            if (nx < 0 || ny < 0 || nx >= s || ny >= s || !inside[j] || cov[j] >= 128) continue;
+            inside[j] = 0;
+            stack[n++] = j;
+        }
+    }
+    for (y = 0; y < box; y++) {
+        for (x = 0; x < box; x++) {
+            int ix = x - EDGE, iy = y - EDGE, ink = 0, white = 0, dx, dy;
+            const uint8_t* line = b->rgba[dark];
+            if (ix >= 0 && iy >= 0 && ix < s && iy < s) {
+                ink = cov[iy * s + ix];
+                if (inside[iy * s + ix]) white = 255;
+            }
+            for (dy = -EDGE; dy <= EDGE; dy++) {
+                for (dx = -EDGE; dx <= EDGE; dx++) {
+                    int jx = ix + dx, jy = iy + dy, v;
+                    if (dx * dx + dy * dy > EDGE * EDGE + 1 || jx < 0 || jy < 0 || jx >= s || jy >= s) continue;
+                    v = inside[jy * s + jx] ? 255 : cov[jy * s + jx];
+                    if (v > white) white = v;
+                }
+            }
+            if ((ink > white ? ink : white) < 96) {
+                /* The picture shows through; a whole-picture key wipes the game's button. */
+                if (!k->badge) ST8(ci8_byte(b->image, W, bx + x, by + y), (uint8_t)clear);
+                continue;
+            }
+            ST8(ci8_byte(b->image, W, bx + x, by + y),
+                (uint8_t)named_nearest(b, (255 * (255 - ink) + line[0] * ink) / 255, (255 * (255 - ink) + line[1] * ink) / 255,
+                                       (255 * (255 - ink) + line[2] * ink) / 255, 255));
+        }
+    }
+}
+
+static void draw_named_all(void) {
+    int i;
+    for (i = 0; i < sNamedCount; i++) {
+        Named* b = &sNamed[i];
+        if (LD32(b->tpl) != 0x0020AF30 || LD32(LD32(b->tpl + 8)) != b->header || LD32(b->header + 8) != b->image) {
+            free(b->original); /* gone (its memory reused) */
+            sNamed[i--] = sNamed[--sNamedCount];
+            continue;
+        }
+        draw_named(b);
+    }
+}
+
+/* A bound TPL that is one of kNamed's: kept, with its colours and pixels. */
+static void named_bound(u32 tpl, u32 header, u32 pal) {
+    const NamedKind* k = NULL;
+    u32 name, data;
+    Named* b;
+    int i, x, y, fmt;
+    for (i = 0; i < NAMED_KINDS; i++)
+        if ((int)LD16(header + 2) == kNamed[i].w && (int)LD16(header) == kNamed[i].h) break;
+    if (i == NAMED_KINDS || !(name = archive_name_of(tpl))) return;
+    for (i = 0; i < NAMED_KINDS && !k; i++)
+        if ((int)LD16(header + 2) == kNamed[i].w && (int)LD16(header) == kNamed[i].h && name_starts(name, kNamed[i].prefix))
+            k = &kNamed[i];
+    if (!k) return;
+    for (i = 0; i < sNamedCount && sNamed[i].tpl != tpl; i++) {}
+    if (i == sNamedCount) {
+        if (sNamedCount == MAX_NAMED) return;
+        if (!(sNamed[i].original = (uint8_t*)malloc((size_t)k->w * k->h))) return;
+        sNamedCount++;
+    }
+    b = &sNamed[i];
+    b->kind = k;
+    b->tpl = tpl;
+    b->header = header;
+    b->image = LD32(header + 8);
+    b->colours = (int)LD16(pal) < MAX_COLOURS ? (int)LD16(pal) : MAX_COLOURS;
+    fmt = (int)LD32(pal + 4);
+    data = LD32(pal + 8);
+    for (x = 0; x < b->colours; x++) {
+        uint16_t v = (uint16_t)LD16(data + 2 * x);
+        uint8_t* p = b->rgba[x];
+        if (fmt == 2 && (v & 0x8000)) {
+            p[0] = (uint8_t)((v >> 10 & 31) * 255 / 31), p[1] = (uint8_t)((v >> 5 & 31) * 255 / 31);
+            p[2] = (uint8_t)((v & 31) * 255 / 31), p[3] = 255;
+        } else if (fmt == 2) {
+            p[0] = (uint8_t)((v >> 8 & 15) * 17), p[1] = (uint8_t)((v >> 4 & 15) * 17), p[2] = (uint8_t)((v & 15) * 17);
+            p[3] = (uint8_t)((v >> 12 & 7) * 255 / 7);
+        } else if (fmt == 1) {
+            p[0] = (uint8_t)((v >> 11 & 31) * 255 / 31), p[1] = (uint8_t)((v >> 5 & 63) * 255 / 63);
+            p[2] = (uint8_t)((v & 31) * 255 / 31), p[3] = 255;
+        } else {
+            p[0] = p[1] = p[2] = (uint8_t)v, p[3] = (uint8_t)(v >> 8);
+        }
+    }
+    for (y = 0; y < k->h; y++)
+        for (x = 0; x < k->w; x++) b->original[y * k->w + x] = (uint8_t)LD8(ci8_byte(b->image, k->w, x, y));
+    WP_LOG("prompts", "attraction picture %08X (%dx%d)", tpl, k->w, k->h);
+    sGeneration = 0xFFFFFFFFu; /* draw it */
+}
+
 /* void TPLBind(TPLPalette*): a TPL, its offsets made pointers. */
 WP_HOOK(0x8031E2A0, TPLBind) {
     u32 tpl = c->gpr[3], header, pal, data;
@@ -344,6 +554,17 @@ WP_HOOK(0x8031E2A0, TPLBind) {
     if (!tpl || LD32(tpl) != 0x0020AF30 || LD32(tpl + 4) != 1) return 1;
     header = LD32(LD32(tpl + 8));
     pal = LD32(LD32(tpl + 8) + 4);
+    if (header && pal && LD32(header + 4) == 9) named_bound(tpl, header, pal); /* CI8 */
+    if (header && LD16(header + 2) == 620 && LD16(header) == 140) {
+        /* Victory confetti (confetti.c): "Attraction Cleared!", noticed when
+         * a draw samples it (gx_fifo.c). */
+        extern uint32_t g_confetti_texture;
+        u32 name = archive_name_of(tpl);
+        if (name && name_starts(name, "AttractionMenu02.tpl")) {
+            g_confetti_texture = LD32(header + 8) & 0x3FFFFFFFu;
+            WP_LOG("prompts", "the Attraction Cleared banner at %08X", g_confetti_texture);
+        }
+    }
     if (!header || !pal || LD32(header + 4) != 9 || LD32(pal + 4) != 2) return 1; /* CI8, RGB5A3 */
     for (i = 0; i < TPL_KINDS; i++) {
         if ((int)LD16(header + 2) == kTplKinds[i].w && (int)LD16(header) == kTplKinds[i].h &&
@@ -392,12 +613,13 @@ WP_HOOK(0x8031E2A0, TPLBind) {
 void hle_prompts_update(void) {
     uint32_t gen;
     int i;
-    if ((!sFontCount && !sTplCount) || !g_host_prompt_generation) return;
+    if ((!sFontCount && !sTplCount && !sNamedCount) || !g_host_prompt_generation) return;
     gen = g_host_prompt_generation();
     if (gen == sGeneration) return;
     sGeneration = gen;
     for (i = 0; i < sFontCount; i++) draw_icons(&sFonts[i]);
     draw_tpls();
+    draw_named_all();
     WP_LOG("prompts", "redrawn (%s)", gen & 1 ? "pad" : "keys");
 }
 

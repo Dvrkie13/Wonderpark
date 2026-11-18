@@ -4,7 +4,11 @@
  * From MildRain479/PokePark-2-Wiicompiled's recomp/patches/S2LE01/hle_game.c
  * (CC0): 0x80210660 picks the next scene by its index in the scene table
  * (0x80469360), r3 the index. */
+#include <stdlib.h>
+#include <string.h>
+
 #include "hle.h"
+#include "host_settings.h"
 
 enum {
     SCENE_PARK,
@@ -48,4 +52,65 @@ unsigned hle_scene_changes(void) { return sChanges; }
 int hle_event_running(void) {
     u32 esi = LD32(0x804B04F0u);
     return wp_mem_ptr(esi, 0x24C) && LD32(esi + 0x248) != 0;
+}
+
+/* Tests: WONDERPARK_ATTRACTION=<n>,<seconds> enters attraction n (1 Cake
+ * Contraption, 2 Dance Inferno, 3 Power Bash, 4 Flight of Fancy) that many
+ * seconds after the park first shows, the way its gate does: the index in
+ * the next scene's parameters ("AttractionId"), then the park scene ended.
+ * From MildRain479/PokePark-2-Wiicompiled's hle_game.c (CC0, its
+ * RECOMP_ATTRACTION). SceneManager::RunBegin runs each frame at a point
+ * where the scene can be changed. */
+#define SCENE_NEXT_PARAMS 0xAC    /* SceneManager: the next scene's parameters */
+#define ATTRACTION_ID_NAME 0x804530C4u /* "AttractionId" */
+/* Skip startup logos (Gameplay; [gameplay] skip_logos): the boot screens
+ * (Strap: the logos and the wrist strap warning, up for a fixed time while
+ * the park loads in the background) run at 10 times the speed. Not Hold
+ * (the "Loading..." screen after it): sped up, it took longer. Leaving
+ * Strap early instead (as MildRain479/PokePark-2-Wiicompiled's hle_game.c
+ * does, once the park's data is loaded: here 0x804BA89C reaches 2) left our
+ * build on a blank screen. Only our own speed: one set from the debug
+ * overlay (F7) or the speed-up key is left alone; movies play at their own
+ * pace. */
+static void boot_speed(void) {
+    extern const char* wp_movie_playing(void);
+    static int ours = 1;
+    int want = g_x[X_SKIP_LOGOS] && sScene == SCENE_STRAP && !wp_movie_playing() ? 10 : 1;
+    if (want == ours || wp_game_speed() != ours) return; /* nothing to do, or someone else's speed */
+    wp_set_game_speed(want);
+    if (want == 10) WP_LOG("scene", "boot screens sped up");
+    ours = want;
+}
+
+WP_HOOK(0x80206A70, SceneManager_RunBegin) {
+    static int state = -1; /* -1 not read, 0 nothing to do, else the attraction */
+    static double at, parkSince = -1;
+    boot_speed();
+    if (state < 0) {
+        const char* e = getenv("WONDERPARK_ATTRACTION");
+        const char* comma = e ? strchr(e, ',') : NULL;
+        state = e && *e ? atoi(e) : 0;
+        if (state < 1 || state > 4) state = 0;
+        at = comma ? atof(comma + 1) : 0;
+    }
+    if (!state || sScene != SCENE_PARK) return 0;
+    if (parkSince < 0) parkSince = wp_wall_seconds();
+    if (wp_wall_seconds() - parkSince < at) return 0;
+    {
+        static const char kName[] = "AttractionId";
+        u32 mgr, i;
+        for (i = 0; i < sizeof(kName); i++)
+            if (LD8(ATTRACTION_ID_NAME + i) != (u32)(uint8_t)kName[i]) {
+                WP_WARN("WONDERPARK_ATTRACTION: the parameter's name isn't where it should be");
+                state = 0;
+                return 0;
+            }
+        mgr = wp_call_guest(c, 0x80074AE0u, 0, 0, 0, 0); /* SceneManager::Get */
+        wp_call_guest(c, 0x80206DC0u, mgr + SCENE_NEXT_PARAMS, ATTRACTION_ID_NAME, (u32)(state - 1), 0);
+        mgr = wp_call_guest(c, 0x80074AE0u, 0, 0, 0, 0);
+        wp_call_guest(c, 0x80206D30u, mgr, 0, 0, 0); /* EndScene */
+        WP_LOG("scene", "entering attraction %d (WONDERPARK_ATTRACTION)", state);
+        state = 0;
+    }
+    return 0;
 }

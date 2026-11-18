@@ -212,9 +212,9 @@ void build_rows() {
                               {L"Windowed", L"Borderless", L"Fullscreen"}));
         c.rows.push_back(xrow(CHOICE, X_RESOLUTION, L"Resolution", L"The window's size, when in a window.",
                               {L"1280×720", L"1600×900", L"1920×1080", L"2560×1440", L"Match screen"}));
-        Row fr = vchoice(L"Frame rate", L"60 draws every step of the game; movies stay at 30.", {L"30 (original)", L"60", L"120"},
-                         {30, 60, 120}, &g_settings.frame_rate, 30);
-        fr.soonOpts = 4;  // 120: frame interpolation, not built yet
+        Row fr = vchoice(L"Frame rate",
+                         L"60 draws every step of the game. Above 60 the frames between are blended from the last two (smoother turning); never more than your screen shows. Movies stay at 30.",
+                         {L"30 (original)", L"60", L"120", L"144", L"240"}, {30, 60, 120, 144, 240}, &g_settings.frame_rate, 30);
         c.rows.push_back(fr);
         c.rows.push_back(xrow(TOGGLE, X_VSYNC, L"V-Sync", L"Stops the picture from tearing in fullscreen. A window never tears."));
         Row rd;
@@ -230,8 +230,8 @@ void build_rows() {
         Row fov;
         fov.kind = SLIDER;
         fov.label = L"Field of view";
-        fov.desc = L"How wide the camera sees in the park. Minigames keep their own.";
-        fov.min = 80, fov.max = 130, fov.step = 5, fov.unit = L"%";
+        fov.desc = L"How wide the camera sees in the park and its story scenes. 100% is the game's own.";
+        fov.min = 70, fov.max = 150, fov.step = 5, fov.unit = L"%";
         fov.get = [] { return g_settings.fov; };
         fov.set = [](int v) {
             g_settings.fov = v;
@@ -242,6 +242,8 @@ void build_rows() {
             settings_save();
         };
         c.rows.push_back(fov);
+        c.rows.push_back(xrow(TOGGLE, X_FOV_ATTRACTIONS, L"Field of view in attractions",
+                              L"Uses it in the attractions too (they keep their own view when off)."));
         c.rows.push_back(xslider(X_BRIGHTNESS, L"Brightness", nullptr, 50, 150, 5, L"%", false));
         g_cats.push_back(c);
     }
@@ -406,7 +408,8 @@ void build_rows() {
         c.rows.push_back(pct(L"Chase speed", L"How fast the Pokémon you chase runs.", 50, 150, 5, &g_settings.chase_speed));
         c.rows.push_back(head(L"Comfort"));
         c.rows.push_back(xrow(TOGGLE, X_PAUSE_BACKGROUND, L"Pause in the background", L"Pauses when the window loses focus."));
-        c.rows.push_back(xrow(TOGGLE, X_SKIP_LOGOS, L"Skip startup logos", nullptr, {}, true));
+        c.rows.push_back(xrow(TOGGLE, X_SKIP_LOGOS, L"Skip startup logos",
+                              L"Goes to the title as soon as the park has loaded, instead of waiting out the wrist strap screen."));
         c.rows.push_back(xrow(CHOICE, X_SPEED_UP, L"Speed-up",
                               L"Tab or the left trigger runs the park faster. Not in attractions or story scenes; quiet meanwhile.",
                               {L"Off", L"2×", L"3×"}));
@@ -425,8 +428,13 @@ void build_rows() {
         c.rows.push_back(xrow(CHOICE, X_POKEMON_SIZE, L"Pokémon size", nullptr, {L"Mini", L"Normal", L"Giant"}, true));
         c.rows.push_back(xslider(X_VOICE_PITCH, L"Voice pitch", L"From deep and grumbly to tiny and squeaky. Changes the next thing a Pokémon says.", -50, 50, 5, L"%", false, true));
         c.rows.push_back(xrow(TOGGLE, X_MIRROR_WORLD, L"Mirror world", L"Flips the whole park left to right. Left and right swap too."));
-        c.rows.push_back(xrow(TOGGLE, X_VICTORY_CONFETTI, L"Victory confetti", L"A burst of confetti when you win an attraction.", {}, true));
-        c.rows.push_back(xrow(CHOICE, X_STEREO_3D, L"3D glasses", L"For red-cyan glasses or a 3D TV.", {L"Off", L"Red-cyan", L"Side by side"}, true));
+        c.rows.push_back(xrow(TOGGLE, X_VICTORY_CONFETTI, L"Victory confetti", L"A burst of confetti when you clear an attraction."));
+        {
+            Row s3 = xrow(CHOICE, X_STEREO_3D, L"3D glasses", L"For red-cyan glasses: the left eye red, the right cyan. Side by side (3D TVs) isn't built yet.",
+                          {L"Off", L"Red-cyan", L"Side by side"});
+            s3.soonOpts = 4;
+            c.rows.push_back(s3);
+        }
         g_cats.push_back(c);
     }
 }
@@ -1822,7 +1830,7 @@ void build_pc_rows() {
     };
     add(L"Display mode", {L"Windowed", L"Borderless", L"Fullscreen"}, 4, x(X_WINDOW_MODE));
     add(L"Resolution", {L"1280×720", L"1600×900", L"1920×1080", L"2560×1440", L"Match screen"}, 0, x(X_RESOLUTION));
-    add(L"Frame rate", {L"30 (original)", L"60"}, 0, field(&g_settings.frame_rate, {30, 60}));
+    add(L"Frame rate", {L"30 (original)", L"60", L"120", L"144", L"240"}, 0, field(&g_settings.frame_rate, {30, 60, 120, 144, 240}));
     add(L"Anti-aliasing", {L"Off", L"2×", L"4×", L"8×"}, 0, field(&g_settings.msaa, {1, 2, 4, 8}));
     add(L"Graphics quality", {L"Auto", L"Original", L"2×", L"3×", L"4×"}, 0, field(&g_settings.scale, {0, 1, 2, 3, 4}));
     add(L"Widescreen", {L"Off", L"On"}, 0, x(X_WIDESCREEN));

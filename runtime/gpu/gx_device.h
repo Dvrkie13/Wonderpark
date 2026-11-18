@@ -72,6 +72,10 @@ typedef struct GXDevice {
     /* Shows the last presented picture again, with the overlay as it is now
      * (the game paused behind the F1 tab); 0 if it can't. NULL: none. */
     int (*present_last)(void);
+    /* 3D glasses (Silly; gx_frames.c): which colours draws and clears write,
+     * 0 all, 1 red alone (left eye), 2 green and blue (right eye). NULL:
+     * none. */
+    void (*eye_mask)(int eye);
 } GXDevice;
 
 extern const GXDevice g_gl_device, g_vk_device;

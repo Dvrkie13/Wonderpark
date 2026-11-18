@@ -66,7 +66,7 @@ enum { CAM_PROJECTION = 0x38, CAM_FOVY = 0x3C, CAM_FAR = 0x44 };
 static float fov_scale(void) { return g_settings.fov > 0 ? g_settings.fov / 100.0f : 1.0f; }
 
 static int widens(u32 cam, float fovy) {
-    return fov_scale() != 1.0f && !hle_in_minigame() && wp_mem_ptr(cam, CAM_FAR + 4) &&
+    return fov_scale() != 1.0f && (!hle_in_minigame() || g_x[X_FOV_ATTRACTIONS]) && wp_mem_ptr(cam, CAM_FAR + 4) &&
            LD32(cam + CAM_PROJECTION) == 0 && ldf(cam + CAM_FAR) >= WORLD_FAR && fovy > 1.0f && fovy < 170.0f;
 }
 
