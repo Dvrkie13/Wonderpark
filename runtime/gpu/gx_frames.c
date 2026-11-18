@@ -350,6 +350,7 @@ static Frame *sRec = &sFrames[0], *sCur = &sFrames[1], *sPrev = &sFrames[2];
 static int sOutputRate = 60, sHaveFrame;
 static uint64_t sCurAt, sNextOut, sFramePeriod; /* time base */
 static double sLastT = -1;
+static int sShownSinceEnd; /* sCur has been drawn (frame_render) since it became the one shown */
 
 static RecOp* rec_op(int op) {
     RecOp* r;
@@ -741,6 +742,11 @@ static void render_frame(float t) {
 static void frame_end(void) {
     Frame* f = sPrev;
     uint64_t now = ppc_timebase();
+    /* The frame shown so far was never drawn (the game kept busy, so no
+     * frame between came due while it waited): drawn now, whole, so at
+     * least every one of the game's frames is seen. */
+    if (sHaveFrame && !sShownSinceEnd) render_frame(1.0f);
+    sShownSinceEnd = 0;
     sPrev = sCur;
     sCur = sRec;
     sRec = f;
@@ -791,6 +797,7 @@ static void frame_render(void) {
     sLastT = t;
     GL_ENTER();
     render_frame(t);
+    sShownSinceEnd = 1;
     GL_LEAVE(GLK_PRESENT);
 }
 

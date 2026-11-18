@@ -270,9 +270,13 @@ void build_rows() {
         c.rows.push_back(xrow(TOGGLE, X_HDR, L"HDR", nullptr, {}, true));
         c.rows.push_back(xrow(CHOICE, X_COLORS, L"Colors", nullptr, {L"Original", L"Vivid"}));
         c.rows.push_back(head(L"Performance"));
-        c.rows.push_back(xrow(CHOICE, X_SHADER_MODE, L"Shader compilation",
-                              L"Smooth never stutters. Precompile prepares every saved shader before the game starts.",
-                              {L"Smooth", L"Fast", L"Precompile"}, true));
+        {
+            Row sm = xrow(CHOICE, X_SHADER_MODE, L"Shader compilation",
+                          L"Smooth: one shader for everything, never stutters. Fast: a shader made for each look, lighter on the graphics card, but the first sight of each may hitch (AMD cards). From the next start.",
+                          {L"Smooth", L"Fast", L"Precompile"});
+            sm.soonOpts = 4;  // Precompile (waiting for them before the game starts): not built
+            c.rows.push_back(sm);
+        }
         c.rows.push_back(xrow(TOGGLE, X_FAST_LOADING, L"Fast loading",
                               L"Reads the game's files into RAM at start (about 280 MB), so areas load without waiting for the drive. From the next start."));
         g_cats.push_back(c);

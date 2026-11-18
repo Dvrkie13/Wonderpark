@@ -86,7 +86,7 @@ static const struct {
     {"graphics", "per_pixel_lighting", 0, 0, 1, "not yet"},
     {"graphics", "hdr", 0, 0, 1, "not yet"},
     {"graphics", "colors", 0, 0, 1, "0 original, 1 vivid"},
-    {"graphics", "shader_mode", 0, 0, 2, "0 smooth, 1 fast, 2 precompile (not yet)"},
+    {"graphics", "shader_mode", 0, 0, 2, "0 smooth (the ubershader), 1 fast (specialised shaders, from the next start), 2 precompile (not yet: as fast)"},
     {"graphics", "fast_loading", 1, 0, 1, "the disc's files into RAM at start (284 MB), from the next start"},
     {"controls", "invert_x", 0, 0, 1, "1: mouse and stick turn the camera the other way"},
     {"controls", "right_stick", 2, 0, 2, "0 camera, 1 pointer, 2 auto: the pointer while the game uses one"},

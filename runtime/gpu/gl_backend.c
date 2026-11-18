@@ -1133,6 +1133,10 @@ static void spec_init(HGLRC main_rc, int pixel_format, PIXELFORMATDESCRIPTOR* pf
     const char* e = getenv("WONDERPARK_SHADERS");
     PFN_threads threads;
     HANDLE t;
+    /* The Shader compilation setting (Graphics; from the next start): Fast
+     * and Precompile turn them on, Smooth (the default) leaves the
+     * ubershader alone. WONDERPARK_SHADERS over it. */
+    if (!e && (g_x[X_SHADER_MODE] == 1 || g_x[X_SHADER_MODE] == 2)) e = "spec";
     if (sSimpleFs || !e || (strcmp(e, "spec") != 0 && strcmp(e, "thread") != 0)) return;
     threads = (PFN_threads)(void*)wglGetProcAddress("glMaxShaderCompilerThreadsKHR");
     if (!threads) threads = (PFN_threads)(void*)wglGetProcAddress("glMaxShaderCompilerThreadsARB");
