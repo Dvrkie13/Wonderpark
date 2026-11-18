@@ -161,7 +161,7 @@ static void add_fst_files(void) {
             add_region((uint64_t)be32(e + 4) << 2, be32(e + 8), path);
         }
     }
-    if (replaced) fprintf(stderr, "disc: %d file%s from mods\n", replaced, replaced == 1 ? "" : "s");
+    if (replaced) fprintf(stderr, "disc: %d file%s from mods or the Japanese voices\n", replaced, replaced == 1 ? "" : "s");
 }
 
 int hle_dvd_init(const char* root) {
