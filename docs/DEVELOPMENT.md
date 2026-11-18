@@ -70,6 +70,11 @@ executable can ship in a release.
   the launcher itself from the image's header; the full image hash is
   part of the build's first stage.
 - Esc, or closing the window, during a build asks whether to stop it.
+- The Japanese disc (S2LJ01), dropped or picked, isn't built: its Pokémon
+  voices are copied for Audio > Voice language (`tools/extract_voices.py`,
+  output in `build/logs/voices-ja.log`; it needs dtk like the build), and the
+  launcher says when they're ready. `--test-script` has `drop` for the
+  `--test-iso`.
 - Controller A, Enter and Space press the main button. With Windows'
   "Animation effects" off (or `--reduced-motion`), nothing moves.
 - "Click the logo" is a label in the top-left corner (not clickable).
@@ -195,7 +200,7 @@ also `WONDERPARK_<KEY>`, key in capitals, for example `WONDERPARK_WINDOW_MODE=1`
 | `[audio] volume_master` | 0-100 % | works |
 | `[audio] audio_latency` | 0 low, 1 normal, 2 safe | works: 48, 84 (as before) or 132 ms queued before playback starts; lower at once, higher from the next refill (`runtime/host/audio_win32.c`) |
 | `[audio] volume_music`, `volume_sfx`, `volume_voices` | 0-100 % | work, at once, through the game's own CRI categories (`runtime/hle/hle_volume.c`): music is BGM and JGL (jingles), voices PK_VOICE and PC_VOICE, effects the other five. The game's own category changes are kept and multiplied. Movies (the title's too) play their sound outside CRI and aren't affected |
-| `[audio] voice_language` | | not yet |
+| `[audio] voice_language` | 0 English, 1 Japanese | works, from the next start: with 1, the Japanese disc's voice banks in `game/voices/ja/Sound/` (copied once by `tools/extract_voices.py <Japanese disc>`, or by dropping that disc on the launcher) take the place of the US files the way a mod's do (they have other sizes, so the FST the game reads at boot is changed: `runtime/ios/dvd.c` voice_file; settings are now read before the disc opens, `main.c`). Copied: the 28 banks that differ from the US ones but have the same cue names, indexes and IDs (the starters' voices, the area and story banks), each with its `_streamfiles.awb`; the other Pokémon's shared bank `S_POKE_VOICE` stays English (its cues differ). The F1 row is greyed ("Needs your Japanese disc") until `voices/ja/voices.txt` exists. `WONDERPARK_LOG=mods` logs each Japanese file read. Checked: in Cove Town the game reads the Japanese `S_Fd0102`, `S_DEMO_COMMON` and the starters' voice banks |
 | `[audio] mute_background` | 0, 1 | works: silent while another window is in front |
 | `[gameplay] pause_background` | 0, 1 | works: the game pauses while another window is in front |
 | `[gameplay] speed_up`, `speed_toggle` | 0 off, 1 2x, 2 3x; 0 hold, 1 toggle | works: Tab, or the controller's left trigger when no action is bound to it, runs the game's clock 2 or 3 times as fast (so it runs that many more of its fixed steps), only in the park and never in an attraction, a movie, or while an event script (story scene, talk) runs (`hle_event_running`, `runtime/hle/hle_scene.c`); silent meanwhile, as with F7. A speed set from the debug overlay is left alone (`runtime/host/input_win32.c`). How much faster it really gets depends on the CPU's headroom, since each extra step is a whole frame, drawing included: in Cove Town the optimised build is 65-69% busy at normal speed and went from 30 to 34 game frames a second at 2x (1.13x); the dev build is already 100% busy. A real 2x would need the in-between steps' drawing left out (not done). `WONDERPARK_SPEED_HELD=1` (tests) acts as if the key were held |

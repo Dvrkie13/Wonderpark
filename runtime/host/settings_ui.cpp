@@ -59,6 +59,7 @@ void input_release_mouse(void);          /* input_win32.c */
 unsigned gxb_game_frames(void);          /* gx_frames.c */
 int hle_game_text_speed(void);           /* hle_options.c: 0 Normal, 1 Fast, -1 no save loaded */
 void hle_set_game_text_speed(int fast);
+int dvd_voices_ready(void);              /* dvd.c: the Japanese voices are set up */
 void* win_handle(void);
 }
 
@@ -360,8 +361,17 @@ void build_rows() {
         c.rows.push_back(xslider(X_VOLUME_MUSIC, L"Music", L"Music and jingles.", 0, 100, 5, L"%", false));
         c.rows.push_back(xslider(X_VOLUME_SFX, L"Sound effects", nullptr, 0, 100, 5, L"%", false));
         c.rows.push_back(xslider(X_VOLUME_VOICES, L"Pokémon voices", nullptr, 0, 100, 5, L"%", false));
-        c.rows.push_back(xrow(CHOICE, X_VOICE_LANGUAGE, L"Voice language", L"Japanese needs your own Japanese disc.",
-                              {L"English", L"Japanese"}, true));
+        {
+            // Japanese voices (dvd.c): set up once from the player's own Japanese
+            // disc (drop it on the launcher, or tools/extract_voices.py); greyed
+            // until then. The disc's file table is read at boot: from the next start.
+            Row vl = xrow(CHOICE, X_VOICE_LANGUAGE, L"Voice language",
+                          L"The Pokémon's voices. Japanese comes from your own Japanese disc (drop it on the launcher). From the next start.",
+                          {L"English", L"Japanese"});
+            vl.off = [] { return !dvd_voices_ready() && g_x[X_VOICE_LANGUAGE] == 0; };
+            vl.tag = L"Needs your Japanese disc";
+            c.rows.push_back(vl);
+        }
         c.rows.push_back(xrow(TOGGLE, X_MUTE_BACKGROUND, L"Mute in the background", L"Goes quiet when you switch to another window."));
         c.rows.push_back(xrow(CHOICE, X_AUDIO_LATENCY, L"Audio delay", L"Raise it if the sound crackles.", {L"Low", L"Normal", L"Safe"}));
         g_cats.push_back(c);

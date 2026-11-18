@@ -15,6 +15,7 @@
 #ifndef _WIN32
 #define _strdup strdup
 #define _fseeki64 fseeko
+#define _ftelli64 ftello
 #endif
 
 #ifdef _WIN32
@@ -81,6 +82,31 @@ static void put_be32(uint8_t* p, uint32_t v) {
     p[0] = (uint8_t)(v >> 24), p[1] = (uint8_t)(v >> 16), p[2] = (uint8_t)(v >> 8), p[3] = (uint8_t)v;
 }
 
+/* Voice language (Audio; [audio] voice_language 1, Japanese): the Pokémon
+ * voices from the player's own Japanese disc, copied out of it once by
+ * tools/extract_voices.py (the launcher runs it when that disc is dropped
+ * on it) into <game>/voices/ja/, the same paths as the disc's. Such a file
+ * takes the place of the US one, as a mod's does (a different size: the
+ * FST is changed), so from the next start. Only banks whose cue names and
+ * numbers match the US ones are copied (docs/handoff/VOICE-LANGUAGE.md);
+ * the other Pokémon's shared voice bank stays English. */
+static int sVoicesReady;
+/* Whether the Japanese voices are set up (looked at once, as the disc
+ * opens: never a disk access while the F1 tab draws). */
+int dvd_voices_ready(void) { return sVoicesReady; }
+
+static int voice_file(const char* rel, char* out, size_t n, uint64_t* size) {
+    FILE* f;
+    if (g_x[X_VOICE_LANGUAGE] != 1 || strncmp(rel, "Sound/", 6) != 0) return 0;
+    snprintf(out, n, "%s/voices/ja/%s", sRoot, rel);
+    if (!(f = fopen(out, "rb"))) return 0;
+    _fseeki64(f, 0, SEEK_END);
+    *size = (uint64_t)_ftelli64(f);
+    fclose(f);
+    WP_LOG("mods", "disc file %s: Japanese voices", rel);
+    return 1;
+}
+
 /* Walks the FST, adding a region for every file. Wii FSTs store file
  * offsets divided by 4. A file an enabled mod replaces (host_mods.h) is
  * read from the mod instead: the FST (which the game reads from memory) gets
@@ -116,7 +142,8 @@ static void add_fst_files(void) {
             char rel[512], mod[600];
             uint64_t size;
             snprintf(rel, sizeof(rel), "%s/%s", dir_path[depth] + (depth ? 6 : 5), name); /* past "files/" */
-            if (wp_mod_file(depth ? rel : name, mod, sizeof(mod), &size) && size < 0xFFFFFFFFull) {
+            if ((wp_mod_file(depth ? rel : name, mod, sizeof(mod), &size) || voice_file(depth ? rel : name, mod, sizeof(mod), &size)) &&
+                size < 0xFFFFFFFFull) {
                 uint8_t* w = sFst + i * 12;
                 uint64_t at = (uint64_t)be32(w + 4) << 2;
                 if (size > be32(w + 8)) {
@@ -162,6 +189,11 @@ int hle_dvd_init(const char* root) {
     add_region(0x2440, 0x3B000, path);
     snprintf(path, sizeof(path), "%s/sys/fst.bin", sRoot);
     add_region((uint64_t)be32(sBootBin + 0x424) << 2, sFstSize, path);
+    {
+        FILE* v;
+        snprintf(path, sizeof(path), "%s/voices/ja/voices.txt", sRoot);
+        if ((v = fopen(path, "rb")) != NULL) sVoicesReady = 1, fclose(v);
+    }
     add_fst_files();
     HLE_LOG("disc: %d files from %s", sRegionCount, sRoot);
     return 0;
@@ -421,6 +453,7 @@ static int read_regions(uint64_t offset, uint32_t len, uint32_t dst) {
         uint8_t* data;
         if (lo >= hi) continue;
         note_movie(r->path);
+        if (wp_log_on("mods") && strstr(r->path, "/voices/ja/")) WP_LOG("mods", "read %s", r->path);
         if ((data = r->data) != NULL) {
             memcpy(MA(dst + (uint32_t)(lo - offset)), data + (lo - r->offset), (size_t)(hi - lo));
             continue;

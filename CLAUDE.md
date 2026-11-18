@@ -53,6 +53,7 @@ A fix to game behavior goes in `config/` patches, never as edits to generated co
 Fill these in during Phase 1, once the scripts exist, and keep them current:
 
 - Verify and extract a disc: `python tools/extract_disc.py <disc image>` (into `game/`)
+- Japanese voices (optional, the player's own S2LJ01 disc): `python tools/extract_voices.py <iso>` (into git-ignored `game/voices/ja/`; the launcher does it when that disc is dropped)
 - Recompile: `python tools/recomp.py` (DolRecomp, into `generated/`)
 - Build (dev): `python tools/build_game.py` (clang-cl + Ninja + ThinLTO, into `build/game/`; `--no-lto` faster to build, `--msvc` to use MSVC)
 - PGO profile: `python tools/pgo_train.py --save <nand dir> ...` (into git-ignored `build/pgo/`; `build_game.py` then uses it, `--no-pgo` to skip)

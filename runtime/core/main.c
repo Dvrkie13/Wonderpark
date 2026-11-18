@@ -241,6 +241,7 @@ int main(int argc, char** argv) {
         for (p = root; *p; p++) if (*p == '\\') *p = '/';
         if ((p = strstr(root, "/sys/main.dol")) != NULL) *p = '\0';
         {
+            settings_load();
             /* The mods switched on in the launcher (host_mods.h): their
              * files take the place of the disc's, so before the disc opens. */
             extern void wp_mods_init(void);
@@ -262,7 +263,7 @@ int main(int argc, char** argv) {
 
     fprintf(stderr, "wonderpark: %s loaded, entry %08X\n", dol, entry);
 
-    settings_load();
+    /* (Settings are read before the disc opens: Voice language picks its files, dvd.c.) */
     {
         /* Fast loading: the disc's files into RAM in the background (dvd.c). */
         extern void hle_dvd_preload_start(void);

@@ -18,7 +18,7 @@
 // Command line (development and tests):
 //   --root <dir>          the Wonderpark folder (else found above the exe, or WONDERPARK_ROOT)
 //   --test-iso <file>     use this file instead of the file picker
-//   --test-script <list>  timed actions, "<seconds>:<action>,...": logo, press, cancel,
+//   --test-script <list>  timed actions, "<seconds>:<action>,...": logo, press, drop (the --test-iso), cancel,
 //                         shot=<file.png>, quit (seconds from start; "+N" after the previous)
 //   --reduced-motion      as Windows' "Animation effects" off
 // WONDERPARK_PYTHON picks the Python to run the builder with.
@@ -342,17 +342,65 @@ static std::wstring verify_disc(const std::wstring& path) {
     return L"";
 }
 
+// Whether the image is the Japanese disc (S2LJ01): its voices are copied for
+// the Voice language setting instead (tools/extract_voices.py).
+static bool japanese_disc(const std::wstring& path) {
+    HANDLE f = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
+    if (f == INVALID_HANDLE_VALUE) return false;
+    unsigned char h[0x220] = {};
+    DWORD n = 0;
+    ReadFile(f, h, sizeof(h), &n, nullptr);
+    CloseHandle(f);
+    if (n < 0x220) return false;
+    const unsigned char* id = h;
+    if (!memcmp(h, "WBFS", 4)) id = h + 0x200;
+    else if (!memcmp(h, "RVZ", 3) || !memcmp(h, "WIA", 3)) id = h + 0x58;
+    return !memcmp(id, "S2LJ01", 6);
+}
+
 static void start_verify(const std::wstring& path) {
     join_worker();
+    State prevState;
+    std::wstring prevImage;
+    bool prevRebuild;
     {
         std::lock_guard<std::mutex> lk(g.m);
+        prevState = g.state, prevImage = g.image, prevRebuild = g.rebuild;
         g.state = S_VERIFYING;
         g.image = path;
         g.error.clear();
         g.warn.clear();
         g.rebuild = false;
     }
-    g_worker = std::thread([path] {
+    g_worker = std::thread([path, prevState, prevImage, prevRebuild] {
+        if (japanese_disc(path)) {
+            // The Japanese disc: its Pokémon voices copied for Audio > Voice
+            // language (only the voice banks are kept; a few minutes, as the
+            // disc is read whole). The launcher stays as it was meanwhile.
+            {
+                std::lock_guard<std::mutex> lk(g.m);
+                g.state = prevState, g.image = prevImage, g.rebuild = prevRebuild;
+                g.warn = L"Copying the Pokémon voices from your Japanese disc…";
+                wake();
+            }
+            std::wstring logdir = g_root + L"\\build\\logs";
+            SHCreateDirectoryExW(nullptr, logdir.c_str(), nullptr);
+            std::wstring log_path = logdir + L"\\voices-ja.log";
+            FILE* log = _wfopen(log_path.c_str(), L"wb");
+            int rc = run_python(L"tools\\extract_voices.py \"" + path + L"\"", log, [](const std::string&) {});
+            if (log) fclose(log);
+            std::lock_guard<std::mutex> lk(g.m);
+            if (rc == 0) {
+                g.warn = L"Japanese voices ready: choose Japanese in Settings (F1) › Audio › Voice language.";
+            } else {
+                g.warn.clear();
+                g.error = L"The Japanese voices couldn't be copied (build\\logs\\voices-ja.log says why).";
+                g.log_path = log_path;
+                g.error_has_log = true;
+            }
+            wake();
+            return;
+        }
         double t0 = now_s();
         std::wstring err = verify_disc(path);
         double left = 1.0 - (now_s() - t0);  // long enough to read "Verifying..."
@@ -2429,6 +2477,7 @@ static void run_script(double t) {
         const std::wstring& a = g_script[g_script_pos++].what;
         if (a == L"logo") open_menu();
         else if (a == L"press") press_main();
+        else if (a == L"drop") { if (!g_test_iso.empty()) start_verify(g_test_iso); }  // as if --test-iso were dropped on the window
         else if (a == L"cancel") { if (current_state() == S_BUILDING) cancel_build(); }
         else if (a.rfind(L"shot=", 0) == 0) g_shot = a.substr(5);
         else if (a == L"quit") PostMessageW(g_wnd, WM_CLOSE, 0, 1);
