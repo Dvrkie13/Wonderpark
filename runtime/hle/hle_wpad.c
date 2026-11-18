@@ -97,6 +97,8 @@ static int hle_motion(uint32_t held, uint32_t reports, int16_t acc[3], int16_t d
 }
 
 static uint32_t sReports;
+/* Remote 0's buttons (HOST_PAD_*) at the last WPADRead. */
+uint32_t g_wpad_held;
 int (*g_host_script_input)(uint32_t held);
 static int sConnecting, sConnected;
 
@@ -304,6 +306,10 @@ WP_HOOK(0x802D49E0, WPADRead) {
         /* Swing along the remote's length, which is left-right on screen
          * held sideways: +-2.5 g, about 17 times a second. */
         ay = (sReports / SWING_REPORTS) & 1 ? ACC_ONE_G * 5 / 2 : -ACC_ONE_G * 5 / 2;
+    }
+    if (on && chan == 0) {
+        extern uint32_t g_wpad_held; /* the camera's B (hle_camera.c) */
+        g_wpad_held = held;
     }
     if (held && wp_log_on("wpadbtn")) WP_LOG("wpadbtn", "chan %d held %04X -> buttons %04X (lr %08X)", (int)chan, held, wpad_buttons(held), c->lr);
     memset(MA(st), 0, 0x2A);

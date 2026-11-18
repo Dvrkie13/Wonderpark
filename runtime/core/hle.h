@@ -27,6 +27,8 @@ void wp_call_original(CPUState* c, u32 addr);
 /* Calls any guest function with up to 4 arguments; returns r3. Registers
  * other than r3 are restored afterwards. */
 u32 wp_call_guest(CPUState* c, u32 addr, u32 r3, u32 r4, u32 r5, u32 r6);
+/* The same with up to 8 arguments, r3-r10 (unused ones 0). */
+u32 wp_call_guest8(CPUState* c, u32 addr, const u32 args[8]);
 
 /* Host interrupts (hostirq.c): queue a guest callback fn(r3, r4) to run
  * as from an interrupt handler, at the next point interrupts are enabled. */

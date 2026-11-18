@@ -100,6 +100,17 @@ needs the "redraw while paused" piece worked out first.
   `runtime/hle/hle_modifiers.c`; the F1 rows work. Chase speed checked with
   `WONDERPARK_CHASE_ALL=1` (speeds scaled 1.5x at 150%; at 50% the park's
   Pokémon covered half the ground). Damage not yet tried in a battle.
+- **Level 1 camera (2026-11-17):** ported to `runtime/hle/hle_camera.c`
+  (with `hle_scene.c` and `wp_call_guest8` for the collision ray). Settings:
+  Free camera, Camera speed (mouse), Stick speed, Invert left / right and
+  up / down, Recenter after, Field of view (now the game's cameras, so
+  culling matches; the projection scaling in `gx_fifo.c` is gone). Checked
+  in Cove Town: turning and tilting by a scripted mouse, B's look-around
+  bringing it back, field of view 130% wider. Not yet: aiming at the
+  player's real position instead of the trailing point. Turning toward the
+  middle of Cove Town drops the dev build (no LTO or PGO) from about 25 to
+  7-17 fps: the game drawing much more in that direction (the camera's own
+  collision rays cost about 5 ms a second).
 
 ## Notes for the battle and chase work (F1 balance rows)
 

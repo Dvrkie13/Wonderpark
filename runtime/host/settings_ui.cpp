@@ -227,7 +227,7 @@ void build_rows() {
         Row fov;
         fov.kind = SLIDER;
         fov.label = L"Field of view";
-        fov.desc = L"In widescreen. Wider views can show things popping in at the sides.";
+        fov.desc = L"How wide the camera sees in the park. Minigames keep their own.";
         fov.min = 80, fov.max = 130, fov.step = 5, fov.unit = L"%";
         fov.get = [] { return g_settings.fov; };
         fov.set = [](int v) {
@@ -238,8 +238,6 @@ void build_rows() {
             g_settings.fov = 100;
             settings_save();
         };
-        fov.off = [] { return !g_x[X_WIDESCREEN]; };
-        fov.tag = L"Widescreen only";
         c.rows.push_back(fov);
         c.rows.push_back(xslider(X_BRIGHTNESS, L"Brightness", nullptr, 50, 150, 5, L"%", false));
         g_cats.push_back(c);
@@ -278,9 +276,12 @@ void build_rows() {
     {
         Category c{L"controls", L"Controls", L"Keyboard, mouse and controller", 0xf6d44a, 0xfbe27a, 0x10182f, {}};
         c.rows.push_back(head(L"Camera and aiming"));
+        c.rows.push_back(xrow(TOGGLE, X_FREE_CAMERA, L"Free camera",
+                              L"The mouse and right stick turn the camera in the park. B puts it back behind you."));
         Row cam;
         cam.kind = SLIDER;
         cam.label = L"Camera speed";
+        cam.desc = L"For the mouse (and the pointer in minigames).";
         cam.min = 25, cam.max = 200, cam.step = 5, cam.unit = L"%";
         cam.get = [] { return (int)std::lround(g_settings.mouse_sensitivity * 100); };
         cam.set = [](int v) {
@@ -292,7 +293,9 @@ void build_rows() {
             settings_save();
         };
         c.rows.push_back(cam);
-        c.rows.push_back(xrow(TOGGLE, X_INVERT_X, L"Invert left / right", nullptr, {}, true));
+        c.rows.push_back(xslider(X_STICK_SENSITIVITY, L"Stick speed", L"How fast the right stick turns the camera.", 10, 300,
+                                 10, L"%", false));
+        c.rows.push_back(xrow(TOGGLE, X_INVERT_X, L"Invert left / right", nullptr));
         Row iy;
         iy.kind = TOGGLE;
         iy.label = L"Invert up / down";
@@ -306,6 +309,11 @@ void build_rows() {
             settings_save();
         };
         c.rows.push_back(iy);
+        {
+            Row rc = xslider(X_CAMERA_RECENTER, L"Recenter after", L"Seconds without turning before the camera eases back. Off: never.",
+                             0, 30, 1, L" s", false);
+            c.rows.push_back(rc);
+        }
         c.rows.push_back(xrow(CHOICE, X_RIGHT_STICK, L"Right stick", L"Auto switches to the pointer when the game asks for one.",
                               {L"Camera", L"Pointer", L"Auto"}, true));
         c.rows.push_back(xrow(TOGGLE, X_AIM_ASSIST, L"Aim assist", L"Controller aiming leans toward targets (Cake Contraption).", {}, true));

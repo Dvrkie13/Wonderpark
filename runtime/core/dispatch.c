@@ -83,6 +83,21 @@ u32 wp_call_guest(CPUState* c, u32 addr, u32 r3, u32 r4, u32 r5, u32 r6) {
     return result;
 }
 
+u32 wp_call_guest8(CPUState* c, u32 addr, const u32 args[8]) {
+    CPUState saved;
+    u32 result;
+    int i;
+    memcpy(&saved, c, sizeof(saved));
+    c->gpr[1] = (c->gpr[1] - 0x100) & ~7u; /* keep the caller's frame intact */
+    for (i = 0; i < 8; i++) c->gpr[3 + i] = args[i];
+    c->lr = RETURN_MAGIC;
+    c->pc = addr;
+    run_until(c, RETURN_MAGIC);
+    result = c->gpr[3];
+    memcpy(c, &saved, sizeof(saved));
+    return result;
+}
+
 /* WONDERPARK_LOG=prof: where slices end, by function, printed at exit. */
 #define PROF_SLOTS 4096
 static struct { u32 fn; unsigned long long n; } s_prof[PROF_SLOTS];

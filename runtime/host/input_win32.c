@@ -170,8 +170,15 @@ static void read_mouse(float* dx, float* dy) {
     last = now;
     read_sticks(&lx, &ly, &rx, &ry);
     if (!has_focus()) rx = ry = 0;
-    *dx = sMouseX * g_settings.mouse_sensitivity + rx * LOOK_STICK_PIXELS_PER_SECOND * dt;
-    *dy = (sMouseY * g_settings.mouse_sensitivity - ry * LOOK_STICK_PIXELS_PER_SECOND * dt) * (g_settings.invert_tilt ? -1 : 1);
+    {
+        /* Wonderpark: the camera's settings (hle_camera.c): Camera speed for
+         * the mouse, Stick speed for the stick, both inverts; Mirror world
+         * turns the other way, as the picture is flipped. */
+        float stick = LOOK_STICK_PIXELS_PER_SECOND * dt * g_x[X_STICK_SENSITIVITY] / 100.0f;
+        int flipX = (g_x[X_INVERT_X] != 0) != (g_x[X_MIRROR_WORLD] != 0);
+        *dx = (sMouseX * g_settings.mouse_sensitivity + rx * stick) * (flipX ? -1 : 1);
+        *dy = (sMouseY * g_settings.mouse_sensitivity - ry * stick) * (g_settings.invert_tilt ? -1 : 1);
+    }
     sMouseX = sMouseY = 0;
 }
 

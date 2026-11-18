@@ -80,6 +80,9 @@ enum {
     X_AIM_ASSIST,
     X_STEER_SENSITIVITY, X_AIM_SPEED, /* 25-200 % */
     X_RHYTHM_OFFSET,    /* -100..100 ms */
+    X_FREE_CAMERA,      /* the mouse and right stick turn the camera (hle_camera.c) */
+    X_STICK_SENSITIVITY, /* 10-300 %: the right stick's turning */
+    X_CAMERA_RECENTER,  /* seconds without turning before the camera eases back; 0 never */
     /* [audio] */
     X_VOLUME_MASTER, X_VOLUME_MUSIC, X_VOLUME_SFX, X_VOLUME_VOICES, /* 0-100 % */
     X_VOICE_LANGUAGE,   /* 0 English, 1 Japanese */

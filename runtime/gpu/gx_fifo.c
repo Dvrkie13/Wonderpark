@@ -1150,20 +1150,18 @@ static void wide_for_draw(const uint8_t* p, const VtxFormat* f, int count, float
     static int cap;
     GXVertex tpl;
     float vp[6], box[4], wd = xf_float(0x101A), ht = xf_float(0x101B);
-    /* Field of view (g_settings.fov, percent of the game's tangent of half
-     * the angle): the world's projection scaled by its inverse, both ways.
-     * Only in widescreen, where the layout's camera tells the world apart. */
-    float fov = g_settings.fov > 0 && g_settings.fov != 100 ? 100.0f / (float)g_settings.fov : 1.0f;
+    /* (Field of view is the game's cameras widened, hle_camera.c, so that
+     * culling matches; *sy stays 1, here for scaling the world's y.) */
     int i, layout;
     *sx = 1;
     *ox = 0;
     *sy = 1;
-    if (!hle_widescreen() || (g_wide_r == 1 && g_wide_shown == 1 && !g_x[X_HUD_EDGES] && fov == 1.0f)) return;
+    if (!hle_widescreen() || (g_wide_r == 1 && g_wide_shown == 1 && !g_x[X_HUD_EDGES])) return;
     if (fabsf(2.0f * wd - 640.0f) > 1.0f) return; /* into part of the EFB */
     layout = is_layout_camera();
     if (!layout) {
-        if (!xf[0x1026]) *sx = fov / g_wide_r, *sy = fov, sWorldFrame = sFrame; /* the world */
-        return;                                                                /* effects, copies */
+        if (!xf[0x1026]) *sx = 1.0f / g_wide_r, sWorldFrame = sFrame; /* the world */
+        return;                                                       /* effects, copies */
     }
     if (count > cap) {
         cap = count * 2;

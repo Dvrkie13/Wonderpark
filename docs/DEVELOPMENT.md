@@ -150,15 +150,15 @@ the file).
 | `[display] aniso` | `WONDERPARK_ANISO` | 1, 2, 4, 8, 16 | works |
 | `[display] renderer` | `WONDERPARK_RENDERER` | opengl, vulkan | only OpenGL is built |
 | `[display] frame_rate` | `WONDERPARK_FRAME_RATE` | 30, 60, 120-240 | 30 and 60 work, at once (F1 or the Options page): at 60 the game's frame timer runs at 59.94 Hz instead of 29.97 and draws every 60 Hz logic step; movies stay at 30, and it drops to 30 for 15 s when frames keep coming late (`runtime/hle/hle_frame.c`). 120 and up: not yet (frame interpolation) |
-| `[display] fov` | `WONDERPARK_FOV` | 80-150 (the F1 tab offers 80-130) | works, at once, in widescreen only: the world's projection is scaled by 100/fov both ways (`runtime/gpu/gx_fifo.c` wide_for_draw); the game still culls for its own view, so above 100 things can pop in at the sides |
+| `[display] fov` | `WONDERPARK_FOV` | 80-150 (the F1 tab offers 80-130) | works, at once: the game's world cameras are widened where they're applied (`0x80019B20`) and where their frustum is worked out for culling (`0x8001A390`), so nothing pops in; not in minigames (`runtime/hle/hle_camera.c`, from MildRain479/PokePark-2-Wiicompiled, CC0) |
 | `[gameplay] skip_movies` | `WONDERPARK_SKIP_MOVIES` | 0, 1 | not working yet (see "Skip movies" in `docs/recomp-status.md`) |
 | `[gameplay] berries`, `prices` | `WONDERPARK_BERRIES`, `WONDERPARK_PRICES` | 50-500 %, 0-200 % | work, at once: the Berry count (save +0x1474) is watched each frame; a rise is scaled by `berries`, a drop by `prices` (shops still show and need their own price). A frame where much of the save changed (a load, a new game) isn't scaled (`runtime/hle/hle_balance.c`) |
 | `[gameplay] damage_dealt`, `damage_taken` | `WONDERPARK_DAMAGE_DEALT`, `WONDERPARK_DAMAGE_TAKEN` | 25-400 %, 0-200 % | in battles, at once: the damage a Pokémon's LifeModuleImpl takes (`0x800B0200`) is scaled, by "taken" when it's the player's (`runtime/hle/hle_modifiers.c`, from MildRain479/PokePark-2-Wiicompiled, CC0). Not yet tried in a battle (none reachable by script so far) |
 | `[gameplay] chase_speed` | `WONDERPARK_CHASE_SPEED` | 50-150 % | in chase games: the chased Pokémon's target and top speed and acceleration are scaled for its movement update (`0x800A9340`) while its chase action runs (`0x801E1210`). `WONDERPARK_CHASE_ALL=1` (tests) applies it to every Pokémon but the player |
 | `[gameplay] text_speed` | `WONDERPARK_TEXT_SPEED` | | from the PokéPark 1 runtime; not used (Text speed is the game's own, in the F1 tab) |
 | `[updates] check` | `WONDERPARK_CHECK_UPDATES` | 0, 1 | no update check built yet |
-| `[mouse] sensitivity` | `WONDERPARK_SENSITIVITY` | 0.1-3 | camera and pointer speed |
-| `[mouse] invert_tilt` | `WONDERPARK_INVERT_TILT` | 0, 1 | |
+| `[mouse] sensitivity` | `WONDERPARK_SENSITIVITY` | 0.1-3 | the mouse's camera turning (0.3 degrees a pixel at 1) and pointer speed |
+| `[mouse] invert_tilt` | `WONDERPARK_INVERT_TILT` | 0, 1 | the camera's up and down, mouse and stick |
 | `[controller] rumble` | `WONDERPARK_RUMBLE` | 0 off, 1 light, 2 normal, 3 strong | |
 
 The PC settings of the F1 tab (`runtime/host/settings.c`, table `kX`; each
@@ -178,7 +178,11 @@ also `WONDERPARK_<KEY>`, key in capitals, for example `WONDERPARK_WINDOW_MODE=1`
 | `[graphics] fog` | 0, 1 (default 1) | works, at once: off draws no GX fog (`runtime/gpu/gx_fifo.c`) |
 | `[graphics] colors` | 0 original, 1 vivid | works, at once: more saturation (1.3x) and a little contrast on the shown picture |
 | `[graphics] per_pixel_lighting`, `hdr`, `shader_mode` | | not yet |
-| `[controls] invert_x`, `right_stick`, `aim_assist`, `steer_sensitivity`, `aim_speed`, `rhythm_offset` | | not yet |
+| `[controls] free_camera` | 0, 1 (default 1) | works: in the park the mouse and right stick turn and tilt the follow camera (tilt -20 to 45 degrees); B (the game's look-around) eases it back behind the player; the eye is pulled in from walls and kept off the ground, for drawing only; another camera or scene starts over. Off eases back. Not in minigames (`runtime/hle/hle_camera.c`, adapted from MildRain479/PokePark-2-Wiicompiled's, CC0; the scene from `runtime/hle/hle_scene.c`). `WONDERPARK_MOUSE=<dx>,<dy>[,<updates>]` (tests) turns it by that many pixels an update |
+| `[controls] stick_sensitivity` | 10-300 % | works: the right stick's turning (600 mouse pixels a second at 100%) |
+| `[controls] invert_x` | 0, 1 | works: the camera's left and right, mouse and stick (Mirror world flips it too) |
+| `[controls] camera_recenter` | 0-30 s (0 never) | works: that long without turning, the camera eases back behind |
+| `[controls] right_stick`, `aim_assist`, `steer_sensitivity`, `aim_speed`, `rhythm_offset` | | not yet |
 | `[audio] volume_master` | 0-100 % | works |
 | `[audio] audio_latency` | 0 low, 1 normal, 2 safe | works: 48, 84 (as before) or 132 ms queued before playback starts; lower at once, higher from the next refill (`runtime/host/audio_win32.c`) |
 | `[audio] volume_music`, `volume_sfx`, `volume_voices` | 0-100 % | work, at once, through the game's own CRI categories (`runtime/hle/hle_volume.c`): music is BGM and JGL (jingles), voices PK_VOICE and PC_VOICE, effects the other five. The game's own category changes are kept and multiplied. Movies (the title's too) play their sound outside CRI and aren't affected |
@@ -287,7 +291,7 @@ keys (f1 esc up down left right enter q e backspace, a letter or digit) or
 
 ### `WONDERPARK_LOG` categories
 
-`adxcheck audioq audiostats axramp balance bloom framerate axvoice axvoices dec dsp efbcopy exc gxhw gxirq hook gxpe hostprof hwmisc idle ios ipc irq kpad memcpywatch mmio mmiostat modifiers mods movie mqwatch nandio pi pointer prof stalls steps threads voicepitch volume waits wpad wpadbtn`
+`adxcheck audioq audiostats axramp balance bloom camera framerate axvoice axvoices dec dsp efbcopy exc gxhw gxirq hook gxpe hostprof hwmisc idle ios ipc irq kpad memcpywatch mmio mmiostat modifiers mods movie mqwatch nandio pi pointer prof scene stalls steps threads voicepitch volume waits wpad wpadbtn`
 
 The most useful: `waits` (where threads block), `steps` (the game's logic
 steps per tick), `idle`, `efbcopy`, `gxirq`, `mmiostat` (slow memory
