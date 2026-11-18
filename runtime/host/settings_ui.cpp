@@ -390,7 +390,7 @@ void build_rows() {
     {
         Category c{L"silly", L"Silly", L"Just for fun", 0xe2457f, 0xf27aa5, 0xffffff, {}};
         c.rows.push_back(xrow(CHOICE, X_POKEMON_SIZE, L"Pokémon size", nullptr, {L"Mini", L"Normal", L"Giant"}, true));
-        c.rows.push_back(xslider(X_VOICE_PITCH, L"Voice pitch", L"From deep and grumbly to tiny and squeaky.", -50, 50, 5, L"%", true, true));
+        c.rows.push_back(xslider(X_VOICE_PITCH, L"Voice pitch", L"From deep and grumbly to tiny and squeaky. Changes the next thing a Pokémon says.", -50, 50, 5, L"%", false, true));
         c.rows.push_back(xrow(TOGGLE, X_MIRROR_WORLD, L"Mirror world", L"Flips the whole park left to right. Left and right swap too."));
         c.rows.push_back(xrow(TOGGLE, X_VICTORY_CONFETTI, L"Victory confetti", L"A burst of confetti when you win an attraction.", {}, true));
         c.rows.push_back(xrow(CHOICE, X_STEREO_3D, L"3D glasses", L"For red-cyan glasses or a 3D TV.", {L"Off", L"Red-cyan", L"Side by side"}, true));

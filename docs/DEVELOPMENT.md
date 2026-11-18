@@ -184,7 +184,8 @@ also `WONDERPARK_<KEY>`, key in capitals, for example `WONDERPARK_WINDOW_MODE=1`
 | `[gameplay] pause_background` | 0, 1 | works: the game pauses while another window is in front |
 | `[gameplay] skip_logos` | | not yet |
 | `[silly] mirror_world` | 0, 1 | works, at once: the shown picture flipped left to right, with left and right (and the pointer's left and right) swapped to match (`runtime/host/input_win32.c`) |
-| `[silly] pokemon_size`, `voice_pitch`, `victory_confetti`, `stereo_3d` | | not yet |
+| `[silly] voice_pitch` | -50..50 % of the frequency | works, from the next thing a Pokémon says: voices (sounds from the `*_VOICE` banks) get CRI pitch on top of the game's own (`runtime/hle/hle_voice_pitch.c`). The game's two voice pools are made with a 49,152 Hz limit instead of 32,768, so +50% isn't clamped. The attractions' own voice banks (`M_*_AT_VOICE`) aren't covered |
+| `[silly] pokemon_size`, `victory_confetti`, `stereo_3d` | | not yet |
 
 ## The F1 settings tab
 
@@ -281,7 +282,7 @@ keys (f1 esc up down left right enter q e backspace, a letter or digit) or
 
 ### `WONDERPARK_LOG` categories
 
-`adxcheck audioq audiostats axramp bloom framerate axvoice axvoices dec dsp efbcopy exc gxhw gxirq hook gxpe hostprof hwmisc idle ios ipc irq kpad memcpywatch mmio mmiostat mods movie mqwatch nandio pi pointer prof stalls steps threads volume waits wpad wpadbtn`
+`adxcheck audioq audiostats axramp bloom framerate axvoice axvoices dec dsp efbcopy exc gxhw gxirq hook gxpe hostprof hwmisc idle ios ipc irq kpad memcpywatch mmio mmiostat mods movie mqwatch nandio pi pointer prof stalls steps threads voicepitch volume waits wpad wpadbtn`
 
 The most useful: `waits` (where threads block), `steps` (the game's logic
 steps per tick), `idle`, `efbcopy`, `gxirq`, `mmiostat` (slow memory
