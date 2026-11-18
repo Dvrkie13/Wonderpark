@@ -396,8 +396,8 @@ void settings_save(void) {
     tprintf(&s, "skip_movies = %d ; 1: skip the story's video cutscenes (not working yet)\n", g_settings.skip_movies);
     tprintf(&s, "text_speed = %d ; dialogue: 1 (the game's), 2, 3 times as fast, or 0: a page at once\n",
             g_settings.text_speed);
-    tprintf(&s, "berries = %d ; berries collected, percent of the game's: 50, 100, 150, 200 or 300\n", g_settings.berries);
-    tprintf(&s, "prices = %d ; berries spent, percent of the game's: 0 (free), 50, 100 or 200\n", g_settings.prices);
+    tprintf(&s, "berries = %d ; berries collected, percent of the game's: 50-500\n", g_settings.berries);
+    tprintf(&s, "prices = %d ; berries spent buying, percent of the price: 0 (free) to 200\n", g_settings.prices);
     tprintf(&s, "damage_dealt = %d ; damage dealt in battles, percent of the game's: 50, 100, 150, 200 or 300\n",
             g_settings.damage_dealt);
     tprintf(&s, "damage_taken = %d ; damage taken in battles, percent of the game's: 0 (none), 50, 100, 200 or 300\n",
@@ -464,8 +464,9 @@ static void parse_option(const char* section, const char* name, const char* p, i
     } else if (!strcmp(section, "gameplay")) {
         if (!strcmp(name, "skip_movies")) g_settings.skip_movies = atoi(p) != 0;
         if (!strcmp(name, "text_speed")) g_settings.text_speed = kTextSpeeds[choice(kTextSpeeds, COUNT(kTextSpeeds), atoi(p))];
-        if (!strcmp(name, "berries")) g_settings.berries = kBerries[choice(kBerries, COUNT(kBerries), atoi(p))];
-        if (!strcmp(name, "prices")) g_settings.prices = kPrices[choice(kPrices, COUNT(kPrices), atoi(p))];
+        /* Wonderpark: any percent in the F1 tab's ranges (50-500, 0-200), not PokéPark 1's few choices. */
+        if (!strcmp(name, "berries")) g_settings.berries = atoi(p) < 50 ? 50 : atoi(p) > 500 ? 500 : atoi(p);
+        if (!strcmp(name, "prices")) g_settings.prices = atoi(p) < 0 ? 0 : atoi(p) > 200 ? 200 : atoi(p);
         if (!strcmp(name, "damage_dealt"))
             g_settings.damage_dealt = kDamageDealt[choice(kDamageDealt, COUNT(kDamageDealt), atoi(p))];
         if (!strcmp(name, "damage_taken"))

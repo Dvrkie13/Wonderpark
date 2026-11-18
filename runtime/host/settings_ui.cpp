@@ -376,8 +376,28 @@ void build_rows() {
             ts.tag = L"Load a save first";
             c.rows.push_back(ts);
         }
-        c.rows.push_back(soon(L"Berries collected", nullptr, 50, 500, 25, &g_settings.berries));
-        c.rows.push_back(soon(L"Shop prices", nullptr, 0, 200, 10, &g_settings.prices));
+        // Berries collected and Shop prices (hle_balance.c): what is gained and spent.
+        auto pct = [](const wchar_t* label, const wchar_t* desc, int mn, int mx, int step, int* field) {
+            Row r;
+            r.kind = SLIDER;
+            r.label = label;
+            r.desc = desc;
+            r.min = mn, r.max = mx, r.step = step, r.unit = L"%";
+            r.get = [field] { return *field; };
+            r.set = [field](int v) {
+                *field = v;
+                settings_save();
+            };
+            r.reset = [field] {
+                *field = 100;
+                settings_save();
+            };
+            return r;
+        };
+        c.rows.push_back(pct(L"Berries collected", L"Berries you get from boxes, rewards and friends.", 50, 500, 25,
+                             &g_settings.berries));
+        c.rows.push_back(pct(L"Shop prices", L"What buying takes from your Berries. Shops still show their own price.", 0,
+                             200, 10, &g_settings.prices));
         c.rows.push_back(soon(L"Damage you deal", nullptr, 25, 400, 25, &g_settings.damage_dealt));
         c.rows.push_back(soon(L"Damage you take", nullptr, 0, 200, 10, &g_settings.damage_taken));
         c.rows.push_back(soon(L"Chase speed", L"How fast Pokémon run in chase games.", 50, 150, 5, &g_settings.chase_speed));

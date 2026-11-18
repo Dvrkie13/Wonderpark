@@ -152,7 +152,8 @@ the file).
 | `[display] frame_rate` | `WONDERPARK_FRAME_RATE` | 30, 60, 120-240 | 30 and 60 work, at once (F1 or the Options page): at 60 the game's frame timer runs at 59.94 Hz instead of 29.97 and draws every 60 Hz logic step; movies stay at 30, and it drops to 30 for 15 s when frames keep coming late (`runtime/hle/hle_frame.c`). 120 and up: not yet (frame interpolation) |
 | `[display] fov` | `WONDERPARK_FOV` | 80-150 (the F1 tab offers 80-130) | works, at once, in widescreen only: the world's projection is scaled by 100/fov both ways (`runtime/gpu/gx_fifo.c` wide_for_draw); the game still culls for its own view, so above 100 things can pop in at the sides |
 | `[gameplay] skip_movies` | `WONDERPARK_SKIP_MOVIES` | 0, 1 | not working yet (see "Skip movies" in `docs/recomp-status.md`) |
-| `[gameplay] text_speed`, `berries`, `prices`, `damage_dealt`, `damage_taken`, `chase_speed` | `WONDERPARK_<KEY>` | percent | from the PokéPark 1 runtime; not hooked up for PokéPark 2 yet |
+| `[gameplay] berries`, `prices` | `WONDERPARK_BERRIES`, `WONDERPARK_PRICES` | 50-500 %, 0-200 % | work, at once: the Berry count (save +0x1474) is watched each frame; a rise is scaled by `berries`, a drop by `prices` (shops still show and need their own price). A frame where much of the save changed (a load, a new game) isn't scaled (`runtime/hle/hle_balance.c`) |
+| `[gameplay] text_speed`, `damage_dealt`, `damage_taken`, `chase_speed` | `WONDERPARK_<KEY>` | percent | from the PokéPark 1 runtime; not hooked up for PokéPark 2 yet (Text speed is the game's own, in the F1 tab) |
 | `[updates] check` | `WONDERPARK_CHECK_UPDATES` | 0, 1 | no update check built yet |
 | `[mouse] sensitivity` | `WONDERPARK_SENSITIVITY` | 0.1-3 | camera and pointer speed |
 | `[mouse] invert_tilt` | `WONDERPARK_INVERT_TILT` | 0, 1 | |
@@ -282,7 +283,7 @@ keys (f1 esc up down left right enter q e backspace, a letter or digit) or
 
 ### `WONDERPARK_LOG` categories
 
-`adxcheck audioq audiostats axramp bloom framerate axvoice axvoices dec dsp efbcopy exc gxhw gxirq hook gxpe hostprof hwmisc idle ios ipc irq kpad memcpywatch mmio mmiostat mods movie mqwatch nandio pi pointer prof stalls steps threads voicepitch volume waits wpad wpadbtn`
+`adxcheck audioq audiostats axramp balance bloom framerate axvoice axvoices dec dsp efbcopy exc gxhw gxirq hook gxpe hostprof hwmisc idle ios ipc irq kpad memcpywatch mmio mmiostat mods movie mqwatch nandio pi pointer prof stalls steps threads voicepitch volume waits wpad wpadbtn`
 
 The most useful: `waits` (where threads block), `steps` (the game's logic
 steps per tick), `idle`, `efbcopy`, `gxirq`, `mmiostat` (slow memory
