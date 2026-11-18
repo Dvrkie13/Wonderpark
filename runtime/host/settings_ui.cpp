@@ -350,17 +350,6 @@ void build_rows() {
     {
         Category c{L"gameplay", L"Gameplay", L"Tune the pace and the challenge", 0xf39a2b, 0xf7b45c, 0x10182f, {}};
         c.rows.push_back(head(L"Balance"));
-        auto soon = [](const wchar_t* label, const wchar_t* desc, int mn, int mx, int step, int* field) {
-            Row r;
-            r.kind = SLIDER;
-            r.label = label;
-            r.desc = desc ? desc : L"";
-            r.min = mn, r.max = mx, r.step = step, r.unit = L"%", r.soon = true;
-            r.get = [field] { return field ? *field : 100; };
-            r.set = [](int) {};
-            r.reset = [] {};
-            return r;
-        };
         {
             // The game's own Text Speed (Options page), read and written in
             // place in its loaded save (hle_options.c).
@@ -398,9 +387,9 @@ void build_rows() {
                              &g_settings.berries));
         c.rows.push_back(pct(L"Shop prices", L"What buying takes from your Berries. Shops still show their own price.", 0,
                              200, 10, &g_settings.prices));
-        c.rows.push_back(soon(L"Damage you deal", nullptr, 25, 400, 25, &g_settings.damage_dealt));
-        c.rows.push_back(soon(L"Damage you take", nullptr, 0, 200, 10, &g_settings.damage_taken));
-        c.rows.push_back(soon(L"Chase speed", L"How fast Pokémon run in chase games.", 50, 150, 5, &g_settings.chase_speed));
+        c.rows.push_back(pct(L"Damage you deal", L"In battles.", 25, 400, 25, &g_settings.damage_dealt));
+        c.rows.push_back(pct(L"Damage you take", L"In battles. 0% and nothing can hurt you.", 0, 200, 10, &g_settings.damage_taken));
+        c.rows.push_back(pct(L"Chase speed", L"How fast the Pokémon you chase runs.", 50, 150, 5, &g_settings.chase_speed));
         c.rows.push_back(head(L"Comfort"));
         c.rows.push_back(xrow(TOGGLE, X_PAUSE_BACKGROUND, L"Pause in the background", L"Pauses when the window loses focus."));
         c.rows.push_back(xrow(TOGGLE, X_SKIP_LOGOS, L"Skip startup logos", nullptr, {}, true));

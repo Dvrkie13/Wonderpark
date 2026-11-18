@@ -153,7 +153,9 @@ the file).
 | `[display] fov` | `WONDERPARK_FOV` | 80-150 (the F1 tab offers 80-130) | works, at once, in widescreen only: the world's projection is scaled by 100/fov both ways (`runtime/gpu/gx_fifo.c` wide_for_draw); the game still culls for its own view, so above 100 things can pop in at the sides |
 | `[gameplay] skip_movies` | `WONDERPARK_SKIP_MOVIES` | 0, 1 | not working yet (see "Skip movies" in `docs/recomp-status.md`) |
 | `[gameplay] berries`, `prices` | `WONDERPARK_BERRIES`, `WONDERPARK_PRICES` | 50-500 %, 0-200 % | work, at once: the Berry count (save +0x1474) is watched each frame; a rise is scaled by `berries`, a drop by `prices` (shops still show and need their own price). A frame where much of the save changed (a load, a new game) isn't scaled (`runtime/hle/hle_balance.c`) |
-| `[gameplay] text_speed`, `damage_dealt`, `damage_taken`, `chase_speed` | `WONDERPARK_<KEY>` | percent | from the PokéPark 1 runtime; not hooked up for PokéPark 2 yet (Text speed is the game's own, in the F1 tab) |
+| `[gameplay] damage_dealt`, `damage_taken` | `WONDERPARK_DAMAGE_DEALT`, `WONDERPARK_DAMAGE_TAKEN` | 25-400 %, 0-200 % | in battles, at once: the damage a Pokémon's LifeModuleImpl takes (`0x800B0200`) is scaled, by "taken" when it's the player's (`runtime/hle/hle_modifiers.c`, from MildRain479/PokePark-2-Wiicompiled, CC0). Not yet tried in a battle (none reachable by script so far) |
+| `[gameplay] chase_speed` | `WONDERPARK_CHASE_SPEED` | 50-150 % | in chase games: the chased Pokémon's target and top speed and acceleration are scaled for its movement update (`0x800A9340`) while its chase action runs (`0x801E1210`). `WONDERPARK_CHASE_ALL=1` (tests) applies it to every Pokémon but the player |
+| `[gameplay] text_speed` | `WONDERPARK_TEXT_SPEED` | | from the PokéPark 1 runtime; not used (Text speed is the game's own, in the F1 tab) |
 | `[updates] check` | `WONDERPARK_CHECK_UPDATES` | 0, 1 | no update check built yet |
 | `[mouse] sensitivity` | `WONDERPARK_SENSITIVITY` | 0.1-3 | camera and pointer speed |
 | `[mouse] invert_tilt` | `WONDERPARK_INVERT_TILT` | 0, 1 | |
@@ -285,7 +287,7 @@ keys (f1 esc up down left right enter q e backspace, a letter or digit) or
 
 ### `WONDERPARK_LOG` categories
 
-`adxcheck audioq audiostats axramp balance bloom framerate axvoice axvoices dec dsp efbcopy exc gxhw gxirq hook gxpe hostprof hwmisc idle ios ipc irq kpad memcpywatch mmio mmiostat mods movie mqwatch nandio pi pointer prof stalls steps threads voicepitch volume waits wpad wpadbtn`
+`adxcheck audioq audiostats axramp balance bloom framerate axvoice axvoices dec dsp efbcopy exc gxhw gxirq hook gxpe hostprof hwmisc idle ios ipc irq kpad memcpywatch mmio mmiostat modifiers mods movie mqwatch nandio pi pointer prof stalls steps threads voicepitch volume waits wpad wpadbtn`
 
 The most useful: `waits` (where threads block), `steps` (the game's logic
 steps per tick), `idle`, `efbcopy`, `gxirq`, `mmiostat` (slow memory

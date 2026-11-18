@@ -111,6 +111,9 @@ Disc extraction alone: `python tools/extract_disc.py path\to\your\disc.iso`
   (a recomp of PokéPark Wii: Pikachu's Adventure, CC0 1.0). Wonderpark's
   runtime is based on its `recomp/` runtime code. None of that project's
   decompiled game sources are used here.
+- **MildRain479, [PokePark-2-Wiicompiled](https://github.com/MildRain479/PokePark-2-Wiicompiled)**
+  (a recomp of PokéPark 2: Wonders Beyond, CC0 1.0). Wonderpark's battle
+  damage and chase speed options are adapted from its `hle_modifiers.c`.
 - **ExpansionPak, [DolRecomp](https://github.com/ExpansionPak/DolRecomp)**
   (GPL-3.0-or-later), the PowerPC-to-C recompiler, used as a git submodule.
   A `Wonderpark.exe` you build contains GPL-3.0 code from DolRecomp (its CPU

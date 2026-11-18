@@ -94,6 +94,13 @@ resets. Small additions on top.
 Photo mode (Level 2) is the big unique one; I'd do it after these, since it
 needs the "redraw while paused" piece worked out first.
 
+## Progress
+
+- **H (2026-11-17):** damage dealt and taken, and chase speed, ported to
+  `runtime/hle/hle_modifiers.c`; the F1 rows work. Chase speed checked with
+  `WONDERPARK_CHASE_ALL=1` (speeds scaled 1.5x at 150%; at 50% the park's
+  Pokémon covered half the ground). Damage not yet tried in a battle.
+
 ## Notes for the battle and chase work (F1 balance rows)
 
 - MildRain's `hle_modifiers.c` has the exact hooks the damage and chase rows
