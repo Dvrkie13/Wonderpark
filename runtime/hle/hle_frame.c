@@ -1,7 +1,7 @@
 /* The Frame rate setting (30 or 60).
  *
- * The game draws a frame each time its frame timer fires (docs/handoff/
- * FRAMERATE.md, "Confirmed"): timer 1 of two, whose requested period each
+ * The game draws a frame each time its frame timer fires (docs/research.md,
+ * Frame rate, "Confirmed"): timer 1 of two, whose requested period each
  * scene sets (0x1EEE10 time-base ticks, 29.97 Hz, in nearly all of them),
  * and which the game applies at the start of each frame (0x8000EFA0, called
  * for both timers by 0x8000F190). Gameplay doesn't depend on it: each

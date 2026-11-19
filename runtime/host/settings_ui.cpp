@@ -2748,8 +2748,7 @@ std::map<std::string, std::wstring> msbt_texts(const std::vector<uint8_t>& m) {
 
 // Where each Pokémon lives: one letter per Pokémon in the Pad's order from
 // Pokémon 4 (Piplup; 0-3 are the partners), a place in kPlaces. From the
-// handoff's Friend Book roster (settings/ingame-f1-settings.html, the US
-// game's areas and places), checked against the game's own name table
+// Friend Book mockup's roster (the US game's areas and places), checked against the game's own name table
 // (0x80435C10): the same order. Which Wish Park zone each of its Pokémon is
 // in isn't known: they're shown under Wish Park only.
 const char kWhere[] =

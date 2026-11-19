@@ -67,6 +67,7 @@ mods.ini
 # clones, test checklists, anything dumped from the game's data)
 CLAUDE.local.md
 *-handoff/
+/docs/handoff/
 /refs/
 /local/
 roster-checklist.csv

@@ -88,7 +88,7 @@ static void put_be32(uint8_t* p, uint32_t v) {
  * on it) into <game>/voices/ja/, the same paths as the disc's. Such a file
  * takes the place of the US one, as a mod's does (a different size: the
  * FST is changed), so from the next start. Only banks whose cue names and
- * numbers match the US ones are copied (docs/handoff/VOICE-LANGUAGE.md);
+ * numbers match the US ones are copied (docs/research.md, Voice language);
  * the other Pokémon's shared voice bank stays English. */
 static int sVoicesReady;
 /* Whether the Japanese voices are set up (looked at once, as the disc

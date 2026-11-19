@@ -134,11 +134,13 @@ area and zone at `+0x14A6` (named by the disc's `PlaceName.msbt`,
 `Fd<area><zone>`), friendship as in `hle_friends.c` (the entry table read
 from `game\sys\main.dol`). A file with no play time and no berries (a new
 game's) shows "Empty". Per file: **Back up** and **Export** (a .zip of its
-files in Dolphin's layout). **Import a save…**: a Wii's `data.bin` (from an
-SD card), a .zip, or any file in Dolphin's save folder (the folder is
-taken); the files brought in replace theirs and the other file is kept.
-Reading, decrypting and zipping is MildRain479/PokePark-2-Wiicompiled's
-`wii_save.c` (CC0, unchanged). **Backups**: folders in
+files in Dolphin's layout). **Import a save…**: a .zip, or any file in
+Dolphin's save folder (the folder is taken); the files brought in replace
+theirs and the other file is kept. A real Wii's `data.bin` isn't read
+(Wonderpark doesn't ship the Wii's SD key): the page tells the player to
+import it into Dolphin first (Tools > Import Wii Save), then import the
+Dolphin folder. Reading and zipping is MildRain479/PokePark-2-Wiicompiled's
+`wii_save.c` (CC0), with its data.bin and AES code taken out. **Backups**: folders in
 `%APPDATA%\Wonderpark\backups\saves\` (an `about.ini` with the label),
 each restorable; "Back up before every Play" (on by default, `[saves]
 backup_before_play` in `launcher.ini`) keeps the newest 10 automatic ones.
@@ -281,7 +283,7 @@ disc (`Archive/PokemonIcon.dac`; `Archive/ResidentMessage.dac`'s
 `Pokemon.msbt`, `Flavor_Pokemon.msbt`, `PlaceName.msbt`); friendship is read
 live from the loaded save (`runtime/hle/hle_friends.c`, from
 MildRain479/PokePark-2-Wiicompiled, CC0). Each Pokémon's area and place is a
-table of letters in the Pad's order (`kWhere`, from the handoff roster,
+table of letters in the Pad's order (`kWhere`, from the US game's area list,
 whose order matches the game's name table at `0x80435C10`); which Wish Park
 zone each of its Pokémon is in isn't known, so Wish Park has no place chips.
 "Not met yet" means no friendship points yet: the save's own "met" flag
@@ -327,7 +329,7 @@ quality, widescreen, V-Sync, button icons; left/right change them, up/down scrol
 one of these rows has the focus the game gets no buttons
 (`options_rows_filter`, called from `hle_wpad.c` WPADRead). The page, cursor
 and dialog state come from the game's memory (`runtime/hle/hle_options.c`,
-addresses in `docs/handoff/SETTINGS.md`). Values the game can't show yet
+addresses in `docs/research.md, Settings`). Values the game can't show yet
 (frame rate 60, V-Sync, exclusive fullscreen) are skipped or dimmed.
 
 Test hooks: `WONDERPARK_F1_SHOT=<prefix>` opens the tab

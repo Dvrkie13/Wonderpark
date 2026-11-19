@@ -56,7 +56,7 @@ typedef struct {
 
 extern HostSettings g_settings;
 
-/* Wonderpark's PC settings beyond the ones above (docs/handoff/SETTINGS.md,
+/* Wonderpark's PC settings beyond the ones above (docs/research.md, Settings,
  * the F1 tab's six categories), each a whole number in settings.ini under
  * its section, overridable by WONDERPARK_<KEY>. Choices are 0-based
  * indexes; percents are percents. Some are stored but not working yet (the

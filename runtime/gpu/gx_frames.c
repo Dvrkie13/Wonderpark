@@ -841,7 +841,7 @@ int gx_wanted_scale(int h) {
         s = (int)ceil(h / 456.0 - 0.25);
         /* Wonderpark: at most 4x on its own, the highest measured (Wish
          * Park and Seasong Beach at 4x: 12 ms of GPU time a frame on an RX
-         * 9060 XT, docs/handoff/PERFORMANCE.md). A 1440p window gets 3x.
+         * 9060 XT, docs/research.md, Performance). A 1440p window gets 3x.
          * Higher is still there to choose. */
         if (s > 4) s = 4;
     }

@@ -115,7 +115,7 @@ needs the "redraw while paused" piece worked out first.
   from the camera's collision rays (about 5 ms a second in all); the cause
   is still to be found (the game reacting to a camera that moves every
   frame?). Short, ordinary turns are what players will mostly do, but this
-  needs looking at. **Fixed 2026-11-18** (docs/handoff/PERFORMANCE.md, "The
+  needs looking at. **Fixed 2026-11-18** (docs/research.md, Performance, "The
   camera turning dip"): the display-list cache was too small and the vertex
   arena was sent to the GPU in one huge range; turning nonstop now averages
   29.3 fps (2 of 30 seconds under 25, was 21 of 30).
@@ -150,7 +150,7 @@ needs the "redraw while paused" piece worked out first.
 ## Notes for the battle and chase work (F1 balance rows)
 
 - MildRain's `hle_modifiers.c` has the exact hooks the damage and chase rows
-  need (above), so the code tracing in `docs/handoff/SETTINGS.md` can stop.
+  need (above), so the code tracing in `docs/research.md, Settings` can stop.
 - Their test entry `RECOMP_ATTRACTION=<n>,<seconds>` enters an attraction
   (1-4) from the park; it doesn't start battles or chases, so testing those
   still needs a save next to one.

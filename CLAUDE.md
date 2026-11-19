@@ -2,7 +2,7 @@
 
 Unofficial static recompilation of PokéPark 2: Wonders Beyond (Wii) into a native Windows PC port. Target disc: US only, game ID **S2LE01**. Built from scratch (not a fork). Follow-up to the owner's SparkPark project (PokéPark 1).
 
-The full plan and its phases live in `docs/handoff/`. Read `docs/handoff/WONDERPARK-FULL-PROMPT.md` (the current plan; it supersedes `WONDERPARK-MASTER-PROMPT.md`) at the start of any session that isn't a small, obvious fix. Progress so far is in `docs/recomp-status.md`.
+The full plan and its phases live in `docs/handoff/` (a git-ignored copy of the owner's handoff kit: on the owner's PC only, never committed). Confirmed findings for contributors are in `docs/research.md`. Read `docs/handoff/WONDERPARK-FULL-PROMPT.md` (the current plan; it supersedes `WONDERPARK-MASTER-PROMPT.md`) at the start of any session that isn't a small, obvious fix. Progress so far is in `docs/recomp-status.md`.
 
 ## Hard rules
 
@@ -35,7 +35,7 @@ The full plan and its phases live in `docs/handoff/`. Read `docs/handoff/WONDERP
 - `config/`: recompiler config, function names, and **patches to game behavior** (fixes to how the game itself acts).
 - `runtime/`: **PC platform code** (graphics, audio, input, file I/O, settings, UI). Each module gets its own README.
 - `builder/`: the launcher and one-time builder.
-- `docs/`: `DEVELOPMENT.md` (where each kind of fix belongs, every setting and environment variable), the launcher mockup, the handoff docs.
+- `docs/`: `DEVELOPMENT.md` (where each kind of fix belongs, every setting and environment variable), `research.md` (confirmed findings), the launcher mockup. (`docs/handoff/` is local only.)
 - Git-ignored: `game/` (extracted disc), `generated/` (recompiled code), `build/`.
 
 A fix to game behavior goes in `config/` patches, never as edits to generated code. Generated code is rebuilt from scratch and must stay reproducible.
@@ -46,7 +46,7 @@ A fix to game behavior goes in `config/` patches, never as edits to generated co
 - Options in `settings.ini`, controls in `bindings.ini`, saves in `%APPDATA%\Wonderpark\`. Every setting can be overridden by the environment variable `WONDERPARK_<NAME>`.
 - Developer tools: backtick for the debug overlay, F7 for game speed (with the overlay open), `--headless` for automated tests, a skip-movies option.
 - Commit in small steps with clear messages. Update `docs/DEVELOPMENT.md` whenever you add a setting, environment variable or patch.
-- When something is unknown, check the game's code or ask. Don't guess and present it as fact. Put confirmed findings in the relevant handoff doc's "confirmed" notes so later sessions don't re-investigate.
+- When something is unknown, check the game's code or ask. Don't guess and present it as fact. Put confirmed findings in `docs/research.md` (plain, no personal notes or machine paths) so later sessions don't re-investigate.
 
 ## Commands
 
