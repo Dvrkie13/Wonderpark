@@ -265,7 +265,7 @@ The notebook has five books, bookmarks on its right edge: Settings (F1),
 Friend Book (F2), Journal (F3), Jukebox (F4) and Gallery (F5); LT / RT go
 round them, Y opens the Friend Book, and in a book F1 goes back to
 Settings. The Journal (`runtime/hle/hle_journal.c`, `journal.json` in the
-data folder), the Jukebox ("Coming soon") and the Gallery are described in
+data folder), the Jukebox (`runtime/host/jukebox.cpp`, `jukebox_heard.ini`) and the Gallery are described in
 `docs/books-and-extras.md`. `WONDERPARK_LOG=journal` logs milestones.
 
 The **Friend Book** (F2, or Y on a controller)

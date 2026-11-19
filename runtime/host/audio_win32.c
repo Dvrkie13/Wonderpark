@@ -67,6 +67,8 @@ static int queued(void) {
     for (i = 0; i < BLOCKS; i++) n += busy(&sHdr[i]);
     return n;
 }
+/* Milliseconds of sound queued for the device (the Jukebox paces itself by it). */
+int audio_queued_ms(void) { return queued() * BLOCK_FRAMES * 1000 / OUT_RATE; }
 
 static int log_on(void) {
     static int on = -1;

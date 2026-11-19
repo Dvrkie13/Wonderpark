@@ -453,6 +453,10 @@ static int read_regions(uint64_t offset, uint32_t len, uint32_t dst) {
         uint8_t* data;
         if (lo >= hi) continue;
         note_movie(r->path);
+        if (strstr(r->path, "_streamfiles.awb")) {
+            extern void jukebox_note_read(const char* path, unsigned long long offset); /* host/jukebox.cpp: heard */
+            jukebox_note_read(r->path, lo - r->offset);
+        }
         if (wp_log_on("mods") && strstr(r->path, "/voices/ja/")) WP_LOG("mods", "read %s", r->path);
         if ((data = r->data) != NULL) {
             memcpy(MA(dst + (uint32_t)(lo - offset)), data + (lo - r->offset), (size_t)(hi - lo));

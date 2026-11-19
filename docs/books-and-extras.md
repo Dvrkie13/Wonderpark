@@ -43,14 +43,37 @@ cue names would need the ACB's cue table). Distance: the follow camera's
 point (`hle_camera.c`) moves with the player, but the game's unit isn't
 known, so no distance is shown.
 
-## A2. Jukebox (not built: "Coming soon")
+## A2. Jukebox (built)
 
-Step 0 not done yet. To find: the music cues (49 BGM banks, `S_BGM_Fd*`,
-`S_Fd_BGM_*`, `S_Field_BGM`, `S_AT_*_BGM`; `docs/disc-inventory.md`), how a
-cue starts (CRI AtomEx, `criAtomExPlayer_Start` `0x8039955C`) so "heard"
-can be recorded, and how to play one from the F1 menu while the game is
-paused (a CRI player of our own on the game's thread, or decoding the
-streams ourselves: the game's clock is stopped while F1 is open).
+`runtime/host/jukebox.cpp`. The music is CRI ADX (type 3, 4-bit, all 32 kHz
+stereo) inside the 24 music stream archives
+(`files/Sound/*BGM*_streamfiles.awb`, CPK containers): 94 songs (a 95th,
+mono with no samples, is left out). Each song is found by its ADX header
+(`0x80 0x00`, the copyright offset pointing at "(c)CRI"), and the next one
+just past its data: a few small reads per file, on a thread of its own,
+when the Jukebox first opens. The game's sound engine is stopped while the
+notebook is open (the game is paused), so the Jukebox decodes ADX itself
+(the usual ADPCM: coefficients from the header's high-pass frequency) on a
+thread of its own and queues it for the sound device at the Music volume,
+about 150 ms ahead; closing the notebook stops it and the game's music goes
+on. Checked offline: a decoded song has an RMS of about 3,500, nothing
+clipped, centred on 0 (music, not noise); not yet listened to by a person.
+
+Heard: the game streams a song from its archive as it plays it, so a disc
+read inside a song's data (`ios/dvd.c` read_regions) marks it heard
+(`jukebox_heard.ini` in the data folder: the 2 KB-rounded offsets read in
+each music file). Songs not heard yet are "???" and can't be played.
+
+Titles are our own, from where each plays: the place name from the disc
+(`PlaceName.msbt`, "Cove Town 2"), the attraction by its AttractionId
+(`S_AT_00` Cake Contraption, `02` Power Bash, `03` Flight of Fancy; Dance
+Inferno's music is in a bank without a stream, not listed), and "Park
+moments N" for the shared `S_Field_BGM` (events, chases, battles; not told
+apart yet). No titles from soundtrack sites. Tabs: All, Park, Wish Park
+(areas 06 and 61), Attractions, Story (`S_Field_BGM`, area 11).
+
+Controls: previous, play / pause, next (among heard songs), shuffle, repeat
+(round again from the song's own loop start).
 
 ## A3. Gallery (built with the fallback)
 

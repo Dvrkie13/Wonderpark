@@ -65,6 +65,7 @@ extern "C" {
 #include "pad_icons.h"
 #include "pad_sdl.h"
 #include "../hle/hle_journal.h"
+#include "jukebox.h"
 char g_dump_next[512];  // a frame for gl_backend.c to save as shown (test shots)
 extern int g_picture_rect[4];  // gl_backend.c: where the game's picture is in the window
 int win_has_focus(void);
@@ -136,7 +137,7 @@ bool reduced_motion() {
 // place), CARDS (up to three Pokémon cards; items: indices in g_friends),
 // TIP (a sticky note).
 enum Kind { HEAD, NOTE, CHOICE, TOGGLE, SLIDER, TEXTBOX, BINDHEAD, BIND, FIXEDBIND, PLAYERS, FBTOP, PLACES, PLACEHEAD, CARDS, TIP,
-           STATS, WEEK, ACARD, MILESTONE, SOONBOX, GCARDS };  // the Journal, Jukebox and Gallery books
+           STATS, WEEK, ACARD, MILESTONE, SOONBOX, GCARDS, NOWPLAY, TRACK };  // the Journal, Jukebox and Gallery books
 
 struct Row {
     Kind kind = HEAD;
@@ -1117,6 +1118,14 @@ void place_rows() {
         case ACARD: p.h = 10 + 78 + 4; break;
         case MILESTONE: p.h = 6 + 62 + 6; break;
         case SOONBOX: p.h = 14 + 82 + text_h(r.desc, fmt(L"Nunito", 700, 13.5f), ROW_W - 40) + 18 + 6; break;
+        case NOWPLAY:  // the Jukebox's card: its five buttons are the parts
+            p.h = 12 + 176 + 6;
+            for (int k = 0; k < 5; k++) {
+                float bx = ROW_X + 170 + k * 50, by = y + 12 + 118;
+                p.parts.push_back(RectF(bx, by, bx + (k == 1 ? 44.f : 38.f), by + (k == 1 ? 44.f : 38.f)));
+            }
+            break;
+        case TRACK: p.h = 40; break;
         case GCARDS:  // the Gallery: four to a line
             p.h = 12 + 116 + 8;
             for (size_t k = 0; k < r.items.size(); k++) {
@@ -2000,6 +2009,7 @@ void open_tab(bool on) {
     if (on == U.open) return;
     if (getenv("WONDERPARK_F1_SCRIPT")) fprintf(stderr, "[f1] %.2f %s\n", now_s(), on ? "open" : "close");
     U.open = on;
+    if (!on) jukebox_stop();  // the game's own music goes on
     U.listenRow = U.listenSlot = -1;
     U.dragRow = -1;
     if (on) {
@@ -2139,6 +2149,16 @@ void activate() {
     else if (r->kind == CHOICE) choose(*r, U.focusSlot);
     else if (r->kind == PLAYERS) {
         if (U.focusSlot < 2) choose(*r, !r->get());
+    } else if (r->kind == TRACK) {
+        if (r->step) jukebox_play(r->act), changed();
+    } else if (r->kind == NOWPLAY) {
+        int s = U.focusSlot;
+        if (s == 0) jukebox_step(-1);
+        else if (s == 1) jukebox_playing() >= 0 ? jukebox_toggle_pause() : jukebox_step(1);
+        else if (s == 2) jukebox_step(1);
+        else if (s == 3) jukebox_set_shuffle(!jukebox_shuffle());
+        else jukebox_set_repeat(!jukebox_repeat());
+        changed();
     } else if (r->kind == CARDS || r->kind == GCARDS) {
         if (U.focusSlot >= 0 && U.focusSlot < (int)r->items.size() && slot_ok(r, U.focusSlot)) open_sheet(r->items[U.focusSlot]);
     } else if (r->kind == PLACES) {
@@ -2158,6 +2178,7 @@ int parts_on_line(const Row* r) {
     if (r->kind == CHOICE) return (int)r->opts.size();
     if (r->kind == BIND || r->kind == PLAYERS) return 4;
     if (r->kind == CARDS || r->kind == PLACES || r->kind == GCARDS) return (int)r->items.size();
+    if (r->kind == NOWPLAY) return 5;
     return 0;
 }
 void nav(Nav n) {
@@ -2254,6 +2275,8 @@ Hit hit_test(int px, int py) {
                 if (lx >= b.left && lx <= b.right && listY >= b.top && listY <= b.bottom)
                     return slot_ok(&r, (int)s) ? Hit{4, (int)i, (int)s} : h;
             }
+        } else if (r.kind == TRACK) {
+            return r.step ? Hit{4, (int)i, 0} : h;  // (a song not heard yet: nothing)
         } else if (r.kind == TOGGLE || r.kind == SLIDER || r.kind == TEXTBOX) {
             if (lx >= p.ctrlX - 8 && lx <= p.ctrlX + p.ctrlW + 8 && listY >= p.ctrlY - 8 && listY <= p.ctrlY + p.ctrlH + 8)
                 return {4, (int)i, 0};
@@ -3383,6 +3406,35 @@ void build_journal_rows() {
     }
 }
 
+// The Jukebox: a song's title and place, our own words, from where it plays
+// (the place names from the disc's PlaceName.msbt): "Cove Town 2",
+// "Cake Contraption", "Park moments 5"...
+std::wstring song_title(const JukeboxTrack& t, int countInBank) {
+    std::wstring base;
+    char label[16];
+    if (t.kind == JUKEBOX_ATTRACTION) base = t.area >= 0 && t.area < 4 ? kAttractionNames[t.area] : L"Attractions";
+    else if (t.kind == JUKEBOX_STORY && !strcmp(t.bank, "S_Field_BGM")) base = L"Park moments";
+    else {
+        snprintf(label, sizeof(label), "Fd%02d%02d", t.area >> 8, t.area & 255);
+        base = disc_text(label, L"");
+        if (base.empty()) snprintf(label, sizeof(label), "Fd%02d", t.area >> 8), base = disc_text(label, t.kind == JUKEBOX_WISH ? L"Wish Park" : L"Story");
+    }
+    if (countInBank > 1 || (t.kind == JUKEBOX_STORY && !strcmp(t.bank, "S_Field_BGM"))) base += L" " + std::to_wstring(t.index + 1);
+    return base;
+}
+std::wstring song_place(const JukeboxTrack& t) {
+    char label[16];
+    if (t.kind == JUKEBOX_ATTRACTION) return L"Wish Park";
+    if (t.kind == JUKEBOX_STORY) return L"Story and events";
+    snprintf(label, sizeof(label), "Fd%02d", t.area >> 8);
+    return disc_text(label, t.kind == JUKEBOX_WISH ? L"Wish Park" : L"The park");
+}
+std::wstring mmss(int s) {
+    wchar_t b[16];
+    swprintf(b, 16, L"%d:%02d", s / 60, s % 60);
+    return b;
+}
+
 void build_jukebox_rows() {
     Category& c = g_fb;
     TabInfo ti = tab_info(U.ktab);
@@ -3392,14 +3444,45 @@ void build_jukebox_rows() {
     c.gem = c.acc = ti.gem;
     c.ink = ti.ink;
     c.rows.clear();
-    Row s;
-    s.kind = SOONBOX;
-    s.label = L"The Jukebox isn't built yet";
-    s.desc = L"Here you'll play the game's own music, from your disc, over the paused game. Each song unlocks the first time the game "
-             L"plays it; ones you haven't heard yet show as ???.";
-    c.rows.push_back(s);
+    jukebox_scan_start();
+    if (jukebox_state() != 2) {
+        Row top;
+        top.kind = FBTOP;
+        top.label = jukebox_state() == 3 ? L"No music found" : L"Reading your disc's music…";
+        top.desc = jukebox_state() == 3 ? L"The Jukebox reads the songs from your game files (files/Sound)." : L"";
+        c.rows.push_back(top);
+        return;
+    }
+    Row np;
+    np.kind = NOWPLAY;
+    c.rows.push_back(np);
+    static const int kKinds[5] = {0, JUKEBOX_PARK, JUKEBOX_WISH, JUKEBOX_ATTRACTION, JUKEBOX_STORY};
+    int heard = 0, all = 0, shown = 0;
+    std::map<std::string, int> perBank;
+    for (int i = 0; i < jukebox_count(); i++) {
+        JukeboxTrack t;
+        if (jukebox_track(i, &t)) perBank[t.bank]++;
+    }
+    std::vector<Row> tracks;
+    for (int i = 0; i < jukebox_count(); i++) {
+        JukeboxTrack t;
+        if (!jukebox_track(i, &t) || (U.ktab && t.kind != kKinds[U.ktab])) continue;
+        all++;
+        heard += t.heard;
+        Row r;
+        r.kind = TRACK;
+        r.act = i;
+        r.label = song_title(t, perBank[t.bank]);
+        r.desc = song_place(t);
+        r.min = t.seconds;
+        r.step = t.heard;
+        r.max = ++shown;
+        tracks.push_back(r);
+    }
+    c.rows.push_back(note((std::to_wstring(heard) + L" of " + std::to_wstring(all) +
+                           L" songs heard. Songs you haven't heard yet unlock when they play in the game.").c_str()));
+    for (auto& r : tracks) c.rows.push_back(r);
 }
-
 bool gallery_card_ok(int idx) {
     return g_friendsState == 2 && idx >= 0 && idx < (int)g_friends->size() && fstate((*g_friends)[idx]) == 2;
 }
@@ -3579,6 +3662,82 @@ void draw_book_row(int i, const Row& r, const Placed& p, float y0, float dy, boo
         text(r.desc, fmt(L"Nunito", 700, 13.5f), b.left + 20, b.top + 82, ROW_W - 40, rgb(PAGE_SOFT));
         return;
     }
+    if (r.kind == NOWPLAY) {
+        D2D1_RECT_F b = RectF(ROW_X, y0 + 12, ROW_X + ROW_W, y0 + 12 + 176);
+        cream_card(b, 0, 14);
+        int playing = jukebox_playing();
+        JukeboxTrack t = {};
+        bool have = playing >= 0 && jukebox_track(playing, &t);
+        // The record, turning while it plays.
+        float rcx = b.left + 76, rcy = (b.top + b.bottom) / 2, R = 58;
+        circle(rcx, rcy, R, rgb(0x1b1f2e));
+        for (float g = R - 8; g > 24; g -= 6) G.rt->DrawEllipse(D2D1::Ellipse(Point2F(rcx, rcy), g, g), brush(ColorF(1, 1, 1, .07f)), 1.2f);
+        circle(rcx, rcy, 22, rgb(c.gem), 2, rgb(0x10131e));
+        circle(rcx, rcy, 4, rgb(0xfff8e6));
+        {
+            float a = have && !jukebox_paused() ? (float)fmod(now_s() * 120.0, 360.0) : 0;
+            Rot spin(a, rcx, rcy);
+            G.rt->DrawLine(Point2F(rcx + 28, rcy), Point2F(rcx + R - 6, rcy), brush(ColorF(1, 1, 1, .25f)), 3, G.round.Get());
+        }
+        float tx = b.left + 160, tw = b.right - tx - 16;
+        text_c(have ? L"Now playing" : L"Pick a song", fmt(L"Nunito", 800, 12), tx, b.top + 22, tw, soft);
+        std::wstring title, place;
+        if (have) {
+            for (auto& row : c.rows)
+                if (row.kind == TRACK && row.act == playing) title = row.label, place = row.desc;
+            if (title.empty()) title = song_title(t, 2), place = song_place(t);
+        }
+        text_fit(have ? title : std::wstring(L"Nothing playing"), fmt(L"Fredoka", 700, 20), tx, b.top + 32, tw, rgb(INK), LEFT);
+        text_c(have ? place : std::wstring(L"Songs play over the paused game"), fmt(L"Nunito", 800, 12), tx, b.top + 70, tw, soft);
+        // Progress.
+        float pos = have ? (float)jukebox_position() : 0, len = have ? (float)std::max(1, t.seconds) : 1;
+        float py = b.top + 88, k = clamp01(pos / len);
+        G.rt->FillRoundedRectangle(rr(tx, py, tw, 10, 5), brush(ColorF(1, 1, 1)));
+        if (k > 0) G.rt->FillRoundedRectangle(rr(tx, py, std::max(10.f, tw * k), 10, 5), brush(rgb(c.gem)));
+        G.rt->DrawRoundedRectangle(rr(tx + 1, py + 1, tw - 2, 8, 4), brush(rgb(INK)), 2);
+        text_c(mmss((int)pos), fmt(L"Nunito", 800, 11), tx, py + 22, 60, soft);
+        text_c(have ? mmss(t.seconds) : L"0:00", fmt(L"Nunito", 800, 11), tx + tw - 60, py + 22, 60, soft, RIGHT);
+        // Previous, play / pause, next, shuffle, repeat.
+        for (int s = 0; s < 5; s++) {
+            D2D1_RECT_F pb = shift(p.parts[s], 0, dy);
+            float cx = (pb.left + pb.right) / 2, cy = (pb.top + pb.bottom) / 2, rad = (pb.right - pb.left) / 2;
+            bool on = (s == 3 && jukebox_shuffle()) || (s == 4 && jukebox_repeat()) || (s == 1 && have && !jukebox_paused());
+            bool hov = U.hoverRow == i && U.hoverPart == s;
+            circle(cx + 2, cy + 2, rad, rgb(INK));
+            circle(cx, cy, rad, on ? rgb(c.gem) : hov ? rgb(0xfff3cf) : ColorF(1, 1, 1), 2.5f);
+            D2D1_COLOR_F ic = on ? rgb(c.ink) : rgb(INK);
+            ComPtr<ID2D1PathGeometry> g;
+            if (s == 0) g = svg_path("M-6 -6v12M5 -6L-3 0L5 6Z");
+            else if (s == 2) g = svg_path("M6 -6v12M-5 -6L3 0L-5 6Z");
+            else if (s == 1) g = have && !jukebox_paused() ? svg_path("M-5 -7h3.5v14H-5ZM1.5 -7H5v14H1.5Z") : svg_path("M-4 -7L7 0L-4 7Z");
+            else if (s == 3) g = svg_path("M-7 -4h3l7 8h4M-7 4h3l7-8h4M8 -6l2 2-2 2M8 2l2 2-2 2");
+            else g = svg_path("M-6 1v-3a3 3 0 0 1 3-3h10M5 -8l3 3-3 3M6 -1v3a3 3 0 0 1-3 3H-7M-4 8l-3-3 3-3");
+            Matrix3x2F old;
+            G.rt->GetTransform(&old);
+            G.rt->SetTransform(Matrix3x2F::Translation(cx, cy) * old);
+            if (s <= 2) G.rt->FillGeometry(g.Get(), brush(ic));
+            G.rt->DrawGeometry(g.Get(), brush(ic), 2, G.round.Get());
+            G.rt->SetTransform(old);
+            if (focused && U.focusSlot == s) draw_focus(pb, rad);
+        }
+        return;
+    }
+    if (r.kind == TRACK) {
+        bool heard = r.step != 0, playing = jukebox_playing() == r.act;
+        bool hov = heard && U.hoverRow == i;
+        float cy = y0 + p.h / 2;
+        if (playing || hov || focused) G.rt->FillRoundedRectangle(rr(ROW_X - 8, y0 + 2, ROW_W + 16, p.h - 4, 10), brush(ColorF(1, 1, 1, playing ? .14f : .07f)));
+        D2D1_COLOR_F tc = heard ? (playing ? rgb(GOLD) : rgb(PAGE_TEXT)) : rgb(0xffeccd, .55f);
+        if (playing) draw_icon(L"music", ROW_X, cy - 9, 18, rgb(GOLD));
+        else text_c(std::to_wstring(r.max), fmt(L"Fredoka", 600, 15), ROW_X, cy, 26, rgb(PAGE_SOFT), CENTER);
+        text_fit(heard ? r.label : std::wstring(L"???"), fmt(L"Fredoka", 600, 16), ROW_X + 40, cy - 11, ROW_W - 40 - 190, tc, LEFT);
+        text_c(r.desc, fmt(L"Nunito", 800, 12), ROW_X + ROW_W - 190, cy, 140, heard ? rgb(PAGE_SOFT) : rgb(0xffeccd, .5f), RIGHT);
+        text_c(heard ? mmss(r.min) : L"–:––", fmt(L"Nunito", 800, 12), ROW_X + ROW_W - 44, cy, 44, heard ? rgb(PAGE_SOFT) : rgb(0xffeccd, .5f), RIGHT);
+        G.rt->DrawLine(Point2F(ROW_X, y0 + p.h - 1), Point2F(ROW_X + ROW_W, y0 + p.h - 1), brush(line_color()), 2, G.dashed.Get());
+        if (focused) draw_focus(RectF(ROW_X - 8, y0 + 2, ROW_X + ROW_W + 8, y0 + p.h - 2), 10);
+        return;
+    }
+
     if (r.kind == GCARDS && g_friendsState == 2) {
         for (size_t k = 0; k < r.items.size(); k++) {
             int idx = r.items[k];
@@ -3994,7 +4153,7 @@ extern "C" const uint32_t* settings_ui_draw(int w, int h) {
     load_friends();
     {
         static unsigned shown = ~0u;
-        unsigned s = fb_signature();
+        unsigned s = fb_signature() ^ (U.view == BK_JUKEBOX ? (unsigned)jukebox_state() * 977u : 0u);  // (the songs read)
         if (s != shown || g_fbDirty) shown = s, fb_rebuild();
     }
     // The pad icons: drawn again once read, and when the pad's type or the
@@ -4068,7 +4227,23 @@ extern "C" const uint32_t* settings_ui_draw(int w, int h) {
                 if (k == 0) close_sheet(), set_view(BK_JOURNAL), pending = "11-journal";
                 else if (k == 1) set_tab(1), pending = "11b-journal-attractions";
                 else if (k == 2) set_tab(2), pending = "11c-journal-milestones";
-                else if (k == 3) set_view(BK_JUKEBOX), pending = "12-jukebox";
+                else if (k == 3) {
+                    // The Jukebox: once the disc's songs are read, and one
+                    // heard is playing.
+                    jukebox_scan_start();
+                    if (jukebox_state() < 2) g_shotStep--;
+                    else {
+                        set_view(BK_JUKEBOX);
+                        for (int ti = 0; ti < jukebox_count(); ti++) {
+                            JukeboxTrack jt;
+                            if (jukebox_track(ti, &jt) && jt.heard) {
+                                jukebox_play(ti);
+                                break;
+                            }
+                        }
+                        pending = "12-jukebox";
+                    }
+                }
                 else if (k == 4) set_view(BK_GALLERY), pending = "13-gallery";
                 else {
                     for (auto& r : g_fb.rows)
@@ -4086,7 +4261,12 @@ extern "C" const uint32_t* settings_ui_draw(int w, int h) {
     }
     if (g_placed.size() != cur().rows.size()) place_rows();
     double t = now_s();
+    // (The Jukebox: its record turns and its time runs, about 12 times a second.)
+    static double lastSpin;
+    bool spin = U.view == BK_JUKEBOX && jukebox_playing() >= 0 && !jukebox_paused() && t - lastSpin > .08;
+    if (spin) lastSpin = t;
     bool animating = !U.reduced && (t - U.openT < .5 || U.listenRow >= 0);
+    if (spin) U.gen++;
     if (drawnGen != U.gen || dw != w || dh != h || animating) {
         render((float)t);
         copy_out(w, h);
@@ -4391,7 +4571,7 @@ extern "C" int settings_ui_message(void* hwnd, unsigned msg, uintptr_t wp, intpt
                 SetCapture((HWND)win_handle());
                 slider_drag(h.row, GET_X_LPARAM(lp));
             } else if (r->kind == BIND) start_listen(h.row, h.part);
-            else if (r->kind == PLAYERS || r->kind == CARDS || r->kind == PLACES) {
+            else if (r->kind == PLAYERS || r->kind == CARDS || r->kind == PLACES || r->kind == GCARDS || r->kind == TRACK || r->kind == NOWPLAY) {
                 U.focus = h.row, U.focusSlot = h.part;
                 activate();
             }

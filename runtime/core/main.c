@@ -251,6 +251,8 @@ int main(int argc, char** argv) {
             extern void hle_journal_init(void);
             extern void hle_journal_flush(void);
             hle_journal_init();
+            extern void jukebox_init(void); /* host/jukebox.cpp: the songs heard */
+            jukebox_init();
             atexit(hle_journal_flush);
         }
         if (hle_dvd_init(root) != 0) return 1;
