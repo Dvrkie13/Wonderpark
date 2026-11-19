@@ -60,6 +60,10 @@ What ends up in `Wonderpark.exe` if we use the C backend:
    reproduces parts of the program's own source is. DolRecomp grants no
    exception for this, so treat the generated code as GPL-3.0 too.
 
+**Decided 2026-11-19: Wonderpark is GPL-3.0-or-later** (the owner's choice at
+the GitHub audit), so the code compiled into the exe and the repo's license
+match. The analysis below was written while it was still CC0.
+
 **Can Wonderpark stay CC0? Yes, with conditions.**
 
 - GPL obligations start when a work is *distributed*. Wonderpark never

@@ -220,4 +220,4 @@ python tools/build_game.py                            # into build/game/ (clang-
 
 ## License
 
-Wonderpark's own code is released under CC0 1.0 Universal (see [LICENSE](LICENSE)). Third-party components keep their own licenses ([THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)). A `Wonderpark.exe` you build links DolRecomp's GPL-3.0 code, so that built program as a whole is covered by GPL-3.0.
+Wonderpark is released under the GNU General Public License, version 3 or (at your option) any later version, the same terms as DolRecomp, whose CPU code is compiled into every `Wonderpark.exe` (see [LICENSE](LICENSE)). Third-party components keep their own licenses ([THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)). The license covers Wonderpark's own code only: it gives no rights to the game, which each player builds from their own disc.

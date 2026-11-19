@@ -11,7 +11,7 @@ The full plan and its phases live in `docs/handoff/`. Read `docs/handoff/WONDERP
 - **The owner's PC.** Where things go on this machine (drives, caches, reference clones) is in `CLAUDE.local.md` (git-ignored). Follow it when it's there.
 - **Stop at checkpoints.** When a plan doc says STOP, report and wait for the owner's go-ahead. Also ask before anything hard to undo: deleting files, rewriting git history, changing the license, publishing releases, pushing to GitHub.
 - **Unofficial and clear about it.** Keep the README notice: "Wonderpark: an unofficial PokéPark 2 recomp", not affiliated with Nintendo, The Pokémon Company or Creatures. Never link to ISOs or ROMs. Warn players not to share their built game folder.
-- **Credit references.** Runtime code reused from MildRain479/PokePark-Wiicompiled (CC0) gets credited in the README. Never copy its `src/` (decompiled game code). Check DolRecomp's GPL-3.0 terms before compiling any of its files into our executable.
+- **Credit references.** Runtime code reused from MildRain479/PokePark-Wiicompiled (CC0) gets credited in the README. Never copy its `src/` (decompiled game code). Wonderpark is GPL-3.0-or-later (DolRecomp's CPU code is compiled into the exe); only copy code under GPL-3.0-compatible licenses.
 - **No heredocs.** On this machine, never write files or scripts through shell heredocs or inline echo; always use the Write/Edit tools.
 - **No blocking disk I/O on the game or render thread, ever.** Players may have spinning hard drives.
 

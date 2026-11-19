@@ -39,7 +39,7 @@ Wonderpark's runtime started from its `recomp/` runtime code (not its decompiled
 <https://github.com/ExpansionPak/DolRecomp> by ExpansionPak. A git submodule in `tools/dolrecomp` (its own `LICENSE`, GNU GPL 3.0), not copied into this repository.
 
 - Used as a tool: it translates the game's PowerPC code into C on the player's PC (`tools/recomp.py`, into git-ignored `generated/`).
-- Compiled into the game: its CPU helpers `src/cpu/cpu.c` and `src/cpu/cpu.h` (built as the `wp_dolrecomp_cpu` library, `CMakeLists.txt`), and the helper templates it writes into every generated file. So a `Wonderpark.exe` built on a player's PC contains GPL-3.0 code, and that program as a whole is covered by GPL-3.0. Wonderpark doesn't distribute built programs.
+- Compiled into the game: its CPU helpers `src/cpu/cpu.c` and `src/cpu/cpu.h` (built as the `wp_dolrecomp_cpu` library, `CMakeLists.txt`), and the helper templates it writes into every generated file. This is why Wonderpark itself is GPL-3.0-or-later. Wonderpark doesn't distribute built programs.
 
 ### SDL3 (zlib license)
 

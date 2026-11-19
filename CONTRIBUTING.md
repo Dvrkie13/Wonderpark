@@ -10,9 +10,10 @@ Screenshots, video and logs are fine **in an issue** to show a bug.
 
 ## Only code we're allowed to use
 
-- Don't copy code from projects whose license doesn't allow it in ours.
+- Wonderpark is GPL-3.0-or-later ([LICENSE](LICENSE)). By sending code you agree to release it under that license.
+- Don't copy code from projects whose license doesn't allow it in ours (GPL-3.0-compatible licenses only).
 - Code from CC0 projects (such as MildRain479's PokePark-Wiicompiled and PokePark-2-Wiicompiled) is welcome, with credit in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and the README.
-- GPL code (for example eliasm4r's WondersBeyondRecomp) must not be copied into Wonderpark unless the project itself is GPL. Reading it for ideas and then writing your own is fine; copying functions or near-identical code isn't.
+- Never copy decompiled game code from any project, whatever its license.
 - If you add a library or asset, add it to [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) with its license.
 
 ## No links to games
