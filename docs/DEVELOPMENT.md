@@ -197,7 +197,8 @@ also `WONDERPARK_<KEY>`, key in capitals, for example `WONDERPARK_WINDOW_MODE=1`
 | `[controls] camera_recenter` | 0-30 s (0 never) | works: that long without turning, the camera eases back behind |
 | `[controls] right_stick` | 0 camera, 1 pointer, 2 auto (default) | works: Auto moves the Wii Remote pointer with the right stick while the game has the pointer on (`hle_pointer_on`, its IR camera: aiming minigames, menus pointed at), else turns the camera; Pointer always (the camera then only by mouse). The push squared, so small pushes aim finely (`runtime/host/input_win32.c`). Not yet tried with a real controller |
 | `[controls] aim_speed` | 25-200 % | works: the right stick's pointer speed (900 mouse pixels a second at full push, at 100%) |
-| `[controls] aim_assist`, `steer_sensitivity`, `rhythm_offset` | | not yet |
+| `[controls] rhythm_offset` | -100..100 ms | works: Dance Inferno's song tick (which its judging and the scrolling move icons follow; the music streams on its own) moved back by the offset (positive: presses feel late, so the judging waits longer) once per part of the song, in whole frames (17 ms; +100 ms = 6). `runtime/hle/hle_dance.c`, from MildRain479/PokePark-2-Wiicompiled's (CC0); `WONDERPARK_LOG=dance` |
+| `[controls] aim_assist`, `steer_sensitivity` | | not yet: aim assist needs the targets' places on screen; steering, a tilt to steer with (our Wii Remote has none: flying uses the d-pad) |
 | `[input] button_icons` (`WONDERPARK_BUTTON_ICONS`) | 0 auto, 1 Xbox, 2 PlayStation, 3 Nintendo, 4 keyboard only | works: the button icons in F1's Controls (pad columns), the game's prompts and the launcher. Auto: the connected pad's type, from the game controllers Windows lists (HID) by maker (Sony: PlayStation; Nintendo, and Hori/PowerA/PDP Switch pads: Nintendo; else Xbox), since XInput doesn't say; a PlayStation or Switch pad behind a mapper (Steam Input, DS4Windows) still lists itself. Looked at again when a pad connects or goes away. Face buttons go by position (XInput's A is the bottom one: a cross, or a Nintendo pad's B). The game's prompts show the device used last (any pad button or the stick past half; a bound key or mouse button), key caps for the keyboard; 4 never shows a pad's (`runtime/host/pad_icons.cpp`, `pad_icons_core.cpp`, `runtime/hle/hle_prompts.c`). The log says what was found ("pad icons: ...") |
 | `[audio] volume_master` | 0-100 % | works |
 | `[audio] audio_latency` | 0 low, 1 normal, 2 safe | works: 48, 84 (as before) or 132 ms queued before playback starts; lower at once, higher from the next refill (`runtime/host/audio_win32.c`) |
@@ -323,7 +324,7 @@ keys (f1 esc up down left right enter q e backspace, a letter or digit) or
 
 ### `WONDERPARK_LOG` categories
 
-`adxcheck audioq audiostats axramp balance bloom camera framerate axvoice axvoices dec dsp efbcopy exc gxhw gxirq hook gxpe hostprof hwmisc idle ios ipc irq kpad memcpywatch mmio mmiostat modifiers mods movie mqwatch nandio pi pointer prof prompts scene stalls steps threads voicepitch volume waits wpad wpadbtn`
+`adxcheck audioq audiostats axramp balance bloom camera dance framerate axvoice axvoices dec dsp efbcopy exc gxhw gxirq hook gxpe hostprof hwmisc idle ios ipc irq kpad memcpywatch mmio mmiostat modifiers mods movie mqwatch nandio pi pointer prof prompts scene stalls steps threads voicepitch volume waits wpad wpadbtn`
 
 The most useful: `waits` (where threads block), `steps` (the game's logic
 steps per tick), `idle`, `efbcopy`, `gxirq`, `mmiostat` (slow memory

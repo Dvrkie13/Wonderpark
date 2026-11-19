@@ -353,8 +353,8 @@ void build_rows() {
         c.rows.push_back(head(L"Feel"));
         c.rows.push_back(xslider(X_STEER_SENSITIVITY, L"Steering sensitivity", nullptr, 25, 200, 5, L"%", true));
         c.rows.push_back(xslider(X_AIM_SPEED, L"Aim speed", L"How fast the right stick moves the pointer.", 25, 200, 5, L"%", false));
-        c.rows.push_back(xslider(X_RHYTHM_OFFSET, L"Dance timing offset", L"Shift if your presses feel early or late.", -100, 100,
-                                 5, L" ms", true, true));
+        c.rows.push_back(xslider(X_RHYTHM_OFFSET, L"Dance timing offset", L"Dance Inferno: raise it if your presses feel late, lower it if early. In steps of a frame (17 ms).", -100, 100,
+                                 5, L" ms", false, true));
         g_cats.push_back(c);
     }
     // Audio

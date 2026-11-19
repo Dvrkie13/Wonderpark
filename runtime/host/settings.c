@@ -93,7 +93,7 @@ static const struct {
     {"controls", "aim_assist", 1, 0, 1, "not yet"},
     {"controls", "steer_sensitivity", 100, 25, 200, "percent (not yet)"},
     {"controls", "aim_speed", 100, 25, 200, "percent: how fast the right stick moves the pointer"},
-    {"controls", "rhythm_offset", 0, -100, 100, "dance timing, ms (not yet)"},
+    {"controls", "rhythm_offset", 0, -100, 100, "Dance Inferno timing, ms: positive if presses feel late (whole frames)"},
     {"controls", "free_camera", 1, 0, 1, "1: the mouse and right stick turn the camera"},
     {"controls", "stick_sensitivity", 100, 10, 300, "percent: how fast the right stick turns the camera"},
     {"controls", "camera_recenter", 0, 0, 30, "seconds without turning before the camera eases back behind; 0 never"},
