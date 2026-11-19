@@ -148,6 +148,9 @@ Supported content: `textures/` (replacement textures, matched by Wonderpark's ow
 **Where are my saves?**
 In `%APPDATA%\Wonderpark\nand\title\00010000\53324c45\data\`, laid out like a Wii's (and Dolphin's) NAND. With Save backups on (the default), a copy of each slot is kept in `%APPDATA%\Wonderpark\backups\` before every save. In the launcher, **EXTRAS → Saves** shows both save files, backs them up (automatically before every Play), restores backups, exports a file as a .zip and imports a Dolphin save folder or a .zip. For a save from a real Wii, import it into Dolphin first (Tools > Import Wii Save), then import the Dolphin folder.
 
+**How do I get sharper textures?**
+In the launcher, **EXTRAS → HD Pack → Build the HD Pack**. It reads the textures from your own disc and upscales them 4x on your PC (a few minutes on a graphics card), then turns them on as a mod. It downloads the upscaler once (about 14 MB): the model [4xNomosUni_span_multijpg](https://github.com/Phhofm/models/releases/tag/4xNomosUni_span_multijpg) by Philip Hofmann (CC BY 4.0), run by [ONNX Runtime](https://github.com/microsoft/onnxruntime) (MIT). The pack takes about 2.7 GB in your Wonderpark folder. It's made from the game's art, so never share it.
+
 **Can I share my built copy with a friend?**
 No. Your built Wonderpark folder contains game code recompiled from your disc, so sharing it means sharing the game. Your friend can build their own from their own disc.
 

@@ -114,6 +114,7 @@ static void xf_write(uint32_t addr, uint32_t value) {
     if (i + 1 > sXfDirtyHi) sXfDirtyHi = i + 1;
 }
 static uint8_t tmem[1 << 20];
+static uint32_t sTlutBytes[1024]; /* bytes of palette last loaded at each TMEM palette slot (load_tlut) */
 
 static float xf_float(uint32_t addr) {
     float f;
@@ -790,7 +791,13 @@ static uint32_t texture_for_map(int map) {
         e->image_hash = image;
         h = image;
     }
-    if (fmt >= 8 && fmt <= 10) h ^= hash_bytes(&tmem[((tlut & 0x3FF) << 9) & 0xFFFFF], fmt == 8 ? 32 : 512);
+    if (fmt >= 8 && fmt <= 10) {
+        /* With its palette: as much of it as was loaded (up to 16 colours
+         * for C4, 256 for C8), so the hash depends only on the texture's
+         * own palette, as a pack made from the disc expects. */
+        int want = fmt == 8 ? 32 : 512, got = (int)sTlutBytes[tlut & 0x3FF];
+        h ^= hash_bytes(&tmem[((tlut & 0x3FF) << 9) & 0xFFFFF], got > 0 && got < want ? got : want);
+    }
     {
         /* Mods: a texture with a replacement (by this hash) is drawn with
          * it. It's read on a background thread; until it's ready the
@@ -1834,6 +1841,7 @@ static void load_tlut(void) {
     uint32_t bytes = ((bp[0x65] >> 10) & 0x7FF) * 32;
     if (dst + bytes > sizeof(tmem)) bytes = sizeof(tmem) - dst;
     memcpy(&tmem[dst], MA(src), bytes);
+    sTlutBytes[bp[0x65] & 0x3FF] = bytes;
 }
 
 static void set_tev_color(int reg, uint32_t v) {

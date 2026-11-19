@@ -68,6 +68,8 @@ mods.ini
 CLAUDE.local.md
 *-handoff/
 /docs/handoff/
+# The HD Pack (made on the player's PC from their disc) and its downloaded upscaler
+/hd/
 /refs/
 /local/
 roster-checklist.csv

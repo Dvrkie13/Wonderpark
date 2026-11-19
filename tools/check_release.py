@@ -30,7 +30,8 @@ BAD_EXT = {
 }
 BAD_NAMES = {"wonderpark.exe", "main.dol", "bi2.bin", "boot.bin", "fst.bin", "apploader.img", "settings.ini",
              "bindings.ini", "dolrecomp.log"}
-BAD_DIRS = {"game", "generated", "nand", "s2le01_generated", "backups", "voices"}
+BAD_DIRS = {"game", "generated", "nand", "s2le01_generated", "backups", "voices",
+            "hd", "hd-pack"}  # hd: the HD Pack (upscaled game art) and its downloaded upscaler
 MAGICS = [
     (0x18, b"\x5d\x1c\x9e\xa3", "a Wii disc image"),
     (0x1C, b"\xc2\x33\x9f\x3d", "a GameCube disc image"),
@@ -71,7 +72,7 @@ def check_name(path):
     if name in BAD_NAMES:
         found.append("a file that's never shipped (%s)" % name)
     if any(p in BAD_DIRS for p in parts[:-1]):
-        found.append("inside a game, generated or save folder")
+        found.append("inside a game, generated, save or HD Pack folder")
     if "build" in parts[:-1] and "game" in parts[:-1]:
         found.append("inside build/game (the built game)")
     if name.startswith("s2le01") and name.endswith((".c", ".h", ".cpp")):

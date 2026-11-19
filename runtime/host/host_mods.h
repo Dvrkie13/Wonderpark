@@ -4,7 +4,9 @@
  *              (files\Common\x.arc replaces the disc's files/Common/x.arc)
  *   textures\  replacement textures, named by the hash the game's texture
  *              has (RECOMP_GX_DUMP_TEXTURES saves them as <hash>_<w>x<h>_<fmt>.bmp;
- *              a replacement is <hash>.png, or any name starting <hash>_)
+ *              a replacement is <hash>.png, or any name starting <hash>_;
+ *              aliases.txt lines "<hash> <hash>" draw the first with the
+ *              second's picture)
  * Which are on, and their order, is in <data>\mods.ini; where two mods
  * replace the same thing, the one listed first wins. No code mods. */
 #pragma once

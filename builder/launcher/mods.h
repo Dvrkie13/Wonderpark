@@ -46,3 +46,7 @@ extern ModInstall g_install;
 // Starts installing path (a .zip); wake() is called when something changes.
 void mods_install_start(const std::wstring& path, void (*wake)());
 void mods_install_join();
+
+// One file (by its full name in the zip) out of a .zip, unpacked and
+// checked; false if it isn't there or the zip is damaged.
+bool mods_zip_read(const std::wstring& zip, const std::string& name, std::vector<uint8_t>& out);

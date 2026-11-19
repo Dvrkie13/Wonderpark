@@ -17,6 +17,7 @@
 #include <string>
 #include <thread>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #define WIN32_LEAN_AND_MEAN
@@ -189,7 +190,31 @@ extern "C" void wp_mods_init(void) {
         }
         std::vector<std::pair<std::string, uint64_t>> list;
         walk(root, "", 0, list);
+        // textures.txt: the folder the mod's textures are kept in instead
+        // of its textures\ (the HD Pack keeps its gigabytes beside the
+        // player's build, not in %APPDATA%).
+        std::string ext_dir;
+        std::unordered_set<std::string> ext_names;
+        if (FILE* tf = fopen((root + "\\textures.txt").c_str(), "rb")) {
+            char b[1024] = {0};
+            if (fgets(b, sizeof(b), tf)) ext_dir = trim(b);
+            fclose(tf);
+            if (!ext_dir.empty() && is_dir(ext_dir)) {
+                std::vector<std::pair<std::string, uint64_t>> more;
+                walk(ext_dir, "", 0, more);
+                for (auto& e : more) {
+                    list.push_back({"textures/" + e.first, e.second});
+                    ext_names.insert("textures/" + e.first);
+                }
+            }
+        }
+        auto path_of = [&](const std::string& r) {
+            std::string p = ext_names.count(r) ? ext_dir + "\\" + r.substr(9) : root + "\\" + r;
+            std::replace(p.begin(), p.end(), '/', '\\');
+            return p;
+        };
         int nf = 0, nt = 0;
+        std::vector<std::string> alias_files;
         for (auto& e : list) {
             const std::string& r = e.first;
             if (r.compare(0, 6, "files/") == 0 && r.size() > 6) {
@@ -201,6 +226,10 @@ extern "C" void wp_mods_init(void) {
                 nf++;
             } else if (r.compare(0, 9, "textures/") == 0) {
                 std::string name = r.substr(r.find_last_of('/') + 1);
+                if (lower(name) == "aliases.txt") {  // read once all its pictures are known (below)
+                    alias_files.push_back(path_of(r));
+                    continue;
+                }
                 std::string ext = lower(name.substr(name.find_last_of('.') + 1));
                 if (name.size() < 12 || (ext != "png" && ext != "bmp" && ext != "jpg" && ext != "jpeg")) continue;
                 uint32_t hash = 0;
@@ -212,14 +241,30 @@ extern "C" void wp_mods_init(void) {
                 }
                 if (!hex || (name[8] != '.' && name[8] != '_')) continue;
                 if (g_texPath.count(hash)) continue;
-                std::string p = root + "\\" + r;
-                std::replace(p.begin(), p.end(), '/', '\\');
-                g_texPath[hash] = p;
+                g_texPath[hash] = path_of(r);
                 nt++;
             }
         }
-        fprintf(stderr, "mods: %s on: %d file%s, %d texture%s\n", id.c_str(), nf, nf == 1 ? "" : "s", nt,
-                nt == 1 ? "" : "s");
+        // textures\aliases.txt: "<hash> <hash>" lines, the first drawn with
+        // the second's picture (the HD Pack: the same texture by each of its
+        // mipmap counts). Read at start, like the rest of the index.
+        int na = 0;
+        for (const std::string& af : alias_files) {
+            FILE* f = fopen(af.c_str(), "rb");
+            if (!f) continue;
+            char line[128];
+            while (fgets(line, sizeof(line), f)) {
+                unsigned a = 0, b = 0;
+                if (line[0] == ';' || sscanf(line, "%x %x", &a, &b) != 2) continue;
+                auto it = g_texPath.find(b);
+                if (it == g_texPath.end() || g_texPath.count(a)) continue;
+                g_texPath[a] = it->second;
+                na++;
+            }
+            fclose(f);
+        }
+        fprintf(stderr, "mods: %s on: %d file%s, %d texture%s%s\n", id.c_str(), nf, nf == 1 ? "" : "s", nt,
+                nt == 1 ? "" : "s", na ? (" (+" + std::to_string(na) + " aliases)").c_str() : "");
     }
     if (!g_texPath.empty()) {
         g_thread_started = true;

@@ -38,6 +38,7 @@
 #include <dxgi1_2.h>
 #include <wincodec.h>
 
+#include "hdpack.h"
 #include "mods.h"
 #include "saves.h"
 #include "../../runtime/host/pad_icons.h"  // controller icons (pad_icons_core.cpp, shared with the game)
@@ -1224,6 +1225,8 @@ struct View {
     bool game_running = false;
     double saves_t = -100;     // when they were read (again every 2 s while it shows)
     std::wstring saves_msg;
+    bool hd_known = false, hd_have = false;  // the HD Pack page: whether the pack is installed (read once)
+    int hd_count = 0;
     bool saves_err = false;
 };
 static View V;
@@ -1593,8 +1596,62 @@ static void render_hd_page(double t, Matrix3x2F M, float L, float Rr, float y, f
     float h = text_height(s, G.tfMSub.Get(), CW);
     draw_text(s, G.tfMSub.Get(), L, y, CW, h, rgb(0xc6d0e6));
     y += h + 16;
+    bool running, finished;
+    std::wstring stage, device, error;
+    float progress;
+    int done, total;
+    {
+        std::lock_guard<std::mutex> lk(g_hd.m);
+        running = g_hd.running, finished = g_hd.finished, stage = g_hd.stage, device = g_hd.device;
+        error = g_hd.error, progress = g_hd.progress, done = g_hd.done, total = g_hd.total;
+    }
+    static bool seen_finish = false;
+    if (finished && !seen_finish) {  // a build just ended: the pack is in Mods now
+        g_mods = mods_list();
+        V.hd_known = false;
+    }
+    seen_finish = finished;
+    if (!V.hd_known) V.hd_have = hd_installed(&V.hd_count), V.hd_known = true;
+    if (running) {
+        std::wstring line = stage;
+        if (total) line += L": " + std::to_wstring(done) + L" of " + std::to_wstring(total);
+        if (!device.empty()) line += L", on " + device;
+        float lh = text_height(line, G.tfBtn.Get(), CW);
+        draw_text(line, G.tfBtn.Get(), L, y, CW, lh, rgb(0xffe7a3));
+        y += lh + 10;
+        D2D1_ROUNDED_RECT bar = D2D1::RoundedRect(RectF(L, y, Rr, y + 12), 6, 6);
+        dc->FillRoundedRectangle(bar, brush(rgb(0x121b3a, .8f)).Get());
+        float fw = std::max(12.f, CW * std::min(100.f, progress) / 100);
+        dc->FillRoundedRectangle(D2D1::RoundedRect(RectF(L, y, L + fw, y + 12), 6, 6), brush(rgb(0x3fd0d8)).Get());
+        y += 12 + 16;
+        ui_button(L, y, L"Stop", 401, false);
+        y += 34 + 14;
+        std::wstring n = L"You can close Extras or play meanwhile; the pack is turned on the next time you press Play.";
+        float nh = text_height(n, G.tfMFoot.Get(), CW);
+        draw_text(n, G.tfMFoot.Get(), L, y, CW, nh, rgb(0x8f9cbd));
+        return;
+    }
+    if (!error.empty()) {
+        float eh = text_height(error, G.tfMFoot.Get(), CW);
+        draw_text(error, G.tfMFoot.Get(), L, y, CW, eh, rgb(0xffb4b4));
+        y += eh + 12;
+    }
+    if (V.hd_have) {
+        std::wstring ok = L"Your HD Pack is ready: " + std::to_wstring(V.hd_count) +
+                          L" textures. It's in Mods as \"HD Pack\", with a switch.";
+        float oh = text_height(ok, G.tfMSub.Get(), CW);
+        draw_text(ok, G.tfMSub.Get(), L, y, CW, oh, rgb(0xbff0c6));
+        y += oh + 14;
+        float bw = ui_button(L, y, L"Build again", 400, true);
+        ui_button(L + bw + 12, y, L"Remove the pack", 402, false);
+        y += 34 + 14;
+        std::wstring n = L"Upscaler: 4xNomosUni_span_multijpg by Philip Hofmann (CC BY 4.0), run by ONNX Runtime (MIT).";
+        float nh = text_height(n, G.tfMFoot.Get(), CW);
+        draw_text(n, G.tfMFoot.Get(), L, y, CW, nh, rgb(0x8f9cbd));
+        return;
+    }
     const wchar_t* steps[3][2] = {{L"Pull textures from your disc", L"Read from your own game files"},
-                                  {L"Upscale them on this PC", L"AI upscaler on your graphics card (Vulkan)"},
+                                  {L"Upscale them on this PC", L"AI upscaler, on your graphics card if it can"},
                                   {L"Turn on as a texture pack", L"Added to Mods automatically, with a switch"}};
     for (int i = 0; i < 3; i++) {
         D2D1_ROUNDED_RECT r = D2D1::RoundedRect(RectF(L, y, Rr, y + 58), 14, 14);
@@ -1608,9 +1665,30 @@ static void render_hd_page(double t, Matrix3x2F M, float L, float Rr, float y, f
         draw_text(steps[i][1], G.tfModSum.Get(), L + 60, y + 32, CW - 70, 20, rgb(0xb9c4dc, .7f));
         y += 58 + 8;
     }
-    y += 16;
-    ui_stamp(L + 4, y + 12, L"COMING SOON");
-    draw_text(L"Not built yet.", G.tfMSub.Get(), L + 140, y + 3, CW - 140, 30, rgb(0xc6d0e6));
+    y += 8;
+    ui_button(L, y, L"Build the HD Pack", 400, true);
+    y += 34 + 12;
+    std::wstring n = L"Downloads the upscaler once (about 14 MB, checked before use): the model 4xNomosUni_span_multijpg by "
+                     L"Philip Hofmann (CC BY 4.0) and ONNX Runtime (MIT). Takes a few minutes.";
+    float nh = text_height(n, G.tfMFoot.Get(), CW);
+    draw_text(n, G.tfMFoot.Get(), L, y, CW, nh, rgb(0x8f9cbd));
+}
+
+static void hd_click(int h) {
+    if (h == 400) {
+        hd_start(g_root, 0, wake);
+        V.hd_known = false;
+    } else if (h == 401) {
+        hd_cancel();
+    } else if (h == 402) {
+        if (MessageBoxW(g_wnd, L"Remove the HD Pack? You can build it again any time.", L"Wonderpark",
+                        MB_YESNO | MB_ICONQUESTION) == IDYES) {
+            hd_remove(g_root);
+            g_mods = mods_list();
+            V.hd_known = false;
+        }
+    }
+    fast(.5);
 }
 
 static void render_mods(double t, float /*mk*/) {
@@ -3065,6 +3143,7 @@ static void click(int h) {
         V.scroll = 0;
         fast(1);
     } else if (h >= 300 && h < 400) saves_click(h);
+    else if (h >= 400 && h < 410) hd_click(h);
     else if (h >= 100 && h < 200) toggle_mod(h - 100);
     else if (h == 3) press_main();
     else if (h == 4) {
@@ -3228,6 +3307,33 @@ static void poll_controller() {
     }
 }
 
+// --build-hd-pack: the HD Pack built with no window (tests, or by hand).
+static int hd_build_console(const std::wstring& root, int limit) {
+    hd_start(root, limit, nullptr);
+    std::wstring log = mods_data_dir() + L"\\hd-build.log";
+    std::wstring last;
+    for (;;) {
+        Sleep(500);
+        std::wstring line;
+        bool running;
+        {
+            std::lock_guard<std::mutex> lk(g_hd.m);
+            running = g_hd.running;
+            line = g_hd.stage + L" " + std::to_wstring(g_hd.done) + L"/" + std::to_wstring(g_hd.total) + L" on " +
+                   (g_hd.device.empty() ? L"-" : g_hd.device) + (g_hd.error.empty() ? L"" : L" ERROR: " + g_hd.error);
+        }
+        if (line != last) {
+            FILE* f = _wfopen(log.c_str(), L"a, ccs=UTF-8");
+            if (f) fwprintf(f, L"%ls\n", line.c_str()), fclose(f);
+            last = line;
+        }
+        if (!running) break;
+    }
+    hd_join();
+    std::lock_guard<std::mutex> lk(g_hd.m);
+    return g_hd.error.empty() ? 0 : 1;
+}
+
 int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show) {
     SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
     OleInitialize(nullptr);  // COM (STA) plus drag and drop
@@ -3242,6 +3348,13 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show) {
         else if (a == L"--test-save" && i + 1 < argc) g_test_save = argv[++i];
         else if (a == L"--test-script" && i + 1 < argc) parse_script(argv[++i]);
         else if (a == L"--reduced-motion") g_force_reduced = true;
+        else if (a == L"--build-hd-pack") {
+            // No window: builds the HD Pack (the first N textures, if a
+            // number follows), writes its progress to hd-build.log in the
+            // data folder, and quits. Exit code 0 when it's done.
+            int limit = i + 1 < argc ? _wtoi(argv[i + 1]) : 0;
+            return hd_build_console(find_root(root), limit);
+        }
     }
     g_root = find_root(root);
     find_python();

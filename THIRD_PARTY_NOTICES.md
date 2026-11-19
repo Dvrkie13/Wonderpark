@@ -51,6 +51,13 @@ Wonderpark's runtime started from its `recomp/` runtime code (not its decompiled
 
 The launcher's `.zip` reader (`builder/launcher/mods.cpp`) inflates DEFLATE data with our own code written after Mark Adler's `puff.c` from zlib (by Mark Adler, zlib license), following RFC 1951. No zlib code is included as-is.
 
+## Downloaded on demand by the launcher (HD Pack)
+
+Not in this repository and not in a release: the launcher downloads them only when the player builds the HD Pack, checks each against a SHA-256 pinned in `builder/launcher/hdpack.cpp`, and keeps them with their licenses in `hd\upscaler\` in the player's Wonderpark folder (git-ignored).
+
+- **ONNX Runtime** 1.24.4 by Microsoft, <https://github.com/microsoft/onnxruntime>, MIT license: `onnxruntime.dll` and `onnxruntime_providers_shared.dll` from the NuGet package Microsoft.ML.OnnxRuntime.DirectML (its `LICENSE` and `ThirdPartyNotices.txt` are kept beside them). It runs the model on the graphics card through the DirectML that is part of Windows; Microsoft's separate DirectML redistributable (Microsoft.AI.DirectML, under Microsoft's own license terms) is not downloaded.
+- **4xNomosUni_span_multijpg** by Philip Hofmann (Phhofm), <https://github.com/Phhofm/models/releases/tag/4xNomosUni_span_multijpg>, CC BY 4.0 (<https://creativecommons.org/licenses/by/4.0/>): the upscaling model (SPAN, fp32 ONNX), used unchanged. The textures it makes are made on the player's PC from their own disc and stay there.
+
 ## Tools run but not included
 
 - **decomp-toolkit** (`dtk.exe`) by encounter, <https://github.com/encounter/decomp-toolkit> (MIT or Apache-2.0, per its repository): reads the player's disc image (`tools/extract_disc.py`). The player downloads it; it isn't in this repository.

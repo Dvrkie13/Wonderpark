@@ -116,13 +116,38 @@ switches; Enter, Space or A choose. The mouse wheel scrolls the list.
   up to 8192x8192) replaces the texture with that hash, the one
   `RECOMP_GX_DUMP_TEXTURES=<dir>` names its dumps by; it's read on a
   background thread and shown from the frame after it's ready. Replacing
-  only: a mod can't add new disc files.
+  only: a mod can't add new disc files. `textures\aliases.txt` (lines
+  `<hash> <hash>`) draws the first hash with the second's picture (the HD
+  Pack uses it for a texture's other mipmap counts). A palette texture's
+  hash includes only as much of its palette as the game loaded (up to 16
+  colours for C4, 256 for C8), so it can be worked out from the disc.
 
 **Extras** (the right-edge tab, EXTRAS, with the installed mods' count;
 `M` or Y opens it) has three pages: **Mods** (Installed: the above; Get
 mods: the curated list, "Coming soon" until the wonderpark-mods-index list
 exists, its address `[mods] index_url` in `launcher.ini`), **Saves** and
-**HD Pack** ("Coming soon").
+**HD Pack**.
+
+**HD Pack** (`builder/launcher/hdpack.cpp`): the textures in the extracted
+disc (`game\files`: TPL, and BRRES TEX0 with PLT0 palettes, inside LZ11 U8
+`.dac` archives, `.brres` and `.efb`), each named by the hash the game
+gives it (all its mipmap counts: the picture by all its levels, the rest in
+`aliases.txt`), decoded with `runtime/gpu/gx_texture.c`, upscaled 4x (alpha
+on its own as grey) and saved as the mod `hd-pack` (on in `mods.ini`).
+Textures under 16 or over 512 pixels on a side are left as they are. The
+upscaler is downloaded once into `hd\upscaler\` in the Wonderpark folder (the pictures go in `hd\textures\`, about 2.7 GB, beside the build rather than in `%APPDATA%`; the mod folder `mods\hd-pack\` has only `mod.json`, `pack.ini` and `textures.txt`, the folder the game reads them from), each
+file checked by a SHA-256 pinned in `hdpack.cpp`: ONNX Runtime 1.24.4
+(`onnxruntime.dll` from the Microsoft.ML.OnnxRuntime.DirectML NuGet package,
+MIT), run on the graphics card through the DirectML that comes with Windows
+(Microsoft's separate DirectML package, under its own license, isn't
+downloaded), else on the processor; and the model 4xNomosUni_span_multijpg
+(Philip Hofmann, CC BY 4.0, the fp32 ONNX from the author's release). A
+stopped build goes on where it stopped (pictures already made are kept).
+`WonderparkLauncher.exe --build-hd-pack [N]` builds it with no window (the
+first N textures only, if given), logging to `hd-build.log` in the data
+folder; exit code 0 when done. Known gap: 5 title-screen layout textures
+(C8 TPLs in `MenuStartMenu.dac`) don't match the hash the game gives them
+yet, so they aren't replaced.
 
 **Saves** (`builder/launcher/saves.cpp`): the game's two save files (`GD0`
 and `GD1`, each with its mirror `GD<n>M` and photos `Pic<n>`) in

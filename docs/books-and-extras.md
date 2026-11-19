@@ -99,24 +99,28 @@ them, `%APPDATA%\Wonderpark\nand\title\00010000\53324c45\data` (the game's
 two files, GD0 and GD1, not three); backups in
 `%APPDATA%\Wonderpark\backups\saves\`.
 
-## B3. HD Pack ("Coming soon")
+## B3. HD Pack (built)
 
-- Texture names: a replacement is found by the hash of the texture's bytes
-  as the game hands them to the GPU (`gx_fifo.c` `hash_bytes` over the
-  image, XORed with the palette's hash for C4/C8/C14X2), so a pack can be
-  made from the disc's own TPL and BRRES textures without playing, if they
-  are hashed the same way (their bytes are the same as in memory).
-- Still needed: an extractor for every texture on the disc (TPL files and
-  BRRES TEX0/PLT0 in the `.dac` archives), the GX format decoders (the
-  runtime's `gx_decode_texture`), alpha upscaled separately, small and
-  dithered textures and fonts skipped, mipmaps rebuilt.
-- Upscaler: Real-ESRGAN's `realesrgan-ncnn-vulkan` (checked 2026-11-19 on
-  GitHub, nothing downloaded): the program is MIT (Xintao Wang 2021, plus
-  nihui's realsr-ncnn-vulkan, MIT); Real-ESRGAN itself is BSD-3-Clause. The
-  model weights (`realesrgan-x4plus`, `-x4plus-anime`, `realesr-animevideov3`)
-  have **no license stated** anywhere read (README, model zoo). The release
-  builds in ncnn, libwebp, stb and dirent, whose licenses the pages don't
-  name (ncnn is BSD-3 by its own repository; not checked here). Windows
-  build: `realesrgan-ncnn-vulkan-20220424-windows.zip` (Real-ESRGAN release
-  v0.2.5.0), size not known. Waiting for the owner's OK on the weights
-  before downloading it; no 50-texture test yet.
+`builder/launcher/hdpack.cpp`; how it works is in `docs/DEVELOPMENT.md`
+(HD Pack). Decisions (2026-11-19, the owner):
+
+- Real-ESRGAN's models were dropped: their weights state no license. The
+  owner asked for a model with an explicit permissive license; neither
+  4x-PBRify_RPLKSRd_V3 (CC0, RealPLKSR, `.pth` only) nor
+  4xNomosUni_span_multijpg (CC BY 4.0, SPAN) runs on realesrgan-ncnn-vulkan
+  (no ncnn files from their authors). Chosen: **ONNX Runtime + DirectML
+  with 4xNomosUni_span_multijpg**, whose author publishes an ONNX file.
+  Neither release lists a SHA-256, so the hashes were taken from the
+  downloads of 2026-11-19 and pinned.
+- DirectML: the NuGet package Microsoft.AI.DirectML is under Microsoft's
+  own license (not open source, 193 MB), so it isn't downloaded; ONNX
+  Runtime uses the DirectML that ships with Windows (it worked on the test
+  PC's Windows 11), else the processor.
+- Hashes from the disc, checked against the game: of the 55 textures the
+  game drew in its first 90 s (title and menus), 50 match a texture on the
+  disc exactly; the other 5 are C8 title-screen TPLs whose hash isn't
+  understood yet. To make palette textures predictable, the renderer now
+  hashes only as much palette as was loaded (C8 textures with fewer than
+  256 colours used to include leftover palette memory).
+- Not done: mipmaps for the replacements (they're drawn with one level,
+  as every mod texture is); dithered textures aren't told apart.

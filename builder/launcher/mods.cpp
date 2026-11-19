@@ -733,3 +733,18 @@ void mods_install_start(const std::wstring& path, void (*wake)()) {
 void mods_install_join() {
     if (g_thread.joinable()) g_thread.join();
 }
+
+// One file out of a .zip (the HD Pack takes ONNX Runtime out of its package).
+bool mods_zip_read(const std::wstring& zip, const std::string& name, std::vector<uint8_t>& out) {
+    try {
+        Zip z;
+        z.open(zip);
+        for (auto& e : z.entries)
+            if (e.name == name) {
+                out = z.extract(e);
+                return true;
+            }
+    } catch (Fail&) {
+    }
+    return false;
+}
