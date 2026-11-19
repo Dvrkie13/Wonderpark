@@ -3,7 +3,7 @@
 From the "best recomp" plan, step 0 (research only, no
 code changed). MildRain479/PokePark-2-Wiicompiled (CC0, version 0.1.2) is
 cloned in `refs\PokePark-2-Wiicompiled` (the project keeps its clones in
-`refs\`, not `D:\ref\`); read: its README, `recomp/README.md` and
+`refs\`, not `ref\`); read: its README, `recomp/README.md` and
 `recomp/patches/` (shared and `S2LE01/`). eliasm4r's GPL-3.0 recomp was not
 read (nothing in this step needed it).
 

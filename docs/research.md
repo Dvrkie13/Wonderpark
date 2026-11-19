@@ -222,7 +222,7 @@ The "skip a draw after more than two steps" rule now means a frame over
 
 ### Confirmed (2026-11-18, investigation only)
 
-The owner's Japanese disc (S2LJ01) was extracted with dtk to `D:\temp\wp_jp`
+A Japanese disc (S2LJ01) was extracted with dtk to a temporary folder
 (outside the repo; nothing from it is kept in git) and its `files/Sound`
 compared with the US disc's:
 
@@ -415,7 +415,7 @@ alternating off/on. Per frame:
 
 Vulkan vs OpenGL (2026-11-11, step 5; not switched).
 
-What there is: the Vulkan SDK 1.4.363.1 is installed at D:\VulkanSDK
+What there is: the Vulkan SDK 1.4.363.1 was installed on the test PC
 (headers, glslc). The reference project has a finished Vulkan device
 (`recomp/gpu/vk_backend.c`, 3,100 lines, and six shaders in
 `vk_shaders/`) behind the same `GXDevice` interface as our

@@ -3,7 +3,7 @@
 From the "camera and extras" plan, step 0: what we have,
 what MildRain479/PokePark-2-Wiicompiled (CC0, cloned to
 `refs\PokePark-2-Wiicompiled`, never committed) gives us, and sizes. No code
-changed. (The prompt says to clone to `D:\ref\`; the project keeps its clones in
+changed. (The prompt says to clone to `ref\`; the project keeps its clones in
 `refs\`.)
 
 Read: `recomp/patches/S2LE01/` `hle_camera.c` (297 lines), `hle_friends.c` (148),
