@@ -927,7 +927,7 @@ static void build_geometry() {
     const auto B = DWRITE_FONT_WEIGHT_BOLD, XB = DWRITE_FONT_WEIGHT_EXTRA_BOLD;
     G.wonderT = text_geometry(L"Fredoka", B, 42, L"Wonder", 0, o + 112, 0, true, o + 256, 160);
     G.parkT = text_geometry(L"Fredoka", B, 50, L"park", 0, o + 112, o + 150);
-    G.recompT = text_geometry(L"Nunito", XB, 10.5f, L"POKÉPARK 2 RECOMP", 2.4f, o + 112, o + 184);
+    G.recompT = text_geometry(L"Nunito", XB, 10.5f, L"UNOFFICIAL RECOMP", 2.4f, o + 112, o + 184);
     G.wonderparkM = text_geometry(L"Fredoka", B, 30, L"Wonderpark", 0, o + 112, 0, true, o + 116, 82);
     G.unofficialM = text_geometry(L"Nunito", XB, 10, L"UNOFFICIAL RECOMP", 2.4f, o + 112, 0, true, o + 112, 82, true);
 
@@ -2116,9 +2116,10 @@ static void render(double t, const Shared& s) {
     {
         dc->SetTransform(R);
         std::wstring legal =
-            L"Unofficial fan project. Not affiliated with Nintendo, The Pokémon Company or Creatures. Requires your own disc.";
-        float h = text_height(legal, G.tfLegal.Get(), 420);
-        draw_text(legal, G.tfLegal.Get(), W - 40 - 420, H - 40 - h, 420, 100, rgb(0xd0d8ea), DWRITE_TEXT_ALIGNMENT_TRAILING);
+            L"Wonderpark is an unofficial, non-commercial fan project. Not affiliated with or endorsed by Nintendo, "
+            L"The Pokémon Company, Creatures Inc. or Game Freak. Contains no game files; you need your own disc.";
+        float h = text_height(legal, G.tfLegal.Get(), 460);
+        draw_text(legal, G.tfLegal.Get(), W - 40 - 460, H - 40 - h, 460, 100, rgb(0xd0d8ea), DWRITE_TEXT_ALIGNMENT_TRAILING);
     }
     if (uiLayer) dc->PopLayer();
     render_mods(t, mk);

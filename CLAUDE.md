@@ -2,18 +2,18 @@
 
 Unofficial static recompilation of PokéPark 2: Wonders Beyond (Wii) into a native Windows PC port. Target disc: US only, game ID **S2LE01**. Built from scratch (not a fork). Follow-up to the owner's SparkPark project (PokéPark 1).
 
-The full plan and its phases live in `docs/handoff/` (copied from the owner's handoff kit). Read `docs/handoff/WONDERPARK-FULL-PROMPT.md` (the current plan; it supersedes `WONDERPARK-MASTER-PROMPT.md`) at the start of any session that isn't a small, obvious fix. Progress so far is in `docs/recomp-status.md`.
+The full plan and its phases live in `docs/handoff/`. Read `docs/handoff/WONDERPARK-FULL-PROMPT.md` (the current plan; it supersedes `WONDERPARK-MASTER-PROMPT.md`) at the start of any session that isn't a small, obvious fix. Progress so far is in `docs/recomp-status.md`.
 
 ## Hard rules
 
 - **Never commit game data.** No ISOs, extracted disc files, recompiled output, game textures, audio, fonts, text or decompiled game code. Everything game-derived is produced on the player's PC and git-ignored. If a change would put anything game-derived into git, stop and ask.
 - **No game art in our UI.** The launcher and the F1 settings tab are drawn in code. The only exception is the extra rows in the game's own Options page, which use the game's art loaded at run time from the player's disc and never copied into the repo.
-- **Everything stays on D:.** Repo at the repo folder, reference clones at refs\. The owner's C: drive is nearly full: never install to, cache on or build on C: when D: works. Point tool caches (pip, CMake, vcpkg, temp build dirs) at D:.
+- **The owner's PC.** Where things go on this machine (drives, caches, reference clones) is in `CLAUDE.local.md` (git-ignored). Follow it when it's there.
 - **Stop at checkpoints.** When a plan doc says STOP, report and wait for the owner's go-ahead. Also ask before anything hard to undo: deleting files, rewriting git history, changing the license, publishing releases, pushing to GitHub.
 - **Unofficial and clear about it.** Keep the README notice: "Wonderpark: an unofficial PokéPark 2 recomp", not affiliated with Nintendo, The Pokémon Company or Creatures. Never link to ISOs or ROMs. Warn players not to share their built game folder.
 - **Credit references.** Runtime code reused from MildRain479/PokePark-Wiicompiled (CC0) gets credited in the README. Never copy its `src/` (decompiled game code). Check DolRecomp's GPL-3.0 terms before compiling any of its files into our executable.
 - **No heredocs.** On this machine, never write files or scripts through shell heredocs or inline echo; always use the Write/Edit tools.
-- **D: is a spinning hard drive.** No blocking disk I/O on the game or render thread, ever.
+- **No blocking disk I/O on the game or render thread, ever.** Players may have spinning hard drives.
 
 ## Key facts
 
@@ -61,8 +61,10 @@ Fill these in during Phase 1, once the scripts exist, and keep them current:
 - Run: `.\build\game\Wonderpark.exe` from the repo root (`RECOMP_FPS=1` prints frame rates; debug logs via `WONDERPARK_LOG=...`, listed in `docs/recomp-status.md`)
 - Full pipeline: `python builder/pipeline.py <iso>` (verify, extract, recompile, build); `--rebuild` from game/, `--status`
 - Launcher: `python tools/build_launcher.py`, then `.\build\launcher\WonderparkLauncher.exe` (test hooks in `docs/DEVELOPMENT.md`)
-- Headless test: not yet (planned `--headless`)
+- Headless test: `--headless` (no window; `--exit-after <seconds>`), with the test hooks in `docs/DEVELOPMENT.md`
+- Banner: `python tools/make_banner.py` (needs fontTools and brotli; rebuilds `docs/banner.svg`'s fonts and `docs/banner.png`)
+- Release check: `python tools/check_release.py <folder>` (fails if a release folder holds game code or disc files; `docs/RELEASING.md`)
 
 ## Owner context
 
-The owner works on Windows and isn't always at their PC. They make decisions at the STOP checkpoints. Keep reports short and in plain language: what was found, what you recommend, what you need from them.
+The owner makes decisions at the STOP checkpoints. Keep reports short and in plain language: what was found, what you recommend, what you need from them. (More in `CLAUDE.local.md`.)

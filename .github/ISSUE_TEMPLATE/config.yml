@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: How to dump your own disc
+    url: https://dolphin-emu.org/docs/guides/ripping-games/
+    about: Wonderpark needs your own PokéPark 2 (US, S2LE01) disc image. We can't help find game files.

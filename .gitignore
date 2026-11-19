@@ -1,4 +1,5 @@
 # ---- Game data: never commit anything derived from the disc ----
+# Disc images (any format)
 *.iso
 *.nkit.iso
 *.gcm
@@ -7,23 +8,72 @@
 *.wbfs
 *.ciso
 *.gcz
+*.wad
+# The game's executable and modules
 *.dol
 *.rel
 *.elf
 *.map
+# Game file formats, wherever they turn up (archives, layouts, textures,
+# models, text, sound, movies)
+*.dac
+*.arc
+*.szs
+*.u8
+*.brlyt
+*.brlan
+*.brres
+*.tpl
+*.bti
+*.brfnt
+*.msbt
+*.msbp
+*.acb
+*.awb
+*.acf
+*.brstm
+*.mo
+*.thp
 
 # Extracted disc, recompiled output, builds
 /game/
 /generated/
 /build/
 /out/
+/cmake-build-*/
 
 # Local tool binaries fetched by scripts (dtk, DolRecomp builds, ...)
 /tools/bin/
 
-# Runtime user files
+# Runtime user files: settings, controls, saves, mods, backups, caches, logs
 settings.ini
+bindings.ini
+mods.ini
 *.sav
+/nand/
+/backups/
+/mods/
+/cache/
+*.log
+
+# Screenshots, frame and memory dumps
+*.bmp
+*.dmp
+/dumps/
+/shots/
+/screenshots/
+
+# Local notes and folders that stay on this PC (the handoff kit, reference
+# clones, test checklists, anything dumped from the game's data)
+CLAUDE.local.md
+*-handoff/
+/refs/
+/local/
+roster-checklist.csv
+
+# Secrets
+.env
+.env.*
 
 # Python / editors / OS
 __pycache__/
@@ -33,6 +83,3 @@ __pycache__/
 *.user
 .DS_Store
 Thumbs.db
-
-# Emulated Wii NAND (saves, settings)
-/nand/

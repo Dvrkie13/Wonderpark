@@ -1,0 +1,81 @@
+name: Bug report
+description: Something in Wonderpark doesn't work or looks wrong.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping! **Please don't attach game files, ISOs, save files with game data, or your built Wonderpark folder.** Screenshots and the log are perfect.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What went wrong, and what did you expect instead?
+    validations:
+      required: true
+  - type: textarea
+    id: where
+    attributes:
+      label: Where in the game?
+      description: The area, attraction, battle or menu, and what you were doing. Steps to make it happen again help a lot.
+      placeholder: "Seasong Beach, right after talking to Piplup: the camera spins and the game freezes."
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which part of Wonderpark?
+      options:
+        - Launcher / building the game
+        - Mods
+        - Gameplay
+        - Graphics
+        - Sound
+        - Controls
+        - Settings (F1 or Options page)
+        - Performance / stutter
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Wonderpark version
+      description: "There are no numbered releases yet: the commit you built (run `git rev-parse --short HEAD` in your Wonderpark folder)."
+      placeholder: "e81d664"
+    validations:
+      required: true
+  - type: dropdown
+    id: disc
+    attributes:
+      label: Did the launcher say your disc was verified?
+      options:
+        - "Yes, disc verified (S2LE01)"
+        - "It verified but warned that the image doesn't match a clean copy"
+        - "No / not sure"
+    validations:
+      required: true
+  - type: input
+    id: settings
+    attributes:
+      label: Key settings
+      description: Frame rate, graphics quality, renderer, window mode, and any mods turned on.
+      placeholder: "60 FPS, 3x, OpenGL, borderless, no mods"
+  - type: input
+    id: pc
+    attributes:
+      label: Your PC
+      description: Windows version, graphics card, and whether the game is on an SSD or a hard drive.
+      placeholder: "Windows 11, RTX 3060, SSD"
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: Log
+      description: "Building: the launcher's \"Show log\" link opens it (logs are in `build\\logs` in your Wonderpark folder). In the game: run it from PowerShell in your Wonderpark folder with `.\\build\\game\\Wonderpark.exe *> wonderpark.log`, make the problem happen, then drag `wonderpark.log` here. Please check it doesn't contain anything personal."
+  - type: textarea
+    id: shots
+    attributes:
+      label: Screenshots or video
+      description: Optional, but very helpful.
