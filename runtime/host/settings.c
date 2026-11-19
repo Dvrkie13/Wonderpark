@@ -100,6 +100,7 @@ static const struct {
     {"display", "fov_attractions", 0, 0, 1, "1: the field of view applies in attractions too"},
     {"display", "show_fps", 0, 0, 2, "the frame rate in a corner: 0 off, 1 top left, 2 top right"},
     {"input", "button_icons", 0, 0, 4, "button icons: 0 auto (the pad used last), 1 Xbox, 2 PlayStation, 3 Nintendo, 4 keyboard only"},
+    {"input", "keyboard_player", 0, 0, 1, "0: keyboard and controller 1 are player 1; 1: keyboard alone is player 1, controllers are players 2-4"},
     {"audio", "volume_master", 100, 0, 100, "percent"},
     {"audio", "volume_music", 100, 0, 100, "percent: music and jingles"},
     {"audio", "volume_sfx", 100, 0, 100, "percent: sound effects"},

@@ -11,7 +11,7 @@
  * own callback, and the game would never count the remote as connected).
  * A timer then stands in for its reports at 200 Hz; each report reads the
  * host's controls (host_input.h). KPAD runs unchanged on top. Remotes 1-3
- * are not connected. */
+ * (players 2-4) connect while their players have a device (report()). */
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
@@ -29,11 +29,13 @@
 #define PPC_TB_HZ TB_HZ
 #define MA(a) wp_mem_ptr((uint32_t)(a), 1)
 #define HLE_LOG(...) WP_LOG("wpad", __VA_ARGS__)
-static int hle_motion(uint32_t held, uint32_t reports, int16_t acc[3], int16_t dots[4][2]);
+static int hle_motion(int chan, uint32_t held, uint32_t reports, int16_t acc[3], int16_t dots[4][2]);
 void hle_prompts_update(void); /* hle_prompts.c: the button prompts redrawn when they change */
 
 int (*g_host_pad_read)(int chan, uint32_t* held);
 void (*g_host_pad_rumble)(int chan, int on);
+int (*g_host_pad_present)(int chan);
+void (*g_host_pad_sticks)(int chan, float* lx, float* ly, float* rx, float* ry);
 
 #define WPAD_MAX_CHANS 4
 #define WPAD_ERR_NONE 0
@@ -97,28 +99,40 @@ static float key_pair(KeyPair* k, uint32_t held, uint32_t plus, uint32_t minus) 
     return (float)k->side;
 }
 
-static int flight_tilt(uint32_t held, int16_t acc[3]) {
-    static float steer, pitch;
-    static KeyPair leftRight, upDown;
-    float lx = 0, ly = 0, rx = 0, ry = 0, s = g_x[X_STEER_SENSITIVITY] / 100.0f, ease, ws, wp, x, y, across;
-    if (g_host_sticks_read) g_host_sticks_read(&lx, &ly, &rx, &ry);
+/* Player chan's sticks: player 1's as the camera reads them, the others'
+ * from their own pads (input_win32.c). */
+static void sticks(int chan, float* lx, float* ly, float* rx, float* ry) {
+    *lx = *ly = *rx = *ry = 0;
+    if (chan == 0) {
+        if (g_host_sticks_read) g_host_sticks_read(lx, ly, rx, ry);
+    } else if (g_host_pad_sticks) {
+        g_host_pad_sticks(chan, lx, ly, rx, ry);
+    }
+}
+
+static int flight_tilt(int chan, uint32_t held, int16_t acc[3]) {
+    static float steerOf[WPAD_MAX_CHANS], pitchOf[WPAD_MAX_CHANS];
+    static KeyPair leftRightOf[WPAD_MAX_CHANS], upDownOf[WPAD_MAX_CHANS];
+    float *steer = &steerOf[chan], *pitch = &pitchOf[chan];
+    float lx, ly, rx, ry, s = g_x[X_STEER_SENSITIVITY] / 100.0f, ease, ws, wp, x, y, across;
+    sticks(chan, &lx, &ly, &rx, &ry);
     /* Right lowers the pointer end (to the left, held sideways); up climbs:
      * the remote tilted back. The stick over the keys when pushed. */
-    ws = key_pair(&leftRight, held, HOST_PAD_SCREEN_LEFT, HOST_PAD_SCREEN_RIGHT);
+    ws = key_pair(&leftRightOf[chan], held, HOST_PAD_SCREEN_LEFT, HOST_PAD_SCREEN_RIGHT);
     if (lx != 0) ws = -lx;
-    wp = key_pair(&upDown, held, HOST_PAD_SCREEN_DOWN, HOST_PAD_SCREEN_UP);
+    wp = key_pair(&upDownOf[chan], held, HOST_PAD_SCREEN_DOWN, HOST_PAD_SCREEN_UP);
     if (ly != 0) wp = -ly;
     if (g_x[X_MIRROR_WORLD]) ws = -ws; /* the picture is flipped */
     ws *= s;
     ws = ws > 1 ? 1 : ws < -1 ? -1 : ws;
     ease = TILT_EASE * s;
     ease = ease > 0.6f ? 0.6f : ease;
-    steer += (ws * MAX_STEER - steer) * ease;
-    pitch += (wp * MAX_PITCH - pitch) * TILT_EASE;
+    *steer += (ws * MAX_STEER - *steer) * ease;
+    *pitch += (wp * MAX_PITCH - *pitch) * TILT_EASE;
     /* Gravity in the remote's axes: x across its face, y along it, z out
      * of its face; both tilts together shrunk to 1 g if more. */
-    x = sinf(pitch) * ACC_ONE_G;
-    y = sinf(steer) * ACC_ONE_G;
+    x = sinf(*pitch) * ACC_ONE_G;
+    y = sinf(*steer) * ACC_ONE_G;
     across = sqrtf(x * x + y * y);
     if (across > ACC_ONE_G) {
         x = x * ACC_ONE_G / across;
@@ -131,30 +145,42 @@ static int flight_tilt(uint32_t held, int16_t acc[3]) {
     return 1;
 }
 
-static int hle_motion(uint32_t held, uint32_t reports, int16_t acc[3], int16_t dots[4][2]) {
-    static float px, py;
-    float dx = 0, dy = 0;
+/* Players 2-4 move their pointer with their right stick: this many units a
+ * second at full push (across the screen in about 0.6 s), the push squared
+ * for fine aiming, times Aim speed. (Player 1's: the mouse, and the right
+ * stick as the Right stick setting says, input_win32.c.) */
+#define POINTER_PER_STICK_SECOND 3.5f
+
+static int hle_motion(int chan, uint32_t held, uint32_t reports, int16_t acc[3], int16_t dots[4][2]) {
+    static float pxOf[WPAD_MAX_CHANS], pyOf[WPAD_MAX_CHANS];
+    float dx = 0, dy = 0, *px = &pxOf[chan], *py = &pyOf[chan];
     int mx, my;
-    (void)reports;
     {
         extern int hle_minigame(void); /* hle_scene.c */
-        if (hle_minigame() == 4) return flight_tilt(held, acc);
+        if (hle_minigame() == 4) return flight_tilt(chan, held, acc);
     }
-    if (!sChan[0].dpdCommand) return 0;
-    if (g_host_pointer_read) g_host_pointer_read(&dx, &dy);
-    px += dx * POINTER_PER_PIXEL;
-    py += -dy * POINTER_PER_PIXEL;
-    px = px > POINTER_X_LIMIT ? POINTER_X_LIMIT : px < -POINTER_X_LIMIT ? -POINTER_X_LIMIT : px;
-    py = py > 1 ? 1 : py < -1 ? -1 : py;
-    mx = (int)(512 - px * 225);
-    my = (int)(486 + py * 226);
+    if (!sChan[chan].dpdCommand) return 0;
+    if (chan == 0) {
+        if (g_host_pointer_read) g_host_pointer_read(&dx, &dy);
+        *px += dx * POINTER_PER_PIXEL;
+        *py += -dy * POINTER_PER_PIXEL;
+    } else {
+        float lx, ly, rx, ry, k = POINTER_PER_STICK_SECOND / REPORT_HZ * g_x[X_AIM_SPEED] / 100.0f;
+        sticks(chan, &lx, &ly, &rx, &ry);
+        *px += rx * fabsf(rx) * k;
+        *py += ry * fabsf(ry) * k;
+    }
+    *px = *px > POINTER_X_LIMIT ? POINTER_X_LIMIT : *px < -POINTER_X_LIMIT ? -POINTER_X_LIMIT : *px;
+    *py = *py > 1 ? 1 : *py < -1 ? -1 : *py;
+    mx = (int)(512 - *px * 225);
+    my = (int)(486 + *py * 226);
     dots[0][0] = (int16_t)(mx - DOT_SPREAD);
     dots[0][1] = (int16_t)my;
     dots[1][0] = (int16_t)(mx + DOT_SPREAD);
     dots[1][1] = (int16_t)my;
     if (wp_log_on("pointer") && (reports % 30 == 0 || dx != 0 || dy != 0))
-        WP_LOG("pointer", "dpd %u, mouse %+.0f %+.0f -> pointer %.2f %.2f, dots at %d,%d", sChan[0].dpdCommand, dx, dy,
-               px, py, mx, my);
+        WP_LOG("pointer", "remote %d: dpd %u, move %+.0f %+.0f -> pointer %.2f %.2f, dots at %d,%d", chan + 1, sChan[chan].dpdCommand, dx, dy,
+               *px, *py, mx, my);
     acc[0] = 0;
     acc[1] = 0;
     acc[2] = ACC_ONE_G;
@@ -169,28 +195,41 @@ static uint32_t sReports;
 /* Remote 0's buttons (HOST_PAD_*) at the last WPADRead. */
 uint32_t g_wpad_held;
 int (*g_host_script_input)(uint32_t held);
-static int sConnecting, sConnected;
+/* Remote 0 connects as described above; remotes 1-3 (players 2-4) connect
+ * whenever the host has a device for that player (g_host_pad_present: a
+ * controller, or a test script) and go away when it does, telling the
+ * game through its connect callback as a real remote would. */
+static int sConnecting, sConnected[WPAD_MAX_CHANS];
 
-static int connected(int32_t chan) { return chan == 0 && sConnected; }
+static int connected(int32_t chan) { return chan >= 0 && chan < WPAD_MAX_CHANS && sConnected[chan]; }
 
 /* WONDERPARK_PAD_SCRIPT: scripted input for remote 0 on top of the host's,
  * for unattended runs. "<seconds>:<buttons> ...", buttons joined by "+"
  * (up down left right a b 1 2 plus minus home shake; on-screen
  * directions), each held from its time until the next entry, timed from
- * program start. "4:2 4.2: 9:a 9.2:" presses 2 at 4 s and A at 9 s. */
-static struct ScriptEntry { double t; uint32_t held; } *sScript;
-static int sScriptLen = -1, sScriptFrames;
+ * program start. "4:2 4.2: 9:a 9.2:" presses 2 at 4 s and A at 9 s.
+ * WONDERPARK_PAD2_SCRIPT to _PAD4_SCRIPT do the same for players 2-4, and
+ * connect their remotes (as if they had a controller). */
+struct ScriptEntry { double t; uint32_t held; };
+static struct ScriptEntry* sScripts[WPAD_MAX_CHANS];
+static int sScriptLens[WPAD_MAX_CHANS] = {-1, -1, -1, -1}, sScriptFramesOf[WPAD_MAX_CHANS];
 unsigned gxb_game_frames(void); /* gx_frames.c */
 
-static void load_script(void) {
+static void load_script(int chan) {
+    char envName[32];
+    struct ScriptEntry* sScript = NULL;
+    int sScriptLen, sScriptFrames = 0;
     static const struct { const char* name; uint32_t bit; } kNames[] = {
         {"up", HOST_PAD_SCREEN_UP}, {"down", HOST_PAD_SCREEN_DOWN}, {"left", HOST_PAD_SCREEN_LEFT},
         {"right", HOST_PAD_SCREEN_RIGHT}, {"a", HOST_PAD_A}, {"b", HOST_PAD_B}, {"1", HOST_PAD_1},
         {"2", HOST_PAD_2}, {"plus", HOST_PAD_PLUS}, {"minus", HOST_PAD_MINUS}, {"home", HOST_PAD_HOME},
         {"shake", HOST_PAD_SHAKE}, {"shake2", HOST_PAD_SHAKE2},
     };
-    const char* p = getenv("WONDERPARK_PAD_SCRIPT");
+    const char* p;
     int cap = 0;
+    if (chan == 0) snprintf(envName, sizeof(envName), "WONDERPARK_PAD_SCRIPT");
+    else snprintf(envName, sizeof(envName), "WONDERPARK_PAD%d_SCRIPT", chan + 1);
+    p = getenv(envName);
     sScriptLen = 0;
     while (p && *p) {
         char* end;
@@ -228,20 +267,26 @@ static void load_script(void) {
         sScript[sScriptLen].t = t;
         sScript[sScriptLen++].held = held;
     }
+    sScripts[chan] = sScript;
+    sScriptLens[chan] = sScriptLen;
+    sScriptFramesOf[chan] = sScriptFrames;
 }
 
-static uint32_t script_held(void) {
-    static uint64_t start;
+/* Whether player chan has a test script (it connects their remote). */
+static int has_script(int chan) {
+    if (sScriptLens[chan] < 0) load_script(chan);
+    return sScriptLens[chan] > 0;
+}
+
+static uint32_t script_held(int chan) {
     double now;
     uint32_t held = 0;
     int i;
-    if (sScriptLen < 0) load_script();
-    if (!sScriptLen) return 0;
+    if (!has_script(chan)) return 0;
     /* Wonderpark: timed from program start (monotonic host time), so scripts
      * line up with screenshots and logs. */
-    (void)start;
-    now = sScriptFrames ? (double)gxb_game_frames() : (double)wp_host_time() / PPC_TB_HZ;
-    for (i = 0; i < sScriptLen && sScript[i].t <= now; i++) held = sScript[i].held;
+    now = sScriptFramesOf[chan] ? (double)gxb_game_frames() : (double)wp_host_time() / PPC_TB_HZ;
+    for (i = 0; i < sScriptLens[chan] && sScripts[chan][i].t <= now; i++) held = sScripts[chan][i].held;
     return held;
 }
 
@@ -267,16 +312,50 @@ static uint16_t wpad_buttons(uint32_t held) {
 /* Reports go to the sampling callback, like the Bluetooth stack's receive
  * interrupt on a Wii. */
 static void report(void) {
+    int chan;
     sReports++;
-    if (sChan[0].samplingCb) wp_irq_post(sChan[0].samplingCb, 0, 0);
+    if (sReports % (REPORT_HZ / 2) == 0) {
+        /* Players 2-4: a remote connects when its player has a device, and
+         * goes away when the device does (looked at twice a second). Only
+         * once the game listens for that remote (its connect callback). */
+        for (chan = 1; chan < WPAD_MAX_CHANS; chan++) {
+            int present = has_script(chan) || (g_host_pad_present && g_host_pad_present(chan));
+            if (present == sConnected[chan] || !sChan[chan].connectCb) continue;
+            sConnected[chan] = present;
+            HLE_LOG("WPAD: remote %d %s", chan + 1, present ? "connected" : "went away");
+            wp_irq_post(sChan[chan].connectCb, (uint32_t)chan, present ? WPAD_ERR_NONE : (uint32_t)WPAD_ERR_NO_CONTROLLER);
+        }
+    }
+    for (chan = 0; chan < WPAD_MAX_CHANS; chan++)
+        if (sConnected[chan] && sChan[chan].samplingCb) wp_irq_post(sChan[chan].samplingCb, (uint32_t)chan, 0);
 }
 
 static void connect(void) {
-    sConnected = 1;
+    sConnected[0] = 1;
     HLE_LOG("WPAD: remote 0 connected");
     wp_timer_stop(WP_TIMER_PAD_CONNECT);
     wp_timer_start(WP_TIMER_PAD, TB_HZ / REPORT_HZ, report);
     if (sChan[0].connectCb) wp_irq_post(sChan[0].connectCb, 0, WPAD_ERR_NONE);
+}
+
+/* The game's own connect callback (its input manager, under KPAD's): sets
+ * its "remote chan is connected" flag, which the menus count. Logged. */
+WP_HOOK(0x80033010, GameConnectCallback) {
+    HLE_LOG("game's connect callback: remote %d, result %d", (int)c->gpr[3] + 1, (int)c->gpr[4]);
+    return 0;
+}
+
+/* Debugging (WONDERPARK_LOG=wpadflags): the game input manager's flags per
+ * remote, every two seconds. */
+static void log_flags(CPUState* c) {
+    static uint32_t last;
+    u32 mgr;
+    int i;
+    if (!wp_log_on("wpadflags") || sReports - last < 2 * REPORT_HZ) return;
+    last = sReports;
+    mgr = wp_call_guest(c, 0x80072600u, 0, 0, 0, 0);
+    for (i = 0; i < 4; i++)
+        WP_LOG("wpadflags", "remote %d: +11260 %u +11264 %u", i + 1, LD8(mgr + i + 11260), LD8(mgr + i + 11264));
 }
 
 /* s32 WPADProbe(s32 chan, u32* type) */
@@ -359,14 +438,17 @@ WP_HOOK(0x802D49E0, WPADRead) {
     int on = chan >= 0 && chan < WPAD_MAX_CHANS && connected(chan), motion = 0, i;
     int16_t acc[3], dots[4][2];
     hle_prompts_update();
+    if (c->gpr[3] == 0) log_flags(c);
     if (on && g_host_pad_read && !g_host_pad_read(chan, &held)) held = 0;
     if (on && chan == 0) {
-        uint32_t scripted = script_held();
+        uint32_t scripted = script_held(0);
         extern void options_rows_filter(uint32_t * held); /* settings_ui.cpp: the Options page's PC rows */
         if (!g_host_script_input || !g_host_script_input(scripted)) held |= scripted;
         options_rows_filter(&held);
+    } else if (on) {
+        held |= script_held(chan); /* players 2-4's test scripts */
     }
-    if (on && chan == 0 && (motion = hle_motion(held, sReports, acc, dots)) != 0) {
+    if (on && (motion = hle_motion(chan, held, sReports, acc, dots)) != 0) {
         /* In minigames, the remote's motion as each asks (hle_motion.c). */
         ax = acc[0];
         ay = acc[1];

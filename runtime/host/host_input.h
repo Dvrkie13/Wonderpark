@@ -30,6 +30,11 @@ enum {
 /* Fills the HOST_PAD_* bits held on remote chan (0-3); returns 0 if that
  * remote is not connected. */
 extern int (*g_host_pad_read)(int chan, uint32_t* held);
+/* Whether player chan (1-3: players 2-4) has a device, so remote chan
+ * should be connected (hle_wpad.c). */
+extern int (*g_host_pad_present)(int chan);
+/* Player chan's sticks, as g_host_sticks_read gives player 1's. */
+extern void (*g_host_pad_sticks)(int chan, float* lx, float* ly, float* rx, float* ry);
 /* Turns the rumble motor of remote chan on or off. */
 extern void (*g_host_pad_rumble)(int chan, int on);
 /* Mouse movement since the last call, in pixels (x right, y down), while

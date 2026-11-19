@@ -87,6 +87,7 @@ enum {
     X_SHOW_FPS,         /* [display]: the frame rate in a corner: 0 off, 1 top left, 2 top right (gl_backend.c) */
     /* [input] */
     X_BUTTON_ICONS,     /* 0 auto, 1 Xbox, 2 PlayStation, 3 Nintendo, 4 keyboard only (pad_icons.cpp) */
+    X_KEYBOARD_PLAYER,  /* 0: the keyboard and controller 1 are player 1; 1: the keyboard alone is, controller 1 is player 2 */
     /* [audio] */
     X_VOLUME_MASTER, X_VOLUME_MUSIC, X_VOLUME_SFX, X_VOLUME_VOICES, /* 0-100 % */
     X_VOICE_LANGUAGE,   /* 0 English, 1 Japanese */

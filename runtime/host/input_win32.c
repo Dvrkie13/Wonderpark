@@ -163,14 +163,29 @@ static float stick_axis(SHORT v) {
     return 0.0f;
 }
 
-static void read_sticks(float* lx, float* ly, float* rx, float* ry) {
+/* Players: player 1 is the keyboard and mouse, and controller 1 too unless
+ * Keyboard player says the keyboard is alone; the controllers (in the
+ * order they connected) are the next players. The controller of player
+ * chan (0-3), or -1 for none. */
+static int pad_of(int chan) { return g_x[X_KEYBOARD_PLAYER] ? chan - 1 : chan; }
+
+/* Player chan's sticks (-1 to 1, dead zone off, y up). */
+static void pad_sticks(int chan, float* lx, float* ly, float* rx, float* ry) {
     PadState s;
     *lx = *ly = *rx = *ry = 0;
-    if (!pad_sdl_state(0, &s) || menu_is_open()) return;
+    if (pad_of(chan) < 0 || !pad_sdl_state(pad_of(chan), &s) || menu_is_open()) return;
     *lx = stick_axis(s.lx);
     *ly = stick_axis(s.ly);
     *rx = stick_axis(s.rx);
     *ry = stick_axis(s.ry);
+}
+
+static void read_sticks(float* lx, float* ly, float* rx, float* ry) { pad_sticks(0, lx, ly, rx, ry); }
+
+/* Whether player chan (1-3) has a controller (hle_wpad.c connects their remote). */
+static int pad_present(int chan) {
+    PadState s;
+    return pad_of(chan) >= 0 && pad_sdl_state(pad_of(chan), &s);
 }
 
 /* The right stick turns the camera as the mouse does: full over turns it
@@ -233,10 +248,10 @@ static uint32_t keyboard(void) {
  * left stick is pushed, as d-pad bits. Read once per poll, and the menu
  * gets the same reading. (A pad connecting or going away is noticed in
  * pad_sdl.c, which tells the button icons.) */
-static void controller_state(uint32_t* buttons, uint32_t* stick) {
+static void controller_state(int pad, uint32_t* buttons, uint32_t* stick) {
     PadState s;
     *buttons = *stick = 0;
-    if (!pad_sdl_state(0, &s)) return;
+    if (pad < 0 || !pad_sdl_state(pad, &s)) return;
     *buttons = s.buttons;
     if (s.lt > 128) *buttons |= XPAD_LT;
     if (s.rt > 128) *buttons |= XPAD_RT;
@@ -319,12 +334,24 @@ static void speed_up(uint32_t buttons) {
 static int read_pad(int chan, uint32_t* held) {
     static int menuHeld;
     uint32_t buttons, stick, keys, pad;
-    if (chan != 0) return 0;
+    if (chan != 0) {
+        /* Players 2-4: their own controller, with the same bindings; nothing
+         * while our menus are open. */
+        if (chan < 0 || chan > 3) return 0;
+        controller_state(pad_of(chan), &buttons, &stick);
+        *held = menu_is_open() ? 0 : controller(buttons, stick);
+        return 1;
+    }
     preview_tick();
     mouse();
-    controller_state(&buttons, &stick);
+    {
+        /* The menus (F1) go by controller 1 whoever's it is. */
+        uint32_t mb, ms;
+        controller_state(0, &mb, &ms);
+        menu_controller(mb, mb | ms);
+    }
+    controller_state(pad_of(0), &buttons, &stick);
     speed_up(buttons);
-    menu_controller(buttons, buttons | stick);
     keys = keyboard();
     pad = controller(buttons, stick);
     if (pad || buttons || stick) sControllerLast = 1; /* any button, or the stick past half */
@@ -345,14 +372,22 @@ static int read_pad(int chan, uint32_t* held) {
  * the setting says (normal: as before there was a setting). */
 static int sRumbling;
 
-static void set_motors(int on) {
+static WORD motor_speed(int on) {
     static const WORD kSpeed[4] = {0, 0x3000, 0x6000, 0xC000};
-    WORD s = on ? kSpeed[g_settings.rumble & 3] : 0;
-    pad_sdl_rumble(0, s, s);
+    return on ? kSpeed[g_settings.rumble & 3] : 0;
+}
+
+static void set_motors(int on) {
+    int pad = pad_of(0) >= 0 ? pad_of(0) : 0; /* (the preview: some pad) */
+    pad_sdl_rumble(pad, motor_speed(on), motor_speed(on));
 }
 
 static void rumble(int chan, int on) {
-    if (chan != 0) return;
+    if (chan != 0) {
+        /* Players 2-4's own controllers. */
+        if (chan > 0 && chan < 4 && pad_of(chan) >= 0) pad_sdl_rumble(pad_of(chan), motor_speed(on), motor_speed(on));
+        return;
+    }
     sRumbling = on;
     set_motors(on);
 }
@@ -381,6 +416,8 @@ void input_init(void) {
     g_host_pad_read = read_pad;
     g_host_script_input = script_input;
     g_host_pad_rumble = rumble;
+    g_host_pad_present = pad_present;
+    g_host_pad_sticks = pad_sticks;
     g_host_mouse_read = read_mouse;
     prompts_init();
     g_host_pointer_read = read_pointer;
