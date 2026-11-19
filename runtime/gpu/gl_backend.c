@@ -40,6 +40,7 @@
 
 #include "gx_device.h"
 #include "host_settings.h"
+#include "wp_stats.h" /* Show FPS: last second's frame rate */
 
 /* ------------------------------------------------------------------------ */
 /* GL 2+ entry points */
@@ -2769,8 +2770,55 @@ static int gl_present(int x, int y, int cw, int ch, int may_drop) {
     return finish_present(w, h, may_drop);
 }
 
+/* Show FPS (Display; [display] show_fps): last second's frames shown, in
+ * a corner, as seven-segment digits made of small filled rectangles on a
+ * dark plate (no text drawing, no image upload). Green at 95% of the frame
+ * rate set or more, yellow at 75%, red below. */
+static void fps_rect(int x, int y, int w, int h, int winH) {
+    glScissor(x, winH - y - h, w, h);
+    glClear(GL_COLOR_BUFFER_BIT);
+}
+
+static void draw_fps(int w, int h) {
+    extern WpStats g_wp_stats;
+    static const unsigned char kSeg[10] = {0x3F, 0x06, 0x5B, 0x4F, 0x66, 0x6D, 0x7D, 0x07, 0x7F, 0x6F}; /* gfedcba */
+    char digits[8];
+    int n, i, dh, dw, t, gap, pad, boxW, boxH, x0, y0, target;
+    double fps = g_wp_stats.fps;
+    if (!g_x[X_SHOW_FPS] || h <= 0) return;
+    n = snprintf(digits, sizeof(digits), "%d", (int)(fps + 0.5));
+    if (n <= 0 || n > 4) return;
+    dh = h / 28 < 12 ? 12 : h / 28; /* a digit's height */
+    dw = dh * 55 / 100, t = dh / 7 < 2 ? 2 : dh / 7, gap = dh / 4, pad = dh / 3;
+    boxW = n * dw + (n - 1) * gap + 2 * pad, boxH = dh + 2 * pad;
+    x0 = g_x[X_SHOW_FPS] == 2 ? w - boxW - dh / 2 : dh / 2;
+    y0 = dh / 2;
+    target = g_settings.frame_rate > 0 ? g_settings.frame_rate : 30;
+    p_glBindFramebuffer(GL_FRAMEBUFFER, sWinFbo);
+    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+    glEnable(GL_SCISSOR_TEST);
+    glClearColor(16 / 255.0f, 24 / 255.0f, 47 / 255.0f, 1);
+    fps_rect(x0, y0, boxW, boxH, h);
+    if (fps >= target * 0.95) glClearColor(0.48f, 0.84f, 0.54f, 1);
+    else if (fps >= target * 0.75) glClearColor(0.96f, 0.83f, 0.29f, 1);
+    else glClearColor(0.95f, 0.42f, 0.42f, 1);
+    for (i = 0; i < n; i++) {
+        int s = kSeg[digits[i] - '0'], x = x0 + pad + i * (dw + gap), y = y0 + pad, half = dh / 2;
+        if (s & 0x01) fps_rect(x, y, dw, t, h);                      /* a: top */
+        if (s & 0x02) fps_rect(x + dw - t, y, t, half, h);           /* b: top right */
+        if (s & 0x04) fps_rect(x + dw - t, y + half, t, dh - half, h); /* c: bottom right */
+        if (s & 0x08) fps_rect(x, y + dh - t, dw, t, h);             /* d: bottom */
+        if (s & 0x10) fps_rect(x, y + half, t, dh - half, h);        /* e: bottom left */
+        if (s & 0x20) fps_rect(x, y, t, half, h);                    /* f: top left */
+        if (s & 0x40) fps_rect(x, y + half - t / 2, dw, t, h);       /* g: middle */
+    }
+    glDisable(GL_SCISSOR_TEST);
+    gl_forget();
+}
+
 static int finish_present(int w, int h, int may_drop) {
     int dropped;
+    draw_fps(w, h);
     {
         /* Victory confetti (confetti.c): its pieces as small filled
          * rectangles over the picture, under the overlay. */

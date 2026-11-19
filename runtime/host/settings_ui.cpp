@@ -245,6 +245,8 @@ void build_rows() {
         c.rows.push_back(fov);
         c.rows.push_back(xrow(TOGGLE, X_FOV_ATTRACTIONS, L"Field of view in attractions",
                               L"Uses it in the attractions too (they keep their own view when off)."));
+        c.rows.push_back(xrow(CHOICE, X_SHOW_FPS, L"Show FPS", L"The frames shown each second, in a corner: green at your frame rate, yellow a little under, red well under.",
+                              {L"Off", L"Top left", L"Top right"}));
         c.rows.push_back(xslider(X_BRIGHTNESS, L"Brightness", nullptr, 50, 150, 5, L"%", false));
         g_cats.push_back(c);
     }

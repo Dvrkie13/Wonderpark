@@ -84,6 +84,7 @@ enum {
     X_STICK_SENSITIVITY, /* 10-300 %: the right stick's turning */
     X_CAMERA_RECENTER,  /* seconds without turning before the camera eases back; 0 never */
     X_FOV_ATTRACTIONS,  /* [display]: Field of view in attractions too (hle_camera.c) */
+    X_SHOW_FPS,         /* [display]: the frame rate in a corner: 0 off, 1 top left, 2 top right (gl_backend.c) */
     /* [input] */
     X_BUTTON_ICONS,     /* 0 auto, 1 Xbox, 2 PlayStation, 3 Nintendo, 4 keyboard only (pad_icons.cpp) */
     /* [audio] */
