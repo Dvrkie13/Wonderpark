@@ -71,6 +71,12 @@ if(WP_STORE_WATCH)
     target_compile_definitions(wp_generated PRIVATE WPF_WATCH)
 endif()
 option(WP_DEBUG_INFO_GENERATED "Debug info for the recompiled code (slower to build; for profiling)" OFF)
+# The recompiled chunks' optimisation level with clang-cl (1 or 2; empty:
+# the build type's own, /O2). tools/build_game.py --chunk-opt.
+set(WP_CHUNK_OPT "" CACHE STRING "clang optimisation level for the recompiled chunks")
+if(WP_CHUNK_OPT AND CMAKE_C_COMPILER_ID STREQUAL "Clang")
+    target_compile_options(wp_generated PRIVATE "/clang:-O${WP_CHUNK_OPT}")
+endif()
 
 if(MSVC)
     # MSVC or clang-cl (tools/build_game.py prefers clang-cl: the recompiled

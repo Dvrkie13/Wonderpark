@@ -36,7 +36,11 @@
  * and either overflowed (dropped blocks: clicks, e.g. at the Cake
  * Contraption's character select); 16 absorbs them, and the latency stays
  * that of PRIME_BLOCKS. */
-#define BLOCKS 16 /* at most 192 ms queued */
+#define BLOCKS 48 /* at most 576 ms queued */
+/* Wonderpark: 16 still overflowed after loading a save at 30 fps: the game
+ * catches up in a burst of about 0.4 s and 32 blocks were dropped, an
+ * audible chop. 48 holds the burst; the trim below then plays it off
+ * (faster the further over the queue is) back down to PRIME_BLOCKS. */
 /* The Audio delay setting (g_x[X_AUDIO_LATENCY]): low 4 blocks (48 ms),
  * normal 7 (84 ms, as before there was a setting), safe 11 (132 ms). A
  * lower one takes effect at once (the queue is trimmed down to it); a
@@ -177,7 +181,7 @@ int wp_game_speed(void); /* cpu_host.c */
 static void push(const int16_t* lr, int frames) {
     static int16_t out[2048 * 2];
     static unsigned trim;
-    int i, n = 0, over;
+    int i, n = 0, over, every;
     if (wp_game_speed() != 1) return; /* sped up (debug overlay, F7): silent rather than garbled */
     /* Wonderpark: a burst (catching up after a stall, start-up) can leave
      * the queue well above where playback started, and as production then
@@ -186,8 +190,11 @@ static void push(const int16_t* lr, int frames) {
      * TRIM_EVERY is left out (0.8% faster, inaudible; before the low-pass
      * filter, so no click) until it is back. */
     over = !sPriming && queued() > PRIME_BLOCKS + TRIM_ABOVE;
+    /* Well over (after a burst): one in 32 (3% faster), so a 0.4 s burst
+     * is played off in about 13 s instead of 50. */
+    every = !sPriming && queued() > PRIME_BLOCKS + 8 ? 32 : TRIM_EVERY;
     for (i = 0; i < frames; i++) {
-        if (over && ++trim % TRIM_EVERY == 0) continue;
+        if (over && ++trim % every == 0) continue;
         sHist[0][sIn & 63] = lr[2 * i];
         sHist[1][sIn & 63] = lr[2 * i + 1];
         sIn++;

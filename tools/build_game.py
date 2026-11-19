@@ -109,6 +109,7 @@ def main() -> int:
     ap.add_argument("--build-dir", default="game", help="folder under build/ (default game)")
     ap.add_argument("--cflags", default="", help="extra compiler flags, e.g. /arch:AVX2 (clang-cl)")
     ap.add_argument("--no-lto", action="store_true", help="no ThinLTO (faster to build, the game a little slower)")
+    ap.add_argument("--chunk-opt", choices=["1", "2"], help="clang optimisation level for the recompiled chunks")
     ap.add_argument("--pgo-generate", action="store_true",
                     help="an instrumented build that writes a profile when it exits (LLVM_PROFILE_FILE)")
     ap.add_argument("--pgo-use", metavar="PROFDATA",
@@ -131,7 +132,8 @@ def main() -> int:
             shutil.rmtree(build)
         progress(0, "Configuring")
         opts = [f"-DWP_DEBUG_INFO_GENERATED={'ON' if a.debug_info else 'OFF'}",
-                f"-DWP_STORE_WATCH={'ON' if a.watch else 'OFF'}"]
+                f"-DWP_STORE_WATCH={'ON' if a.watch else 'OFF'}",
+                f"-DWP_CHUNK_OPT={a.chunk_opt or ''}"]
         if clang and ninja:
             path, extra = clang
             print(f"compiler: clang-cl ({path})", flush=True)

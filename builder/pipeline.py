@@ -5,6 +5,12 @@ Usage:
     python builder/pipeline.py <disc image> [--dtk path]   build (the launcher's Build)
     python builder/pipeline.py --rebuild                   build again from the extracted disc in game/
     python builder/pipeline.py --status                    is there a build, and is it current?
+    python builder/pipeline.py --optimise                  the fully optimised build (after a build)
+
+Building is quick first (the recompiled code at -O1: playable in minutes);
+the launcher then runs --optimise in the background while it's idle (stopped
+when the game starts, picked up again later) and plays build/game-opt once
+that's done.
 
 Stages (the launcher relights one star point per finished stage):
   1. Verifying disc                  tools/extract_disc.py (game ID, revision, image hash)
@@ -21,6 +27,8 @@ Machine-readable lines for the launcher, one each (everything else is log):
     @error <short plain-language message>
     @status ok|missing|outdated            (--status)
     @image <path of the disc image last built from>   (--status, when known)
+    @exe <path of the exe to play>          (--status, when ok: the optimised one once it's current)
+    @optimise needed|done                  (--status, when ok)
 
 After a build, build/game/wonderpark_build.json records a hash of the
 sources it was built from; --status compares it with the sources now
@@ -47,6 +55,17 @@ WEIGHT = [3, 7, 15, 75]
 GAME = REPO / "game"
 BUILD = REPO / "build" / "game"
 STAMP = BUILD / "wonderpark_build.json"
+# The optimised build (--optimise): the same game compiled with full
+# optimisation, made after the quick first build while the launcher sits
+# idle; used instead of build/game once it's done and current.
+OPT = REPO / "build" / "game-opt"
+OPT_STAMP = OPT / "wonderpark_build.json"
+# The first build compiles the recompiled code at -O1 without ThinLTO:
+# about 4 minutes instead of 16 on a 16-thread PC (measured 2026-11-19),
+# the game about 7% busier per frame than -O2. -O2 (--optimise) takes
+# about 11; ThinLTO adds 5 more for about 2%, so neither build uses it.
+QUICK_FLAGS = ["--no-lto", "--chunk-opt", "1"]
+OPT_FLAGS = ["--no-lto", "--build-dir", "game-opt"]
 # What the build is made from: a change to any of these makes a build out of date.
 SOURCES = ["CMakeLists.txt", "runtime", "config", "tools/recomp.py", "tools/build_game.py",
            "tools/extract_disc.py", "tools/dolrecomp/src", "tools/dolrecomp/CMakeLists.txt"]
@@ -76,24 +95,68 @@ def source_stamp() -> str:
     return h.hexdigest()
 
 
-def find_exe() -> Path | None:
-    return next((p for p in (BUILD / "Wonderpark.exe", BUILD / "Release" / "Wonderpark.exe") if p.is_file()), None)
+def find_exe(folder: Path = BUILD) -> Path | None:
+    return next((p for p in (folder / "Wonderpark.exe", folder / "Release" / "Wonderpark.exe") if p.is_file()), None)
+
+
+def read_stamp(path: Path) -> dict:
+    try:
+        return json.loads(path.read_text())
+    except (OSError, ValueError):
+        return {}
+
+
+def opt_current(sources: str) -> bool:
+    """The optimised build is there and made from the same sources."""
+    return bool(find_exe(OPT)) and read_stamp(OPT_STAMP).get("sources") == sources
 
 
 def status() -> int:
-    stamp = {}
-    try:
-        stamp = json.loads(STAMP.read_text())
-    except (OSError, ValueError):
-        pass
+    stamp = read_stamp(STAMP)
     if stamp.get("image"):
         emit(f"@image {stamp['image']}")
+    sources = source_stamp()
     if not find_exe() or not stamp:
         emit("@status missing")
-    elif stamp.get("sources") != source_stamp() or not (GAME / "manifest.json").is_file():
+    elif stamp.get("sources") != sources or not (GAME / "manifest.json").is_file():
         emit("@status outdated")
     else:
         emit("@status ok")
+        if opt_current(sources):
+            emit(f"@exe {find_exe(OPT)}")
+            emit("@optimise done")
+        else:
+            emit(f"@exe {find_exe()}")
+            emit("@optimise needed")
+    return 0
+
+
+def optimise() -> int:
+    """Builds build/game-opt with full optimisation from the recompiled code
+    already in generated/ (the launcher runs this in the background, at a
+    low priority, and stops it when the game starts; ninja goes on where it
+    stopped next time)."""
+    sources = source_stamp()
+    if read_stamp(STAMP).get("sources") != sources:
+        emit("@error Build the game first.")
+        return 1
+    if opt_current(sources):
+        emit(f"@done {find_exe(OPT)}")
+        return 0
+    t0 = time.time()
+    emit(f"Optimising, {time.strftime('%Y-%m-%d %H:%M:%S')}")
+    try:
+        run_stage(3, [PY, "-u", "tools/build_game.py", *OPT_FLAGS], "Optimising failed. The log has the details.")
+    except StageError as e:
+        emit(f"@error {e}")
+        return 1
+    exe = find_exe(OPT)
+    if not exe:
+        emit("@error The optimised build is missing Wonderpark.exe.")
+        return 1
+    OPT_STAMP.write_text(json.dumps({"sources": sources, "built": time.strftime("%Y-%m-%d %H:%M:%S")}, indent=2))
+    emit(f"Optimised in {(time.time() - t0) / 60:.1f} min")
+    emit(f"@done {exe}")
     return 0
 
 
@@ -198,10 +261,13 @@ def main() -> int:
     ap.add_argument("--dtk")
     ap.add_argument("--status", action="store_true", help="report whether a current build exists")
     ap.add_argument("--rebuild", action="store_true", help="build from the already extracted disc in game/")
+    ap.add_argument("--optimise", action="store_true", help="build the fully optimised game (after a build)")
     a = ap.parse_args()
     sys.stdout.reconfigure(encoding="utf-8", errors="replace", line_buffering=True)
     if a.status:
         return status()
+    if a.optimise:
+        return optimise()
     if not a.image and not a.rebuild:
         ap.error("give a disc image, or --rebuild")
     t0 = time.time()
@@ -229,8 +295,13 @@ def main() -> int:
             man["image_size"] = image.stat().st_size
             man_path.write_text(json.dumps(man, indent=2))
 
+        # The optimised build is of the code being replaced: not used again
+        # until --optimise makes it anew.
+        if OPT_STAMP.is_file():
+            OPT_STAMP.unlink()
         run_stage(2, [PY, "-u", "tools/recomp.py"], "Recompiling the game's code failed. The log has the details.")
-        run_stage(3, [PY, "-u", "tools/build_game.py"], "Compiling Wonderpark.exe failed. The log has the details.")
+        run_stage(3, [PY, "-u", "tools/build_game.py", *QUICK_FLAGS],
+                  "Compiling Wonderpark.exe failed. The log has the details.")
 
         exe = find_exe()
         if not exe:

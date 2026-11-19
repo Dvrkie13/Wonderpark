@@ -154,7 +154,10 @@ struct Shared {
     int lit = 0;                // star points relit
     float progress = 0;         // 0-100
     std::wstring stage_name;
-    std::wstring exe;           // build/game/Wonderpark.exe when built
+    std::wstring exe;           // the Wonderpark.exe to play when built (build/game-opt's once optimised)
+    bool optimise = false;      // the optimised build is still to make (pipeline.py --optimise)
+    bool optimising = false;    // ... and is being made now, in the background
+    float opt_progress = 0;     // 0-100
     std::wstring log_path;
     bool built_now = false;     // the build finished in this session (confetti)
 };
@@ -229,7 +232,7 @@ static void find_python() {
 // Runs python <args> in the Wonderpark folder; each output line goes to
 // on_line (and the log file, if given). Returns the exit code, or -1.
 template <class F>
-static int run_python(const std::wstring& args, FILE* log, F on_line) {
+static int run_python(const std::wstring& args, FILE* log, F on_line, HANDLE job = nullptr, DWORD priority = 0) {
     if (g_python.empty()) return -1;
     SECURITY_ATTRIBUTES sa = {sizeof(sa), nullptr, TRUE};
     HANDLE rd, wr;
@@ -248,13 +251,14 @@ static int run_python(const std::wstring& args, FILE* log, F on_line) {
     std::vector<wchar_t> cmdbuf(cmd.begin(), cmd.end());
     cmdbuf.push_back(0);
     BOOL ok = CreateProcessW(nullptr, cmdbuf.data(), nullptr, nullptr, TRUE,
-                             CREATE_NO_WINDOW | CREATE_SUSPENDED | CREATE_UNICODE_ENVIRONMENT, nullptr,
+                             CREATE_NO_WINDOW | CREATE_SUSPENDED | CREATE_UNICODE_ENVIRONMENT | priority, nullptr,
                              g_root.c_str(), &si, &pi);
     CloseHandle(wr);
     if (!ok) {
         CloseHandle(rd);
         return -1;
     }
+    if (job) AssignProcessToJobObject(job, pi.hProcess);  // its own (it can be stopped), inside g_job
     if (g_job) AssignProcessToJobObject(g_job, pi.hProcess);
     ResumeThread(pi.hThread);
     CloseHandle(pi.hThread);
@@ -295,11 +299,13 @@ static void join_worker() {
 static void check_status() {
     join_worker();
     g_worker = std::thread([] {
-        std::string status;
-        std::wstring image;
+        std::string status, optimise;
+        std::wstring image, exe;
         int rc = run_python(L"builder\\pipeline.py --status", nullptr, [&](const std::string& l) {
             if (l.rfind("@status ", 0) == 0) status = l.substr(8);
             if (l.rfind("@image ", 0) == 0) image = widen(l.substr(7));
+            if (l.rfind("@exe ", 0) == 0) exe = widen(l.substr(5));
+            if (l.rfind("@optimise ", 0) == 0) optimise = l.substr(10);
         });
         std::lock_guard<std::mutex> lk(g.m);
         g.image = image;
@@ -310,7 +316,8 @@ static void check_status() {
             g.state = S_DONE;
             g.lit = 4;
             g.progress = 100;
-            g.exe = g_root + L"\\build\\game\\Wonderpark.exe";
+            g.exe = exe.empty() ? g_root + L"\\build\\game\\Wonderpark.exe" : exe;
+            g.optimise = optimise == "needed";
         } else if (status == "outdated") {
             g.state = S_READY;
             g.rebuild = true;
@@ -320,6 +327,85 @@ static void check_status() {
         }
         wake();
     });
+}
+
+// The optimised build (pipeline.py --optimise, build/game-opt): after the
+// quick first build, made in the background while the launcher is open and
+// the game isn't running, at a low priority. It's stopped the moment the
+// game starts (ninja picks up where it stopped next time), and once done
+// Play starts it instead of the quick build. Its log: build/optimise.log.
+static HANDLE g_opt_job;
+static void optimiser_stop() {
+    HANDLE j = g_opt_job;
+    if (j) TerminateJobObject(j, 1);
+}
+static void optimiser_start() {
+    std::thread([] {
+        int failures = 0;
+        double retry_at = 0;
+        for (;;) {
+            Sleep(2000);
+            bool want;
+            {
+                std::lock_guard<std::mutex> lk(g.m);
+                want = g.state == S_DONE && g.optimise && !g.optimising;
+            }
+            if (!want || failures >= 3 || now_s() < retry_at || saves_game_running()) continue;
+            {
+                std::lock_guard<std::mutex> lk(g.m);
+                g.optimising = true;
+                g.opt_progress = 0;
+            }
+            wake();
+            HANDLE job = CreateJobObjectW(nullptr, nullptr);
+            g_opt_job = job;
+            std::atomic<bool> finished{false}, killed{false};
+            std::thread watch([&] {
+                while (!finished) {
+                    Sleep(500);
+                    if (!finished && saves_game_running()) {  // the game started: stop at once
+                        killed = true;
+                        TerminateJobObject(job, 1);
+                        break;
+                    }
+                }
+            });
+            std::wstring done;
+            FILE* log = _wfopen((g_root + L"\\build\\optimise.log").c_str(), L"a");
+            int rc = run_python(
+                L"builder\\pipeline.py --optimise", log,
+                [&](const std::string& l) {
+                    if (l.rfind("@progress ", 0) == 0) {
+                        // Stage 4's share of the overall bar is 25-100.
+                        float p = (float)(atoi(l.c_str() + 10) - 25) * 100 / 75;
+                        std::lock_guard<std::mutex> lk(g.m);
+                        g.opt_progress = p < 0 ? 0 : p > 100 ? 100 : p;
+                    } else if (l.rfind("@done ", 0) == 0) {
+                        done = widen(l.substr(6));
+                    } else {
+                        return;
+                    }
+                    wake();
+                },
+                job, BELOW_NORMAL_PRIORITY_CLASS);
+            finished = true;
+            watch.join();
+            if (log) fclose(log);
+            g_opt_job = nullptr;
+            if (killed || rc != 0) TerminateJobObject(job, 1);
+            CloseHandle(job);
+            {
+                std::lock_guard<std::mutex> lk(g.m);
+                g.optimising = false;
+                if (rc == 0 && !done.empty()) {
+                    g.exe = done;
+                    g.optimise = false;
+                }
+            }
+            if (rc != 0 && !killed) failures++, retry_at = now_s() + 600;  // a real failure: try again later, 3 times at most
+            wake();
+        }
+    }).detach();
 }
 
 // The disc header's game ID and revision (as tools/extract_disc.py reads it).
@@ -487,6 +573,7 @@ static void start_build() {
             g.exe = done;
             g.built_now = true;
             g.rebuild = false;
+            g.optimise = true;  // the quick build: the optimised one follows in the background
         } else {
             g.state = S_READY;
             g.lit = 0;
@@ -2583,6 +2670,8 @@ static void render(double t, const Shared& s) {
             }
             if (l.kind == 2) {
                 std::wstring name = s.state == S_DONE ? (s.built_now ? L"Build complete" : L"Ready to play") : s.stage_name;
+                if (s.state == S_DONE && s.optimising)
+                    name += L" · optimising " + std::to_wstring((int)s.opt_progress) + L"%";
                 draw_text(name, G.tfProgress.Get(), 40, y, 300, 30, rgb(0xe6ebf5));
                 draw_text(std::to_wstring((int)s.progress) + L"%", G.tfProgress.Get(), 40, y, 340, 30, rgb(0xe6ebf5),
                           DWRITE_TEXT_ALIGNMENT_TRAILING);
@@ -2968,6 +3057,7 @@ static void pick_disc() {
 static bool g_quit_after_toast = true;
 
 static void launch_game(const std::wstring& exe) {
+    optimiser_stop();  // the game gets the whole PC; optimising goes on later
     // Extras > Saves: "Back up before every Play" (the newest 10 kept).
     if (saves_auto_backup()) saves_backup(-1, L"Before Play", true);
     STARTUPINFOW si = {sizeof(si)};
@@ -3412,6 +3502,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show) {
         g.error = L"The Wonderpark folder wasn't found next to the launcher.";
     } else {
         check_status();
+        optimiser_start();
     }
     ShowWindow(g_wnd, show);
 

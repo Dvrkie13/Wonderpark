@@ -2798,49 +2798,57 @@ static int gl_present(int x, int y, int cw, int ch, int may_drop) {
     return finish_present(w, h, may_drop);
 }
 
-/* Show FPS (Display; [display] show_fps): last second's frames shown, in
- * a corner, as seven-segment digits made of small filled rectangles on a
- * dark plate (no text drawing, no image upload). Green at 95% of the frame
- * rate set or more, yellow at 75%, red below. */
-static void fps_rect(int x, int y, int w, int h, int winH) {
-    glScissor(x, winH - y - h, w, h);
-    glClear(GL_COLOR_BUFFER_BIT);
-}
-
+/* Show FPS (Display; [display] show_fps): last second's frames shown, as a
+ * small badge in a corner (settings_ui.cpp fps_badge_draw: the notebook's
+ * fonts, a dot green at the frame rate expected or near it, yellow a
+ * little under, red well under). Expected: the setting, or the display's
+ * refresh rate if that's lower (no more is ever shown). The badge's image
+ * is uploaded only when it changes, about once a second. */
 static void draw_fps(int w, int h) {
     extern WpStats g_wp_stats;
-    static const unsigned char kSeg[10] = {0x3F, 0x06, 0x5B, 0x4F, 0x66, 0x6D, 0x7D, 0x07, 0x7F, 0x6F}; /* gfedcba */
-    char digits[8];
-    int n, i, dh, dw, t, gap, pad, boxW, boxH, x0, y0, target;
-    double fps = g_wp_stats.fps;
+    extern const uint32_t* fps_badge_draw(int fps, int target, int win_h, int* bw, int* bh);
+    static GLuint tex;
+    static const uint32_t* lastImg;
+    static int lastFps = -1, lastW, lastH;
+    int fps = (int)(g_wp_stats.fps + 0.5), target, bw = 0, bh = 0, margin, x0, y0;
+    double hz = win_display_hz();
+    const uint32_t* img;
     if (!g_x[X_SHOW_FPS] || h <= 0) return;
-    n = snprintf(digits, sizeof(digits), "%d", (int)(fps + 0.5));
-    if (n <= 0 || n > 4) return;
-    dh = h / 28 < 12 ? 12 : h / 28; /* a digit's height */
-    dw = dh * 55 / 100, t = dh / 7 < 2 ? 2 : dh / 7, gap = dh / 4, pad = dh / 3;
-    boxW = n * dw + (n - 1) * gap + 2 * pad, boxH = dh + 2 * pad;
-    x0 = g_x[X_SHOW_FPS] == 2 ? w - boxW - dh / 2 : dh / 2;
-    y0 = dh / 2;
     target = g_settings.frame_rate > 0 ? g_settings.frame_rate : 30;
-    p_glBindFramebuffer(GL_FRAMEBUFFER, sWinFbo);
-    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
-    glEnable(GL_SCISSOR_TEST);
-    glClearColor(16 / 255.0f, 24 / 255.0f, 47 / 255.0f, 1);
-    fps_rect(x0, y0, boxW, boxH, h);
-    if (fps >= target * 0.95) glClearColor(0.48f, 0.84f, 0.54f, 1);
-    else if (fps >= target * 0.75) glClearColor(0.96f, 0.83f, 0.29f, 1);
-    else glClearColor(0.95f, 0.42f, 0.42f, 1);
-    for (i = 0; i < n; i++) {
-        int s = kSeg[digits[i] - '0'], x = x0 + pad + i * (dw + gap), y = y0 + pad, half = dh / 2;
-        if (s & 0x01) fps_rect(x, y, dw, t, h);                      /* a: top */
-        if (s & 0x02) fps_rect(x + dw - t, y, t, half, h);           /* b: top right */
-        if (s & 0x04) fps_rect(x + dw - t, y + half, t, dh - half, h); /* c: bottom right */
-        if (s & 0x08) fps_rect(x, y + dh - t, dw, t, h);             /* d: bottom */
-        if (s & 0x10) fps_rect(x, y + half, t, dh - half, h);        /* e: bottom left */
-        if (s & 0x20) fps_rect(x, y, t, half, h);                    /* f: top left */
-        if (s & 0x40) fps_rect(x, y + half - t / 2, dw, t, h);       /* g: middle */
+    if (hz >= 30 && hz + 0.5 < target) target = (int)(hz + 0.5);
+    img = fps_badge_draw(fps, target, h, &bw, &bh);
+    if (!img || bw <= 0 || bh <= 0 || bw > w || bh > h) return;
+    if (!tex) {
+        glGenTextures(1, &tex);
+        glBindTexture(GL_TEXTURE_2D, tex);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     }
+    margin = h / 60 < 8 ? 8 : h / 60;
+    x0 = g_x[X_SHOW_FPS] == 2 ? w - bw - margin : margin;
+    y0 = h - bh - margin; /* GL counts up from the bottom: a top corner */
+    p_glBindFramebuffer(GL_FRAMEBUFFER, sWinFbo);
+    p_glUseProgram(sOverlayProgram);
+    p_glBindVertexArray(sCopyVao);
+    p_glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, tex);
+    if (img != lastImg || fps != lastFps || bw != lastW || bh != lastH) {
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, bw, bh, 0, GL_BGRA, GL_UNSIGNED_BYTE, img);
+        lastImg = img, lastFps = fps, lastW = bw, lastH = bh;
+    }
+    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
     glDisable(GL_SCISSOR_TEST);
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_CULL_FACE);
+    glEnable(GL_BLEND);
+    p_glBlendEquation(GL_FUNC_ADD);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glViewport(x0, y0, bw, bh);
+    glDrawArrays(GL_TRIANGLES, 0, 3);
+    glViewport(0, 0, w, h);
+    glDisable(GL_BLEND);
+    p_glUseProgram(sProgram);
+    p_glBindVertexArray(sVao);
     gl_forget();
 }
 

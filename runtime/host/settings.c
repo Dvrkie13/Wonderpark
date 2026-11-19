@@ -64,6 +64,9 @@ static void apply_frame_rate(void) {
     hle_set_frame_rate(g_settings.frame_rate);
     gxb_set_output_rate(g_settings.frame_rate);
 }
+/* For the F1 notebook's Frame rate row (settings_ui.cpp): at once, not
+ * at the next start. */
+void settings_apply_frame_rate(void) { apply_frame_rate(); }
 
 HostSettings g_settings;
 
@@ -111,7 +114,9 @@ static const struct {
     {"gameplay", "pause_background", 1, 0, 1, "1: the game pauses while another window is in front"},
     {"gameplay", "skip_logos", 0, 0, 1, "1: the title as soon as the park has loaded (the wrist strap screen cut short)"},
     {"gameplay", "save_backups", 1, 0, 1, "1: a copy of a save slot in backups\\ before each save (the last 10)"},
-    {"gameplay", "speed_up", 1, 0, 2, "Tab / left trigger runs the park faster: 0 off, 1 2x, 2 3x"},
+    /* Off by default: on, an unbound left trigger fast-forwarded the park
+     * with the sound muted while held, which played as choppy sound. */
+    {"gameplay", "speed_up", 0, 0, 2, "Tab / left trigger runs the park faster: 0 off, 1 2x, 2 3x"},
     {"gameplay", "speed_toggle", 0, 0, 1, "0: while held, 1: pressed on and off"},
     {"silly", "pokemon_size", 1, 0, 2, "0 mini (half), 1 normal, 2 giant (twice): the park's Pokemon, for looks"},
     {"silly", "voice_pitch", 0, -50, 50, "percent of the frequency: Pokemon voices higher or deeper"},
