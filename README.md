@@ -116,7 +116,8 @@ Disc extraction alone: `python tools/extract_disc.py path\to\your\disc.iso`
   camera and field of view (`hle_camera.c`), scene tracking (`hle_game.c`),
   battle damage and chase speed options (`hle_modifiers.c`) and friends list
   (`hle_friends.c`, `hle_pad_art.c`) and in-game button prompts
-  (`hle_prompts.c`, `boot/prompts.c`) are adapted from its code.
+  (`hle_prompts.c`, `boot/prompts.c`), Flight of Fancy's steering (`hle_motion.c`)
+  and the Dance Inferno timing (`hle_dance.c`) are adapted from its code.
 - Controller icons: Flat Gamepad Icons by RobTheFiveNine
   (https://robthefivenine.itch.io/flat-gamepad-icons), CC BY-SA 4.0. Home icon
   adapted in the same style. They're in `assets/ui/pad-icons/` with the

@@ -12,11 +12,13 @@
  * A timer then stands in for its reports at 200 Hz; each report reads the
  * host's controls (host_input.h). KPAD runs unchanged on top. Remotes 1-3
  * are not connected. */
+#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "hle.h"
 #include "host_input.h"
+#include "host_settings.h"
 
 /* Ported from MildRain479/PokePark-Wiicompiled recomp/patches/hle_wpad.c (CC0),
  * with S2LE01 addresses. Per-minigame motion and the button prompts
@@ -70,11 +72,74 @@ static struct {
 #define POINTER_PER_PIXEL (1.0f / 600.0f)
 #define POINTER_X_LIMIT 1.6f
 #define DOT_SPREAD 100
+/* Flight of Fancy (attraction 4): flown by tilting the remote, held
+ * sideways: left and right steer, forward and back dive and climb. Here
+ * the left stick tilts it in proportion, and the d-pad keys (A/D, W/S,
+ * arrows) tilt it easing in; Steering sensitivity scales how far a push
+ * tilts it (so how fast it turns) and how quickly. From MildRain479/
+ * PokePark-2-Wiicompiled's hle_motion.c (CC0): left and right go all the way
+ * over (the game turns too wide at less), forward and back to 50 degrees;
+ * each axis set on its own, so steering hard keeps most of a climb. */
+#define PI_F 3.14159265f
+#define MAX_STEER (90.0f * PI_F / 180.0f)
+#define MAX_PITCH (50.0f * PI_F / 180.0f)
+#define TILT_EASE 0.15f /* a share of the way each report (about 30 ms to get most of the way) */
+
+/* A pair of opposite keys: +1, -1, and with both held the one pressed last. */
+typedef struct { uint32_t last; int side; } KeyPair;
+static float key_pair(KeyPair* k, uint32_t held, uint32_t plus, uint32_t minus) {
+    uint32_t pressed = held & ~k->last;
+    k->last = held;
+    if (!(held & minus)) k->side = held & plus ? 1 : 0;
+    else if (!(held & plus)) k->side = -1;
+    else if (pressed & plus) k->side = 1;
+    else if (pressed & minus) k->side = -1;
+    return (float)k->side;
+}
+
+static int flight_tilt(uint32_t held, int16_t acc[3]) {
+    static float steer, pitch;
+    static KeyPair leftRight, upDown;
+    float lx = 0, ly = 0, rx = 0, ry = 0, s = g_x[X_STEER_SENSITIVITY] / 100.0f, ease, ws, wp, x, y, across;
+    if (g_host_sticks_read) g_host_sticks_read(&lx, &ly, &rx, &ry);
+    /* Right lowers the pointer end (to the left, held sideways); up climbs:
+     * the remote tilted back. The stick over the keys when pushed. */
+    ws = key_pair(&leftRight, held, HOST_PAD_SCREEN_LEFT, HOST_PAD_SCREEN_RIGHT);
+    if (lx != 0) ws = -lx;
+    wp = key_pair(&upDown, held, HOST_PAD_SCREEN_DOWN, HOST_PAD_SCREEN_UP);
+    if (ly != 0) wp = -ly;
+    if (g_x[X_MIRROR_WORLD]) ws = -ws; /* the picture is flipped */
+    ws *= s;
+    ws = ws > 1 ? 1 : ws < -1 ? -1 : ws;
+    ease = TILT_EASE * s;
+    ease = ease > 0.6f ? 0.6f : ease;
+    steer += (ws * MAX_STEER - steer) * ease;
+    pitch += (wp * MAX_PITCH - pitch) * TILT_EASE;
+    /* Gravity in the remote's axes: x across its face, y along it, z out
+     * of its face; both tilts together shrunk to 1 g if more. */
+    x = sinf(pitch) * ACC_ONE_G;
+    y = sinf(steer) * ACC_ONE_G;
+    across = sqrtf(x * x + y * y);
+    if (across > ACC_ONE_G) {
+        x = x * ACC_ONE_G / across;
+        y = y * ACC_ONE_G / across;
+        across = (float)ACC_ONE_G;
+    }
+    acc[0] = (int16_t)x;
+    acc[1] = (int16_t)y;
+    acc[2] = (int16_t)sqrtf((float)ACC_ONE_G * ACC_ONE_G - across * across);
+    return 1;
+}
+
 static int hle_motion(uint32_t held, uint32_t reports, int16_t acc[3], int16_t dots[4][2]) {
     static float px, py;
     float dx = 0, dy = 0;
     int mx, my;
-    (void)held; (void)reports;
+    (void)reports;
+    {
+        extern int hle_minigame(void); /* hle_scene.c */
+        if (hle_minigame() == 4) return flight_tilt(held, acc);
+    }
     if (!sChan[0].dpdCommand) return 0;
     if (g_host_pointer_read) g_host_pointer_read(&dx, &dy);
     px += dx * POINTER_PER_PIXEL;

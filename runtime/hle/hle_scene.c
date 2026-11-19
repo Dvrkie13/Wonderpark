@@ -39,6 +39,28 @@ WP_HOOK(0x80210660, NextScene) {
     return 0;
 }
 
+/* Which attraction: the scripts and menus pass it from scene to scene as a
+ * parameter, "AttractionId" (0-3). From MildRain479/PokePark-2-
+ * Wiicompiled's hle_game.c (CC0). */
+static int sAttraction;
+
+/* void AddSceneParameter(Params*, const char* name, s32 value) */
+WP_HOOK(0x80206DC0, AddSceneParameter) {
+    static const char kWant[] = "AttractionId";
+    u32 name = c->gpr[4];
+    int i;
+    for (i = 0; kWant[i] && LD8(name + i) == (u32)(uint8_t)kWant[i]; i++) {}
+    if (!kWant[i] && !LD8(name + i)) {
+        sAttraction = (int)c->gpr[5] + 1;
+        WP_LOG("scene", "attraction %d", sAttraction);
+    }
+    return 0;
+}
+
+/* The attraction being played (1 Cake Contraption, 2 Dance Inferno, 3
+ * Power Bash, 4 Flight of Fancy), or 0 outside one. */
+int hle_minigame(void) { return sScene == SCENE_ATTRACTION ? sAttraction : 0; }
+
 int hle_scene(void) { return sScene; }
 int hle_in_park(void) { return sScene == SCENE_PARK; }
 int hle_in_minigame(void) { return sScene == SCENE_ATTRACTION; }

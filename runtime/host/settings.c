@@ -91,7 +91,7 @@ static const struct {
     {"controls", "invert_x", 0, 0, 1, "1: mouse and stick turn the camera the other way"},
     {"controls", "right_stick", 2, 0, 2, "0 camera, 1 pointer, 2 auto: the pointer while the game uses one"},
     {"controls", "aim_assist", 1, 0, 1, "not yet"},
-    {"controls", "steer_sensitivity", 100, 25, 200, "percent (not yet)"},
+    {"controls", "steer_sensitivity", 100, 25, 200, "percent: Flight of Fancy's turning by stick and keys"},
     {"controls", "aim_speed", 100, 25, 200, "percent: how fast the right stick moves the pointer"},
     {"controls", "rhythm_offset", 0, -100, 100, "Dance Inferno timing, ms: positive if presses feel late (whole frames)"},
     {"controls", "free_camera", 1, 0, 1, "1: the mouse and right stick turn the camera"},
