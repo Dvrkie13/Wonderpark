@@ -19,6 +19,7 @@
 #endif
 
 #include "wp.h"
+#include "version.h" /* runtime/host */
 
 #define GAME_ID "S2LE01"
 #define DEFAULT_DOL "game/sys/main.dol"
@@ -157,6 +158,7 @@ int main(int argc, char** argv) {
     uint32_t entry = 0;
     const char* env;
     int i;
+    fprintf(stderr, "wonderpark %s\n", WONDERPARK_VERSION);
 
     wp_logpipe_start(); /* log lines never block the game (logpipe.c) */
 #ifdef WP_PGO_GENERATE

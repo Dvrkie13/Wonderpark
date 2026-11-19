@@ -1,7 +1,6 @@
-/* From MildRain479/PokePark-Wiicompiled recomp/runtime/version.h (CC0). */
-/* This build's version, as its GitHub release is tagged (v0.1.0-beta is
- * 0.1.0): the update check (update.c) compares the latest release's with
- * it. Raised with each release, as AndroidManifest.xml's versionName. */
+/* Wonderpark's version, as its GitHub release is tagged (without the "v"):
+ * shown by the launcher and printed by the game as it starts. Raised with
+ * each release (docs/RELEASING.md); tools/make_release.py names the zip by it. */
 #pragma once
 
-#define RECOMP_VERSION "0.1.1"
+#define WONDERPARK_VERSION "0.1.0-beta"

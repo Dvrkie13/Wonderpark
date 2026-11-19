@@ -39,6 +39,10 @@
 #include <wincodec.h>
 
 #include "hdpack.h"
+#include "version.h"  // runtime/host
+#define WONDERPARK_WIDEN2(s) L##s
+#define WONDERPARK_WIDEN(s) WONDERPARK_WIDEN2(s)
+#define WONDERPARK_VERSION_W WONDERPARK_WIDEN(WONDERPARK_VERSION)
 #include "mods.h"
 #include "saves.h"
 #include "../../runtime/host/pad_icons.h"  // controller icons (pad_icons_core.cpp, shared with the game)
@@ -2599,7 +2603,8 @@ static void render(double t, const Shared& s) {
         dc->SetTransform(R);
         std::wstring legal =
             L"Wonderpark is an unofficial, non-commercial fan project. Not affiliated with or endorsed by Nintendo, "
-            L"The Pokémon Company, Creatures Inc. or Game Freak. Contains no game files; you need your own disc.";
+            L"The Pokémon Company, Creatures Inc. or Game Freak. Contains no game files; you need your own disc. "
+            L"Version " WONDERPARK_VERSION_W L".";
         float h = text_height(legal, G.tfLegal.Get(), 460);
         draw_text(legal, G.tfLegal.Get(), W - 40 - 460, H - 40 - h, 460, 100, rgb(0xd0d8ea), DWRITE_TEXT_ALIGNMENT_TRAILING);
     }

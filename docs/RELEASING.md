@@ -1,6 +1,13 @@
 # Releasing Wonderpark
 
-There are no releases yet. When there are, a release zip holds only what we're allowed to give away, and never anything from the game.
+A release zip holds only what we're allowed to give away, and never anything from the game.
+
+## Making one
+
+1. Raise `WONDERPARK_VERSION` in `runtime/host/version.h` (the release is tagged `v` + that, e.g. `v0.1.0-beta`); the launcher shows it and the game prints it as it starts.
+2. Commit everything, then run `python tools/make_release.py`. It builds the launcher, copies the committed files a release needs (below; submodules included) into `build/release/Wonderpark-<version>/` with the launcher at the top, runs the check below on the folder and on the zip, and writes `Wonderpark-<version>.zip` and its SHA-256.
+3. Test it: unzip it into a new folder, run the launcher, place the disc, Build, Play.
+4. On GitHub, draft a release with tag `v<version>`, the zip, its SHA-256 and the release notes (`docs/release-notes/`). The owner reviews and publishes it.
 
 ## What a release zip contains
 
