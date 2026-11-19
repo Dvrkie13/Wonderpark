@@ -357,6 +357,9 @@ std::wstring saves_export(int slot, const std::wstring& path) {
     return ok ? L"" : L"The .zip couldn't be written there.";
 }
 
+const wchar_t kWiiSaveHint[] =
+    L"For a real Wii save: Import it into Dolphin first (Tools > Import Wii Save), then import the Dolphin folder here.";
+
 std::wstring saves_import(const std::wstring& path) {
     if (saves_game_running()) return L"Close the game first.";
     size_t slash = path.find_last_of(L"\\/");
@@ -385,22 +388,19 @@ std::wstring saves_import(const std::wstring& path) {
             FindClose(h);
         }
     } else {
-        add(path, base);  // a data.bin or a .zip
+        add(path, base);  // a .zip
     }
     if (files.empty()) return L"That file couldn't be read.";
     for (size_t i = 0; i < files.size(); i++) files[i].data = keep[i].data(), files[i].size = (uint32_t)keep[i].size();
-    // A lone file: a zip (unpacked) or a data.bin (decrypted in place).
+    // A lone file: a zip (unpacked). A real Wii's data.bin isn't read.
     WiiSaveFile unpacked[32];
     int count = 0;
     bool fromZip = false;
     if (files.size() == 1 && !wiisave_own_name(files[0].name)) {
-        int r;
-        if (wiisave_is_zip(files[0].data, files[0].size)) {
-            r = wiisave_read_zip(files[0].data, files[0].size, unpacked, 32, &count);
-            fromZip = r == WIISAVE_OK;
-        } else {
-            r = wiisave_read_bin(keep[0].data(), keep[0].size(), unpacked, 32, &count);
-        }
+        if (!wiisave_is_zip(files[0].data, files[0].size))
+            return std::wstring(L"That isn't a .zip or a file from Dolphin's save folder. ") + kWiiSaveHint;
+        int r = wiisave_read_zip(files[0].data, files[0].size, unpacked, 32, &count);
+        fromZip = r == WIISAVE_OK;
         if (r != WIISAVE_OK) return widen(wiisave_message(r)) + L".";
     } else {
         count = (int)std::min<size_t>(files.size(), 32);

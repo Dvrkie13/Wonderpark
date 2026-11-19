@@ -1,6 +1,6 @@
 // The launcher's Extras > Saves page (saves.cpp): the game's save files in
-// our NAND folder, backups of them, import (a Wii's data.bin, Dolphin's save
-// folder or a .zip of it) and export (a .zip in Dolphin's layout).
+// our NAND folder, backups of them, import (Dolphin's save folder or a .zip
+// of it) and export (a .zip in Dolphin's layout).
 //
 // The game keeps two save files, GD0 and GD1 (each with a mirror, GD0M and
 // GD1M, and its photos, Pic0 and Pic1), in
@@ -52,9 +52,12 @@ std::wstring saves_restore(const SaveBackup& b);
 // Writes file slot as a .zip in Dolphin's layout (its GD, mirror, photos and
 // the banner) to path.
 std::wstring saves_export(int slot, const std::wstring& path);
-// Brings in a save from path: a Wii data.bin, a .zip, or one of the files
-// in Dolphin's save folder (the whole folder is taken). Backs up first.
+// Brings in a save from path: a .zip, or one of the files in Dolphin's save
+// folder (the whole folder is taken). Backs up first. A real Wii's data.bin
+// isn't read (Wonderpark doesn't ship the Wii's SD key): kWiiSaveHint.
 std::wstring saves_import(const std::wstring& path);
+// What to do with a real Wii save, shown on the Saves page.
+extern const wchar_t kWiiSaveHint[];
 
 // "Back up before every Play" (launcher.ini in the data folder; on by default).
 bool saves_auto_backup();

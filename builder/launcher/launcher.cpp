@@ -1535,7 +1535,7 @@ static void render_saves_page(double t, Matrix3x2F M, float L, float Rr, float y
         cy += h + 6;
     }
     {
-        std::wstring s = L"Import: a Wii's data.bin (from an SD card), a .zip, or any file in Dolphin's save folder. Your saves are backed up first.";
+        std::wstring s = std::wstring(L"Import: a .zip, or any file in Dolphin's save folder. Your saves are backed up first. ") + kWiiSaveHint;
         float h = text_height(s, G.tfMFoot.Get(), CW);
         draw_text(s, G.tfMFoot.Get(), L, cy, CW, h, rgb(0x8f9cbd));
         cy += h + 18;
@@ -2751,9 +2751,9 @@ static std::wstring pick_save_file(bool save, const std::wstring& name) {
         ComPtr<IFileOpenDialog> o;
         if (FAILED(CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&o)))) return L"";
         d = o;
-        COMDLG_FILTERSPEC types[] = {{L"A Wii or Dolphin save (data.bin, .zip, GD0)", L"*.bin;*.zip;GD*;Pic*"}, {L"All files", L"*.*"}};
+        COMDLG_FILTERSPEC types[] = {{L"A Dolphin save (.zip, GD0, banner.bin)", L"*.zip;GD*;Pic*;banner.bin"}, {L"All files", L"*.*"}};
         d->SetFileTypes(2, types);
-        d->SetTitle(L"Import a save: a Wii's data.bin, a .zip, or a file in Dolphin's save folder");
+        d->SetTitle(L"Import a save: a .zip, or a file in Dolphin's save folder");
     }
     if (FAILED(d->Show(g_wnd))) return L"";
     ComPtr<IShellItem> it;

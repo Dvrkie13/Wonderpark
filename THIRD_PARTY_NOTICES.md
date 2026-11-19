@@ -32,7 +32,7 @@ Wonderpark's runtime started from its `recomp/` runtime code (not its decompiled
 | `runtime/hle/hle_wpad.c` | `hle_motion.c` (Flight of Fancy's steering) |
 | `runtime/hle/hle_dance.c` | `S2LE01/hle_dance.c` (Dance Inferno timing hooks) |
 | `runtime/core/idle.c` | `hle_irq.c` (idle handling) |
-| `builder/launcher/wii_save.c`, `wii_save.h` | `boot/wii_save.c`, `boot/wii_save.h`, unchanged (save import and export: a Wii's data.bin, Dolphin's folder, zips) |
+| `builder/launcher/wii_save.c`, `wii_save.h` | `boot/wii_save.c`, `boot/wii_save.h`, with the data.bin reading (AES and the Wii's key) taken out (save import and export: Dolphin's folder, zips) |
 
 ### DolRecomp (GPL-3.0-or-later)
 
