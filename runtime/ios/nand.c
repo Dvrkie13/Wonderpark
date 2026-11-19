@@ -227,6 +227,11 @@ FILE* hle_nand_open(const char* nand, int mode, int32_t* err) {
         return NULL;
     }
     if ((mode & 2) && is_save_slot(nand)) back_up(nand, host);
+    if (is_save_slot(nand)) {
+        extern int g_nand_last_slot; /* hle_journal.c: the save file loaded */
+        g_nand_last_slot = nand[strlen(nand) - 1] - '0';
+        HLE_LOG("NAND save file %d opened (mode %d)", g_nand_last_slot, mode);
+    }
     f = fopen(host, mode & 2 ? "r+b" : "rb");
     if (!f) {
         *err = FS_EACCESS;
@@ -347,6 +352,10 @@ int32_t hle_nand_ioctl(uint32_t type, uint32_t in, uint32_t out, uint32_t outsiz
         HLE_LOG("NAND rename %s -> %s", nand, nand2);
         ensure_parent(host2);
         if (is_save_slot(nand2) && exists(host2) && !is_dir(host2)) back_up(nand2, host2); /* saved via /tmp */
+        if (is_save_slot(nand2)) {
+            extern int g_nand_last_slot; /* hle_journal.c: saved to it, so it's the one loaded */
+            g_nand_last_slot = nand2[strlen(nand2) - 1] - '0';
+        }
         remove(host2);
 #ifdef _WIN32
         /* /tmp may be on another drive than the rest of the NAND. */

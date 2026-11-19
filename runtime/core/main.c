@@ -246,6 +246,12 @@ int main(int argc, char** argv) {
              * files take the place of the disc's, so before the disc opens. */
             extern void wp_mods_init(void);
             wp_mods_init();
+            /* The Journal (hle_journal.c): read now, before the game runs;
+             * written again at exit. */
+            extern void hle_journal_init(void);
+            extern void hle_journal_flush(void);
+            hle_journal_init();
+            atexit(hle_journal_flush);
         }
         if (hle_dvd_init(root) != 0) return 1;
         hle_dvd_boot_setup();

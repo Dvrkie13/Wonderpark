@@ -117,6 +117,8 @@ WP_HOOK(0x80206A70, SceneManager_RunBegin) {
     {
         extern void hle_size_frame(void); /* hle_size.c: Pokémon size */
         hle_size_frame();
+        extern void hle_journal_frame(void); /* hle_journal.c */
+        hle_journal_frame();
     }
     if (state < 0) {
         const char* e = getenv("WONDERPARK_ATTRACTION");

@@ -52,6 +52,7 @@
 #include <cmath>
 #include <thread>
 #include <cstdio>
+#include <ctime>
 #include <cstring>
 #include <functional>
 #include <map>
@@ -63,6 +64,7 @@ extern "C" {
 #include "host_settings.h"
 #include "pad_icons.h"
 #include "pad_sdl.h"
+#include "../hle/hle_journal.h"
 char g_dump_next[512];  // a frame for gl_backend.c to save as shown (test shots)
 extern int g_picture_rect[4];  // gl_backend.c: where the game's picture is in the window
 int win_has_focus(void);
@@ -133,7 +135,8 @@ bool reduced_motion() {
 // chips; items: place ids, -1 all), PLACEHEAD (a place's title; act: the
 // place), CARDS (up to three Pokémon cards; items: indices in g_friends),
 // TIP (a sticky note).
-enum Kind { HEAD, NOTE, CHOICE, TOGGLE, SLIDER, TEXTBOX, BINDHEAD, BIND, FIXEDBIND, PLAYERS, FBTOP, PLACES, PLACEHEAD, CARDS, TIP };
+enum Kind { HEAD, NOTE, CHOICE, TOGGLE, SLIDER, TEXTBOX, BINDHEAD, BIND, FIXEDBIND, PLAYERS, FBTOP, PLACES, PLACEHEAD, CARDS, TIP,
+           STATS, WEEK, ACARD, MILESTONE, SOONBOX, GCARDS };  // the Journal, Jukebox and Gallery books
 
 struct Row {
     Kind kind = HEAD;
@@ -535,7 +538,9 @@ struct UI {
     bool open = false;
     double openT = 0;
     int tab = 0;
-    int view = 0;                // 0 the settings, 1 the Friend Book
+    int view = 0;                // the book: 0 Settings, 1 Friend Book, 2 Journal, 3 Jukebox, 4 Gallery
+    int jtab = 0, ktab = 0, gzone = 0;  // the Journal's, Jukebox's and Gallery's left tab
+    int gbg = 0;                 // the Gallery viewer's background: 0 Park, 1 Studio, 2 Night
     int zone = 0;                // Friend Book: 0 everyone, 1-6 an area
     int ffilter = 0;             // Friend Book: 0 all, 1 friends, 2 not yet
     int place = -1;              // Friend Book: the place chosen, -1 all
@@ -786,6 +791,22 @@ void draw_icon(const std::wstring& id, float x, float y, float size, D2D1_COLOR_
         {L"pin", {"M12 21C12 21 5 14.8 5 9.5A7 7 0 0 1 19 9.5C19 14.8 12 21 12 21Z", "M14.5 9.5a2.5 2.5 0 1 1-5 0a2.5 2.5 0 1 1 5 0Z"}},
         {L"bulb", {"M12 3a6 6 0 0 0-3.6 10.8c.7.6 1.1 1.4 1.1 2.2h5c0-.8.4-1.6 1.1-2.2A6 6 0 0 0 12 3Z", "M9.5 18.5h5M10.5 21h3"}},
         {L"close", {"M7 7l10 10M17 7L7 17"}},
+        {L"gear", {"M15.5 12a3.5 3.5 0 1 1-7 0a3.5 3.5 0 1 1 7 0Z", "M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"}},
+        {L"journal", {"M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3Z", "M8 4v13M5 17a3 3 0 0 1 3-3h11"}},
+        {L"music", {"M9 18V6l10-2v12", "M9 18a2.5 2.5 0 1 1-5 0a2.5 2.5 0 1 1 5 0Z", "M19 16a2.5 2.5 0 1 1-5 0a2.5 2.5 0 1 1 5 0Z"}},
+        {L"gallery", {"M4 5h16v14H4Z", "M4 16l5-5 4 4 3-3 4 4", "M16.5 8.5a1.5 1.5 0 1 1-3 0a1.5 1.5 0 1 1 3 0Z"}},
+        {L"chart", {"M4 20h16", "M7 20v-7M12 20V8M17 20v-4"}},
+        {L"star", {"M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1L3.2 9.8l6.1-.9Z"}},
+        {L"flag", {"M6 21V4", "M6 4h11l-2 4 2 4H6"}},
+        {L"tree", {"M12 3l6 9h-4l4 6H6l4-6H6Z", "M12 18v3"}},
+        {L"target", {"M21 12a9 9 0 1 1-18 0a9 9 0 1 1 18 0Z", "M16 12a4 4 0 1 1-8 0a4 4 0 1 1 8 0Z", "M12 3v4M12 17v4M3 12h4M17 12h4"}},
+        {L"clock", {"M21 12a9 9 0 1 1-18 0a9 9 0 1 1 18 0Z", "M12 7v5l3 2"}},
+        {L"berry", {"M17 15a5 5 0 1 1-10 0a5 5 0 1 1 10 0Z", "M12 10c0-3 2-5 5-6"}},
+        {L"camera", {"M4 8h4l2-3h4l2 3h4v11H4Z", "M15.5 13a3.5 3.5 0 1 1-7 0a3.5 3.5 0 1 1 7 0Z"}},
+        {L"foot", {"M8 21c-2 0-3-2-3-5c0-3 1-6 3-6c2 0 3 3 3 6c0 3-1 5-3 5Z", "M16 14c-2 0-3-2-3-5c0-3 1-6 3-6c2 0 3 3 3 6c0 3-1 5-3 5Z"}},
+        {L"bolt", {"M13 2L4 14h7l-1 8 9-12h-7Z"}},
+        {L"jump", {"M12 20V9", "M7 13l5-5 5 5", "M5 4h14"}},
+        {L"tent", {"M3 20L12 4l9 16Z", "M12 4v16"}},
     };
     auto it = paths.find(id);
     if (it == paths.end()) return;
@@ -948,14 +969,16 @@ const std::initializer_list<std::pair<float, float>> kSecTape = {
     {0, .08f}, {.04f, 0}, {.08f, .10f}, {.12f, 0}, {1, .06f}, {.97f, .5f}, {1, .94f}, {.96f, 1}, {.92f, .9f}, {.88f, 1}, {0, .92f}, {.03f, .5f}};
 
 // The "Coming soon" rubber stamp (red; white on a washi title). Returns its width.
-float stamp(const std::wstring& s, float x, float cy, bool onTape, bool draw = true) {
+// onPaper: on a light page (darker red, a paler fill).
+float stamp(const std::wstring& s, float x, float cy, bool onTape, bool draw = true, bool onPaper = false) {
     auto l = layout(upper(s), fmt(L"Fredoka", 700, 11), 600, 100, LEFT, 1.1f);
     l->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
     float w = measure(l.Get()).widthIncludingTrailingWhitespace + 16 + 5, h = 21;
     if (!draw) return w;
     Rot rot(onTape ? 3.f : -6.f, x + w / 2, cy);
-    D2D1_COLOR_F ink = onTape ? ColorF(1, 1, 1) : rgb(0xff8a7a);
-    G.rt->FillRoundedRectangle(rr(x, cy - h / 2, w, h, 6), brush(onTape ? ColorF(0, 0, 0, .15f) : rgb(0x3a160e, .35f)));
+    D2D1_COLOR_F ink = onTape ? ColorF(1, 1, 1) : onPaper ? rgb(0xd2402c) : rgb(0xff8a7a);
+    G.rt->FillRoundedRectangle(rr(x, cy - h / 2, w, h, 6),
+                               brush(onTape ? ColorF(0, 0, 0, .15f) : onPaper ? ColorF(1, 1, 1, .85f) : rgb(0x3a160e, .35f)));
     G.rt->DrawRoundedRectangle(rr(x + 1.25f, cy - h / 2 + 1.25f, w - 2.5f, h - 2.5f, 5), brush(ink), 2.5f);
     G.rt->DrawTextLayout(Point2F(x + 10.5f, cy - measure(l.Get()).height / 2), l.Get(), brush(ink));
     return w;
@@ -1083,6 +1106,24 @@ void place_rows() {
             }
             break;
         case TIP: p.h = 14 + text_h(r.desc, fmt(L"Nunito", 700, 12.5f), ROW_W - 28) + 22 + 10; break;
+        case STATS:  // the Journal's stickers: two columns
+            for (size_t k = 0; k < r.items.size(); k++) {
+                float sw = (ROW_W - 14) / 2, x = ROW_X + (k % 2) * (sw + 14), sy = y + 12 + (k / 2) * (74 + 12);
+                p.parts.push_back(RectF(x, sy, x + sw, sy + 74));
+            }
+            p.h = 12 + ((r.items.size() + 1) / 2) * (74 + 12);
+            break;
+        case WEEK: p.h = 12 + 150 + 8; break;
+        case ACARD: p.h = 10 + 78 + 4; break;
+        case MILESTONE: p.h = 6 + 62 + 6; break;
+        case SOONBOX: p.h = 14 + 82 + text_h(r.desc, fmt(L"Nunito", 700, 13.5f), ROW_W - 40) + 18 + 6; break;
+        case GCARDS:  // the Gallery: four to a line
+            p.h = 12 + 116 + 8;
+            for (size_t k = 0; k < r.items.size(); k++) {
+                float gw = (ROW_W - 3 * 12) / 4, x = ROW_X + k * (gw + 12);
+                p.parts.push_back(RectF(x, y + 12, x + gw, y + 12 + 116));
+            }
+            break;
         default: {
             // A row: label (and description), its control, and its stamp
             // when it's not available.
@@ -1168,8 +1209,14 @@ void place_rows() {
 // seven index tabs, the Friend Book ribbon, Close), the rows, and the
 // button at the bottom (FOCUS_RESET). Within a line, U.focusSlot says which
 // part (tab, choice, key slot, card).
-const int FOCUS_TOP = -3, FOCUS_RESET = -2, FB_SLOT = NTABS, CLOSE_SLOT = NTABS + 1;
-bool focusable(Kind k) { return k != HEAD && k != NOTE && k != BINDHEAD && k != FBTOP && k != PLACEHEAD && k != TIP; }
+// The top line: the left tabs (0 to ntabs() - 1), the bookmarks (BOOK_SLOT + book), Close.
+const int FOCUS_TOP = -3, FOCUS_RESET = -2, BOOK_SLOT = NTABS, FB_SLOT = BOOK_SLOT + 1, CLOSE_SLOT = NTABS + 5;
+const float BOOKMARK_OUT = 62;  // how far the bookmarks stick out past the cover
+// (The Journal's stickers, cards and milestones take the focus, with nothing
+// to change, so the keys and a controller scroll through them.)
+bool focusable(Kind k) {
+    return k != HEAD && k != NOTE && k != BINDHEAD && k != FBTOP && k != PLACEHEAD && k != TIP && k != WEEK && k != SOONBOX;
+}
 std::vector<int> focusables() {
     std::vector<int> f;
     f.push_back(FOCUS_TOP);
@@ -1505,10 +1552,13 @@ void draw_rows(float listTop, float t) {
 struct Hits {
     D2D1_RECT_F close{}, reset{}, fb{}, sheetClose{}, reveal{}, sheet{};
     D2D1_RECT_F tabs[NTABS]{};
+    D2D1_RECT_F books[5]{};  // the bookmarks
+    D2D1_RECT_F bg[3]{};     // the Gallery viewer's backgrounds
     float tabX = 0, k = 1;  // window = (tab coordinates + (tabX, 10)) * k
 } H;
 
-void draw_sheet(float t);  // the hint card (below, with the friends list)
+void draw_sheet(float t);   // the hint card (below, with the friends list)
+void draw_viewer(float t);  // the Gallery's viewer (below)
 int friends_made();
 int friends_total();
 
@@ -1520,6 +1570,39 @@ struct ZoneTab {
 const ZoneTab kZoneTabs[NTABS] = {{L"All", 0xf3cf6b, 0x4a2f08},  {L"Cove", 0x4a7fe0, 0xffffff},   {L"Arbor", 0x5bc26a, 0x10182f},
                                   {L"Crag", 0xf39a2b, 0x10182f}, {L"Tech", 0x3fb6c8, 0x10182f},   {L"Arcane", 0x8b5bd2, 0xffffff},
                                   {L"Wish Park", 0xe2457f, 0xffffff}};
+
+// The books: bookmarks on the notebook's right edge (F1-F5; LT / RT go
+// round them). Each has its own left tabs.
+enum { BK_SETTINGS, BK_FRIENDS, BK_JOURNAL, BK_JUKEBOX, BK_GALLERY, NBOOKS };
+struct BookInfo {
+    const wchar_t *name, *label, *icon;
+    uint32_t color, ink;
+};
+const BookInfo kBooks[NBOOKS] = {{L"Settings", L"SETTINGS", L"gear", 0xc3cde0, 0x1b2440},
+                                 {L"Friends", L"FRIEND BOOK", L"heart", 0xe2457f, 0xffffff},
+                                 {L"Journal", L"JOURNAL", L"journal", 0xf39a2b, 0x1b2440},
+                                 {L"Jukebox", L"JUKEBOX", L"music", 0x8b5bd2, 0xffffff},
+                                 {L"Gallery", L"GALLERY", L"gallery", 0x3fb6c8, 0x1b2440}};
+struct TabInfo {
+    std::wstring name, icon;
+    uint32_t gem, ink;
+};
+int ntabs() { return U.view == BK_JOURNAL ? 3 : U.view == BK_JUKEBOX ? 5 : NTABS; }
+int& cur_tab() {
+    return U.view == BK_FRIENDS ? U.zone : U.view == BK_JOURNAL ? U.jtab : U.view == BK_JUKEBOX ? U.ktab : U.view == BK_GALLERY ? U.gzone : U.tab;
+}
+TabInfo tab_info(int i) {
+    static const TabInfo journal[3] = {{L"Overview", L"chart", 0xf39a2b, 0x1b2440},
+                                       {L"Attractions", L"star", 0xe2457f, 0xffffff},
+                                       {L"Milestones", L"flag", 0x5bc26a, 0x1b2440}};
+    static const TabInfo jukebox[5] = {{L"All", L"music", 0x8b5bd2, 0xffffff}, {L"Park", L"tree", 0x5bc26a, 0x1b2440},
+                                       {L"Wish Park", L"star", 0xe2457f, 0xffffff}, {L"Attractions", L"target", 0xf39a2b, 0x1b2440},
+                                       {L"Story", L"journal", 0x4a7fe0, 0xffffff}};
+    if (U.view == BK_SETTINGS) return {g_cats[i].name, g_cats[i].id, g_cats[i].gem, g_cats[i].ink};
+    if (U.view == BK_JOURNAL) return journal[i];
+    if (U.view == BK_JUKEBOX) return jukebox[i];
+    return {kZoneTabs[i].tab, i == 0 ? L"heart" : L"pin", kZoneTabs[i].gem, kZoneTabs[i].ink};
+}
 
 // The gold corner piece (the mockup's, 46 x 46), drawn 60 x 60 at (x, y),
 // mirrored by (fx, fy).
@@ -1594,8 +1677,9 @@ void render(float t) {
         rt->FillRoundedRectangle(rr(x + 15 + 11, y + 14, 4, 18, 1.5f), brush(rgb(PINK)));
         text_c(s, tf, x + 15 + 18 + 10, y + h / 2, tw + 4, rgb(INK));
     }
-    // The notebook, sliding in from the right.
-    float tabX = vw - TAB_W - 10 + 60 * (1 - slide);
+    // The notebook, sliding in from the right (moved left of the edge so the
+    // bookmarks fit).
+    float tabX = vw - TAB_W - 10 - BOOKMARK_OUT + 60 * (1 - slide);
     H.tabX = tabX;
     H.k = k;
     Matrix3x2F T = Matrix3x2F::Translation(tabX, 10) * Matrix3x2F::Scale(k, k);
@@ -1605,6 +1689,42 @@ void render(float t) {
         rt->PushLayer(D2D1::LayerParameters(D2D1::InfiniteRect(), nullptr, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE, D2D1::IdentityMatrix(),
                                             bezier(.2f, .8f, .2f, 1, openK)),
                       nullptr);
+    // The bookmarks on the right edge, behind the cover: Settings, Friend
+    // Book (friends / everyone), Journal, Jukebox, Gallery (friends on
+    // display); the open one sticks out further.
+    for (int b = 0; b < NBOOKS; b++) {
+        bool sel = U.view == b, hov = U.hoverPart == 200 + b && U.hoverRow < 0;
+        float bw = BOOKMARK_OUT + 24 + (sel ? 10.f : hov ? 4.f : 0.f), bh = 66, y = 110 + b * (bh + 8);
+        float x = TAB_W - 24;
+        auto g = rrect_path(x, y, bw, bh, 0, 14, 14, 0);
+        D2D1_COLOR_F col = rgb(kBooks[b].color);
+        if (!sel && !hov) {
+            float l = .3f * col.r + .59f * col.g + .11f * col.b;
+            col = ColorF((col.r * .8f + l * .2f) * .93f, (col.g * .8f + l * .2f) * .93f, (col.b * .8f + l * .2f) * .93f);
+        }
+        fill_geo(g.Get(), rgb(0x060a1a, .35f), 3, 4);
+        rt->PushLayer(D2D1::LayerParameters(D2D1::InfiniteRect(), g.Get()), nullptr);
+        rt->FillRectangle(RectF(x, y, x + bw, y + bh), brush(col));
+        rt->FillRectangle(RectF(x, y, x + bw, y + 3), brush(ColorF(1, 1, 1, .3f)));
+        rt->FillRectangle(RectF(x, y + bh - 4, x + bw, y + bh), brush(ColorF(0, 0, 0, .12f)));
+        rt->PopLayer();
+        rt->DrawGeometry(g.Get(), brush(rgb(INK)), 3);
+        float cx = TAB_W + (bw - 24) / 2 + 2;
+        std::wstring count;
+        if (b == BK_FRIENDS && friends_total() > 0) count = std::to_wstring(friends_made()) + L"/" + std::to_wstring(friends_total());
+        if (b == BK_GALLERY && friends_total() > 0) count = std::to_wstring(friends_made());
+        if (!count.empty()) {
+            IDWriteTextFormat* cf = fmt(L"Fredoka", 600, 10);
+            float cw = text_w(count, cf) + 10;
+            rt->FillRoundedRectangle(rr(cx - cw / 2, y - 7, cw, 16, 8), brush(rgb(0xfff8e6)));
+            rt->DrawRoundedRectangle(rr(cx - cw / 2 + 1, y - 6, cw - 2, 14, 7), brush(rgb(INK)), 2);
+            text_c(count, cf, cx - cw / 2, y + 1, cw, rgb(INK), CENTER);
+        }
+        draw_icon(kBooks[b].icon, cx - 12, y + 12, 24, rgb(kBooks[b].ink));
+        text_c(kBooks[b].name, fmt(L"Fredoka", 600, 11), cx - 34, y + 50, 68, rgb(kBooks[b].ink), CENTER);
+        H.books[b] = RectF(TAB_W, y, x + bw, y + bh);
+        if (U.focus == FOCUS_TOP && U.focusSlot == BOOK_SLOT + b && U.sheet < 0) draw_focus(RectF(TAB_W + 2, y + 2, x + bw - 2, y + bh - 2), 12);
+    }
     // The green cover: its shadow, the cover, a dashed cream stitch.
     {
         auto cover = rrect_path(COVER_X, 0, TAB_W - COVER_X, TAB_H, 24, 10, 10, 24);
@@ -1621,15 +1741,17 @@ void render(float t) {
     }
     // The index tabs, under the page; the chosen one sticks out further.
     {
-        bool zones = U.view != 0;
-        float top = zones ? 84 : 92, th = zones ? 58 : 64, gap = zones ? 5 : 7;
-        for (int i = 0; i < NTABS; i++) {
-            uint32_t gem = zones ? kZoneTabs[i].gem : g_cats[i].gem, ink = zones ? kZoneTabs[i].ink : g_cats[i].ink;
-            bool sel = zones ? i == U.zone : i == U.tab;
+        int nt = ntabs();
+        bool tight = nt == NTABS && U.view != BK_SETTINGS;
+        float top = tight ? 84 : 92, th = tight ? 58 : 64, gap = tight ? 5 : 7;
+        for (int i = 0; i < NTABS; i++) H.tabs[i] = RectF();
+        for (int i = 0; i < nt; i++) {
+            TabInfo ti = tab_info(i);
+            bool sel = i == cur_tab();
             bool hov = U.hoverPart == 100 + i && U.hoverRow < 0;
             float x = sel ? -14.f : hov ? -4.f : 0.f, y = top + i * (th + gap);
             auto g = rrect_path(x, y, 96, th, 16, 0, 0, 16);
-            D2D1_COLOR_F col = rgb(gem);
+            D2D1_COLOR_F col = rgb(ti.gem);
             if (!sel && !hov) {  // a little duller (saturate .8, brightness .93)
                 float l = .3f * col.r + .59f * col.g + .11f * col.b;
                 col = ColorF((col.r * .8f + l * .2f) * .93f, (col.g * .8f + l * .2f) * .93f, (col.b * .8f + l * .2f) * .93f);
@@ -1641,13 +1763,8 @@ void render(float t) {
             rt->PopLayer();
             rt->DrawGeometry(g.Get(), brush(rgb(INK)), 3);
             float cx = x + 6 + 33;
-            if (zones) {
-                D2D1_COLOR_F ic = rgb(ink);
-                draw_icon(i == 0 ? L"heart" : L"pin", cx - 12, y + th / 2 - 22, 24, ic);
-            } else {
-                draw_icon(g_cats[i].id, cx - 12, y + th / 2 - 22, 24, rgb(ink));
-            }
-            text_c(zones ? kZoneTabs[i].tab : g_cats[i].name, fmt(L"Fredoka", 600, 11), x + 2, y + th / 2 + 13, 74, rgb(ink), CENTER);
+            draw_icon(ti.icon, cx - 12, y + th / 2 - 22, 24, rgb(ti.ink));
+            text_c(ti.name, fmt(L"Fredoka", 600, 11), x + 2, y + th / 2 + 13, 74, rgb(ti.ink), CENTER);
             H.tabs[i] = RectF(x, y, x + 76, y + th);
             if (U.focus == FOCUS_TOP && U.focusSlot == i && U.sheet < 0) draw_focus(RectF(x + 2, y + 2, x + 72, y + th - 2), 14);
         }
@@ -1675,11 +1792,13 @@ void render(float t) {
             circle(bx, by, 34, rgb(LEATHER_DARK));
             circle(bx, by, 31, rgb(PAGE_TEXT));
             circle(bx, by, 27, rgb(cat), 3);
-            if (U.view) {
+            if (U.view == BK_FRIENDS) {
                 D2D1_COLOR_F f = rgb(0xc9346c);
                 draw_icon(L"heart", bx - 12, by - 12, 24, rgb(0xc9346c), &f);
-            } else {
+            } else if (U.view == BK_SETTINGS) {
                 draw_icon(c.id, bx - 12, by - 12, 24, rgb(c.ink));
+            } else {
+                draw_icon(tab_info(cur_tab()).icon, bx - 12, by - 12, 24, rgb(c.ink));
             }
         }
         IDWriteTextFormat* nf = fmt(L"Fredoka", 700, 32);
@@ -1699,21 +1818,25 @@ void render(float t) {
         float vh = view_h(), bh = std::max(30.f, vh * vh / g_listH), by = ROWS_TOP + (vh - bh) * (U.scroll / (g_listH - vh));
         rt->FillRoundedRectangle(rr(PANEL_W - 14, by + 2, 5, bh - 4, 2.5f), brush(rgb(cat, .85f)));
     }
-    // Footer: Reset (or Back to Settings), the note.
+    // Footer: Reset (in a book: Back to Settings), the note.
     {
         float fy = PANEL_H - FOOT_H;
         rt->FillRectangle(RectF(0, fy, PANEL_W, PANEL_H), brush(rgb(0x55361f)));
         rt->FillRectangle(RectF(0, fy - 1.5f, PANEL_W, fy + 1.5f), brush(rgb(0x3b2414)));
         float bh = 38, by = fy + (FOOT_H - bh) / 2 + 1;
         bool hov = U.hoverBtn == 2;
-        float rw = U.view ? stone_button(40, by, bh, L"Back to Settings", L"F2", hov) : stone_button(40, by, bh, L"Reset " + c.name, nullptr, hov);
+        float rw = U.view ? stone_button(40, by, bh, L"Back to Settings", L"F1", hov) : stone_button(40, by, bh, L"Reset " + c.name, nullptr, hov);
         H.reset = RectF(PANEL_X + 40, PANEL_Y + by, PANEL_X + 40 + rw, PANEL_Y + by + bh);
         if (U.focus == FOCUS_RESET && U.sheet < 0) draw_focus(RectF(40, by, 40 + rw, by + bh), 12);
-        text_c(U.view ? L"Read from your save · updates live" : L"Saved to settings.ini right away", fmt(L"Nunito", 800, 12.5f), 40 + rw + 12,
-               fy + FOOT_H / 2 + 1, PANEL_W - 24 - (40 + rw + 12), rgb(PAGE_SOFT), RIGHT);
+        const wchar_t* note = U.view == BK_SETTINGS ? L"Saved to settings.ini right away"
+                            : U.view == BK_JUKEBOX  ? L"Plays over the paused game · from your disc"
+                            : U.view == BK_GALLERY  ? L"Pictures from your disc"
+                                                    : L"Read from your save · updates live";
+        text_c(note, fmt(L"Nunito", 800, 12.5f), 40 + rw + 12, fy + FOOT_H / 2 + 1, PANEL_W - 24 - (40 + rw + 12), rgb(PAGE_SOFT), RIGHT);
     }
-    // The hint card, over the list.
-    if (U.view && U.sheet >= 0) draw_sheet(t);
+    // The hint card (Friend Book) or the viewer (Gallery), over the list.
+    if (U.view == BK_FRIENDS && U.sheet >= 0) draw_sheet(t);
+    if (U.view == BK_GALLERY && U.sheet >= 0) draw_viewer(t);
     rt->PopLayer();
     rt->DrawGeometry(pageGeo.Get(), brush(rgb(0x3b2414)), 3);
     // Gold corners, over the cover's and the page's edges.
@@ -1722,10 +1845,10 @@ void render(float t) {
     corner(TAB_W + 6 - 60, -6, -1, 1);
     corner(58, TAB_H + 6 - 60, 1, -1);
     corner(TAB_W + 6 - 60, TAB_H + 6 - 60, -1, -1);
-    // The top: the page's label on gold tape; the Friend Book ribbon and Close.
+    // The top: the book's label on gold tape; Close.
     {
         IDWriteTextFormat* f = fmt(L"Fredoka", 600, 13);
-        std::wstring s = U.view ? L"FRIEND BOOK" : L"SETTINGS";
+        std::wstring s = kBooks[U.view].label;
         float tw = text_w(s, f, 13 * .16f), x = 104, cy = 26 + 23;
         D2D1_RECT_F b = RectF(x, cy - 12, x + 14 + tw + 14, cy + 12);
         {
@@ -1733,46 +1856,17 @@ void render(float t) {
             tape(b, rgb(GOLD), .35f, 6, {{.02f, 0}, {.98f, .04f}, {1, .5f}, {.97f, 1}, {.01f, .96f}, {0, .5f}});
             text_c(s, f, x + 14, cy, tw + 4, rgb(INK), LEFT, 13 * .16f);
         }
-        // Close
         float right = TAB_W - 34, bh = 40, by = cy - bh / 2;
-        float cw = stone_button(0, 0, bh, L"Close", L"F1", false, false);
-        stone_button(right - cw, by, bh, L"Close", L"F1", U.hoverBtn == 1);
+        const wchar_t* key = U.view == BK_SETTINGS ? L"F1" : L"Esc";
+        float cw = stone_button(0, 0, bh, L"Close", key, false, false);
+        stone_button(right - cw, by, bh, L"Close", key, U.hoverBtn == 1);
         H.close = RectF(right - cw, by, right, by + bh);
+        H.fb = RectF();
         if (U.focus == FOCUS_TOP && U.focusSlot == CLOSE_SLOT && U.sheet < 0) draw_focus(H.close, 12);
-        // The ribbon: pink, a notch at its end (white with "Settings" in the book).
-        std::wstring label = U.view ? L"Settings" : L"Friend Book";
-        std::wstring count = !U.view && friends_total() > 0 ? std::to_wstring(friends_made()) + L"/" + std::to_wstring(friends_total()) : L"";
-        IDWriteTextFormat* lf = fmt(L"Fredoka", 600, 15);
-        IDWriteTextFormat* cf = fmt(L"Fredoka", 600, 12.5f);
-        float lw = text_w(label, lf), cwid = count.empty() ? 0 : text_w(count, cf) + 14;
-        float rh = 42, rw = 3 + 10 + 20 + 7 + lw + (cwid ? 7 + cwid : 0) + 26 + 3;
-        float rx = right - cw - 10 - rw, ry = cy - rh / 2;
-        bool hov = U.hoverBtn == 3;
-        if (hov) rx -= 1, ry -= 1;
-        {
-            Rot rot(-2, rx + rw / 2, cy);
-            D2D1_POINT_2F pts[5] = {{rx, ry}, {rx + rw, ry}, {rx + rw * .92f, ry + rh / 2}, {rx + rw, ry + rh}, {rx, ry + rh}};
-            auto g = poly_path(pts, 5);
-            fill_geo(g.Get(), rgb(INK), 3, 3);
-            rt->FillGeometry(g.Get(), brush(U.view ? ColorF(1, 1, 1) : rgb(PINK)));
-            rt->DrawGeometry(g.Get(), brush(rgb(INK)), 3);
-            D2D1_COLOR_F hf = U.view ? rgb(PINK) : ColorF(1, 1, 1);
-            draw_icon(L"heart", rx + 3 + 10, cy - 10, 20, rgb(0x4a2f08), &hf);
-            D2D1_COLOR_F tc = U.view ? rgb(INK) : ColorF(1, 1, 1);
-            text_c(label, lf, rx + 3 + 10 + 20 + 7, cy, lw + 4, tc);
-            if (cwid) {
-                float px = rx + 3 + 10 + 20 + 7 + lw + 7;
-                rt->FillRoundedRectangle(rr(px, cy - 10, cwid, 20, 10), brush(ColorF(1, 1, 1, .25f)));
-                text_c(count, cf, px, cy, cwid, tc, CENTER);
-            }
-        }
-        H.fb = RectF(rx, ry, rx + rw, ry + rh);
-        if (U.focus == FOCUS_TOP && U.focusSlot == FB_SLOT && U.sheet < 0) draw_focus(H.fb, 8);
     }
     if (openLayer) rt->PopLayer();
     rt->EndDraw();
 }
-
 bool ensure_target(int w, int h) {
     if (!G.ok) {
         if (FAILED(D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, G.f.GetAddressOf()))) return false;
@@ -1814,30 +1908,56 @@ const Row* row_at(int i) {
     return i >= 0 && i < (int)c.rows.size() ? &c.rows[i] : nullptr;
 }
 
+// Whether part slot of a row can take the highlight (a Gallery card of a
+// Pokémon not befriended can't).
+bool gallery_card_ok(int friendIndex);  // below, with the friends list
+bool slot_ok(const Row* r, int slot) {
+    if (!r || r->kind != GCARDS) return true;
+    return slot >= 0 && slot < (int)r->items.size() && gallery_card_ok(r->items[slot]);
+}
+int first_ok_slot(const Row* r) {
+    if (!r || r->kind != GCARDS) return 0;
+    for (size_t k = 0; k < r->items.size(); k++)
+        if (gallery_card_ok(r->items[k])) return (int)k;
+    return -1;
+}
+
 // Where the highlight starts on a line: the tab of this page, the chosen
 // choice, the first key slot or card.
 void enter_line(int focus) {
     int prevSlot = U.focusSlot;
     const Row* prev = row_at(U.focus);
-    bool fromCards = prev && prev->kind == CARDS;
+    bool fromCards = prev && (prev->kind == CARDS || prev->kind == GCARDS);
     U.focus = focus;
-    if (focus == FOCUS_TOP) U.focusSlot = U.view ? U.zone : U.tab;
+    if (focus == FOCUS_TOP) U.focusSlot = cur_tab();
     else if (const Row* r = row_at(focus)) {
         if (r->kind == CHOICE) U.focusSlot = std::max(0, r->get ? r->get() : 0);
         else if (r->kind == CARDS && fromCards) U.focusSlot = std::min(prevSlot, (int)r->items.size() - 1);
-        else if (r->kind == PLACES) {
+        else if (r->kind == GCARDS) {
+            int s = fromCards ? std::min(prevSlot, (int)r->items.size() - 1) : 0;
+            U.focusSlot = slot_ok(r, s) ? s : first_ok_slot(r);
+        } else if (r->kind == PLACES) {
             auto it = std::find(r->items.begin(), r->items.end(), U.place);
             U.focusSlot = it == r->items.end() ? 0 : (int)(it - r->items.begin());
         } else U.focusSlot = 0;
     } else U.focusSlot = 0;
 }
 
-void build_fb_rows();  // below, with the friends list
+void build_fb_rows();       // below, with the friends list
+void build_journal_rows();  // the other books, below
+void build_jukebox_rows();
+void build_gallery_rows();
+void build_book_rows() {
+    if (U.view == BK_JOURNAL) build_journal_rows();
+    else if (U.view == BK_JUKEBOX) build_jukebox_rows();
+    else if (U.view == BK_GALLERY) build_gallery_rows();
+    else build_fb_rows();
+}
 
-// The Friend Book's rows again (a filter, a place or the save changed),
-// keeping the highlight where it was as far as it can.
+// A book's rows again (a filter, a place or the save changed), keeping the
+// highlight where it was as far as it can.
 void fb_rebuild() {
-    build_fb_rows();
+    build_book_rows();
     g_fbDirty = false;
     if (!U.view) return;
     place_rows();
@@ -1847,37 +1967,35 @@ void fb_rebuild() {
 }
 
 void set_tab(int t) {
-    t = (t + NTABS) % NTABS;
+    int n = ntabs();
+    t = (t + n) % n;
     U.listenRow = U.listenSlot = -1;
     U.scroll = 0;
+    cur_tab() = t;
     if (U.view) {
-        U.zone = t;
         U.place = -1;
         U.sheet = -1;
         fb_rebuild();
-    } else {
-        U.tab = t;
     }
     place_rows();
     enter_line(FOCUS_TOP);  // the highlight stays on the tabs (the new one)
     changed();
 }
 
-// The settings or the Friend Book.
+// The book shown: Settings, Friend Book, Journal, Jukebox, Gallery.
 void set_view(int v) {
     if (getenv("WONDERPARK_F1_SCRIPT")) fprintf(stderr, "[f1] %.2f view %d\n", now_s(), v);
-    U.view = v;
+    U.view = (v % NBOOKS + NBOOKS) % NBOOKS;
     U.sheet = -1;
     U.zone = 0, U.place = -1, U.ffilter = 0;
     U.listenRow = U.listenSlot = -1;
     U.scroll = 0;
-    if (v) fb_rebuild();
+    if (U.view) fb_rebuild();
     place_rows();
     U.focus = FOCUS_TOP;
-    U.focusSlot = FB_SLOT;
+    U.focusSlot = BOOK_SLOT + U.view;
     changed();
 }
-
 void open_tab(bool on) {
     if (on == U.open) return;
     if (getenv("WONDERPARK_F1_SCRIPT")) fprintf(stderr, "[f1] %.2f %s\n", now_s(), on ? "open" : "close");
@@ -1998,14 +2116,15 @@ void close_sheet() {
 // A (controller), Enter or Space, a click: what's highlighted.
 void activate() {
     if (U.sheet >= 0) {
-        if (sheet_can_reveal() && !U.revealed) U.revealed = true, changed();
+        if (U.view == BK_FRIENDS && sheet_can_reveal() && !U.revealed) U.revealed = true, changed();
+        else if (U.view == BK_GALLERY) U.gbg = (U.gbg + 1) % 3, changed();  // the viewer: its background
         else close_sheet();
         return;
     }
     if (U.focus == FOCUS_TOP) {
         if (U.focusSlot == CLOSE_SLOT) open_tab(false);
-        else if (U.focusSlot == FB_SLOT) set_view(!U.view);
-        else if (U.focusSlot != (U.view ? U.zone : U.tab)) set_tab(U.focusSlot);
+        else if (U.focusSlot >= BOOK_SLOT) set_view(U.focusSlot - BOOK_SLOT);
+        else if (U.focusSlot != cur_tab()) set_tab(U.focusSlot);
         return;
     }
     if (U.focus == FOCUS_RESET) {
@@ -2020,8 +2139,8 @@ void activate() {
     else if (r->kind == CHOICE) choose(*r, U.focusSlot);
     else if (r->kind == PLAYERS) {
         if (U.focusSlot < 2) choose(*r, !r->get());
-    } else if (r->kind == CARDS) {
-        if (U.focusSlot >= 0 && U.focusSlot < (int)r->items.size()) open_sheet(r->items[U.focusSlot]);
+    } else if (r->kind == CARDS || r->kind == GCARDS) {
+        if (U.focusSlot >= 0 && U.focusSlot < (int)r->items.size() && slot_ok(r, U.focusSlot)) open_sheet(r->items[U.focusSlot]);
     } else if (r->kind == PLACES) {
         if (U.focusSlot >= 0 && U.focusSlot < (int)r->items.size() && U.place != r->items[U.focusSlot]) {
             U.place = r->items[U.focusSlot];
@@ -2033,23 +2152,25 @@ void activate() {
 // The stick, d-pad and arrow keys move the highlight: up and down between
 // lines, left and right between a line's parts (on a slider they move its
 // value, on a switch they set it).
-enum Nav { N_UP, N_DOWN, N_LEFT, N_RIGHT, N_OK, N_BACK, N_PREV, N_NEXT, N_BOOK };
+enum Nav { N_UP, N_DOWN, N_LEFT, N_RIGHT, N_OK, N_BACK, N_PREV, N_NEXT, N_BOOK, N_BOOK_PREV };
 int parts_on_line(const Row* r) {
     if (!r) return 0;
     if (r->kind == CHOICE) return (int)r->opts.size();
     if (r->kind == BIND || r->kind == PLAYERS) return 4;
-    if (r->kind == CARDS || r->kind == PLACES) return (int)r->items.size();
+    if (r->kind == CARDS || r->kind == PLACES || r->kind == GCARDS) return (int)r->items.size();
     return 0;
 }
 void nav(Nav n) {
     U.keyNav = true;
-    if (U.sheet >= 0) {  // the hint card: A shows more (or closes), B closes
+    if (U.sheet >= 0) {  // the hint card or viewer: A shows more (or closes), B closes
         if (n == N_OK) activate();
         else if (n == N_BACK) close_sheet();
-        else if (n == N_BOOK) close_sheet(), set_view(0);
+        else if (n == N_LEFT || n == N_RIGHT) {
+            if (U.view == BK_GALLERY) U.gbg = (U.gbg + (n == N_RIGHT ? 1 : 2)) % 3, changed();
+        } else if (n == N_BOOK || n == N_BOOK_PREV) close_sheet(), set_view(U.view + (n == N_BOOK ? 1 : -1));
         return;
     }
-    if (U.focus == -1 && n != N_BACK && n != N_PREV && n != N_NEXT && n != N_BOOK) {
+    if (U.focus == -1 && n != N_BACK && n != N_PREV && n != N_NEXT && n != N_BOOK && n != N_BOOK_PREV) {
         enter_line(FOCUS_TOP);
         changed();
         if (n != N_DOWN) return;
@@ -2062,10 +2183,19 @@ void nav(Nav n) {
     case N_RIGHT: {
         int d = n == N_RIGHT ? 1 : -1;
         if (U.focus == FOCUS_TOP) {
-            U.focusSlot = std::max(0, std::min(CLOSE_SLOT, U.focusSlot + d));
+            // The left tabs there are, the bookmarks, Close.
+            std::vector<int> slots;
+            for (int i = 0; i < ntabs(); i++) slots.push_back(i);
+            for (int b = 0; b < NBOOKS; b++) slots.push_back(BOOK_SLOT + b);
+            slots.push_back(CLOSE_SLOT);
+            auto it = std::find(slots.begin(), slots.end(), U.focusSlot);
+            int i = it == slots.end() ? 0 : (int)(it - slots.begin());
+            U.focusSlot = slots[std::max(0, std::min((int)slots.size() - 1, i + d))];
             changed();
         } else if (int np = parts_on_line(r)) {
-            U.focusSlot = std::max(0, std::min(np - 1, U.focusSlot + d));
+            int s = U.focusSlot + d;
+            while (s >= 0 && s < np && !slot_ok(r, s)) s += d;  // (past Gallery cards not befriended)
+            if (s >= 0 && s < np) U.focusSlot = s;
             changed();
         } else if (r && r->kind == SLIDER) {
             step(*r, d);
@@ -2076,9 +2206,10 @@ void nav(Nav n) {
     }
     case N_OK: activate(); break;
     case N_BACK: open_tab(false); break;
-    case N_PREV: set_tab((U.view ? U.zone : U.tab) - 1); break;
-    case N_NEXT: set_tab((U.view ? U.zone : U.tab) + 1); break;
-    case N_BOOK: set_view(!U.view); break;
+    case N_PREV: set_tab(cur_tab() - 1); break;
+    case N_NEXT: set_tab(cur_tab() + 1); break;
+    case N_BOOK: set_view(U.view + 1); break;
+    case N_BOOK_PREV: set_view(U.view - 1); break;
     }
     if (getenv("WONDERPARK_F1_SCRIPT"))  // tests: where the highlight is
         fprintf(stderr, "[f1] nav %d: view %d, tab %d, focus %d, part %d, window_mode %d\n", (int)n, U.view, U.tab, U.focus,
@@ -2086,19 +2217,23 @@ void nav(Nav n) {
 }
 
 // ---- Mouse: what's under a window point.
-// what: 1 close, 2 reset (or Back to Settings), 3 the Friend Book ribbon,
-// 4 a row's part, 5 the hint card's close, 6 its "show more", 7 an index tab,
-// 8 inside the hint card.
+// what: 1 close, 2 reset (or Back to Settings), 4 a row's part, 5 the hint
+// card's close, 6 its "show more", 7 an index tab, 8 inside the hint card,
+// 9 a bookmark.
 struct Hit { int what = 0; int row = -1, part = -1; };
 Hit hit_test(int px, int py) {
     Hit h;
     float x = px / H.k - H.tabX, y = py / H.k - 10;
     auto in = [&](D2D1_RECT_F r) { return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom; };
     if (in(H.close)) return {1};
-    if (in(H.fb)) return {3};
+    for (int b = 0; b < NBOOKS; b++)
+        if (in(H.books[b])) return {9, -1, b};
     if (U.sheet >= 0) {
         if (in(H.sheetClose)) return {5};
-        if (sheet_can_reveal() && !U.revealed && in(H.reveal)) return {6};
+        if (U.view == BK_FRIENDS && sheet_can_reveal() && !U.revealed && in(H.reveal)) return {6};
+        if (U.view == BK_GALLERY)
+            for (int b = 0; b < 3; b++)
+                if (in(H.bg[b])) return {10, -1, b};
         if (in(H.sheet)) return {8};
     }
     if (in(H.reset)) return {2};
@@ -2112,10 +2247,12 @@ Hit hit_test(int px, int py) {
         const Placed& p = g_placed[i];
         if (listY < p.y || listY > p.y + p.h) continue;
         const Row& r = c.rows[i];
+        if (r.kind == STATS) return h;  // (nothing to press)
         if (!p.parts.empty()) {
             for (size_t s = 0; s < p.parts.size(); s++) {
                 const D2D1_RECT_F& b = p.parts[s];
-                if (lx >= b.left && lx <= b.right && listY >= b.top && listY <= b.bottom) return {4, (int)i, (int)s};
+                if (lx >= b.left && lx <= b.right && listY >= b.top && listY <= b.bottom)
+                    return slot_ok(&r, (int)s) ? Hit{4, (int)i, (int)s} : h;
             }
         } else if (r.kind == TOGGLE || r.kind == SLIDER || r.kind == TEXTBOX) {
             if (lx >= p.ctrlX - 8 && lx <= p.ctrlX + p.ctrlW + 8 && listY >= p.ctrlY - 8 && listY <= p.ctrlY + p.ctrlH + 8)
@@ -2125,7 +2262,6 @@ Hit hit_test(int px, int py) {
     }
     return h;
 }
-
 void slider_drag(int row, int px) {
     const Row* r = row_at(row);
     if (!r || r->kind != SLIDER) return;
@@ -2839,8 +2975,13 @@ void portrait(Friend& f, int index, float cx, float cy, float r, bool unmet, D2D
     circle(cx, cy, r, rgb(kCardColors[index % 8]));
     G.rt->FillEllipse(D2D1::Ellipse(Point2F(cx, cy), r, r), rglow(cx - r * .3f, cy - r * .4f, r * 1.1f, ColorF(1, 1, 1, .4f)).Get());
     if (ID2D1Bitmap* b = bitmap(f.icon)) {
+        // Inside the circle only (some icons have a square backdrop).
+        ComPtr<ID2D1EllipseGeometry> clip;
+        G.f->CreateEllipseGeometry(D2D1::Ellipse(Point2F(cx, cy), r - 1, r - 1), &clip);
+        G.rt->PushLayer(D2D1::LayerParameters(D2D1::InfiniteRect(), clip.Get()), nullptr);
         float s = r * .92f;
         G.rt->DrawBitmap(b, RectF(cx - s, cy - s, cx + s, cy + s), 1, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
+        G.rt->PopLayer();
     }
     circle(cx, cy, r, ColorF(0, 0, 0, 0), r > 30 ? 3.f : 2.5f);
 }
@@ -2851,7 +2992,12 @@ void hearts(float cx, float cy, int pts) {
         circle(x + 5, cy, 5, pts >= (i + 1) * 20 ? rgb(PINK) : ColorF(1, 1, 1), 1.5f);
 }
 
+void draw_book_row(int i, const Row& r, const Placed& p, float y0, float dy, bool focused);  // the other books, below
 void draw_fb_row(int i, const Row& r, const Placed& p, float y0, float dy, bool focused) {
+    if (r.kind >= STATS) {
+        draw_book_row(i, r, p, y0, dy, focused);
+        return;
+    }
     const Category& c = cur();
     if (r.kind == FBTOP) {
         if (!r.label.empty()) {
@@ -3146,6 +3292,417 @@ void draw_sheet(float t) {
         if (!f.about.empty()) text(f.about, fmt(L"Nunito", 700, 14), bx, y, bw, soft);
     }
     G.rt->PopAxisAlignedClip();
+}
+
+// ---- The other books: Journal, Jukebox, Gallery (bookmarks F3, F4, F5).
+
+// The Journal (hle_journal.c): what the save says, and what Wonderpark has
+// counted since it was installed. Not counted yet: jumps, Thunderbolts,
+// photos, distance, attraction scores and medals ("Coming soon").
+JournalSlot g_journal;
+bool g_journalOk = false;
+void journal_read() {
+    int slot = hle_journal_slot();
+    g_journalOk = slot >= 0 && hle_journal_copy(slot, &g_journal);
+}
+std::wstring hm_text(int s) {
+    wchar_t b[32];
+    if (s >= 3600) swprintf(b, 32, L"%dh %02dm", s / 3600, s / 60 % 60);
+    else swprintf(b, 32, L"%dm", s / 60);
+    return b;
+}
+std::wstring thousands(int n) {
+    std::wstring s = std::to_wstring(n), out;
+    for (size_t i = 0; i < s.size(); i++) {
+        if (i && (s.size() - i) % 3 == 0) out += L',';
+        out += s[i];
+    }
+    return out;
+}
+// "Nov 19" from "2026-11-19".
+std::wstring day_text(const char* day) {
+    static const wchar_t* mon[12] = {L"Jan", L"Feb", L"Mar", L"Apr", L"May", L"Jun", L"Jul", L"Aug", L"Sep", L"Oct", L"Nov", L"Dec"};
+    int y = 0, m = 0, d = 0;
+    if (sscanf(day, "%d-%d-%d", &y, &m, &d) != 3 || m < 1 || m > 12) return widen(day);
+    return std::wstring(mon[m - 1]) + L" " + std::to_wstring(d);
+}
+const wchar_t* const kAttractionNames[4] = {L"Cake Contraption", L"Dance Inferno", L"Power Bash", L"Flight of Fancy"};
+
+void build_journal_rows() {
+    Category& c = g_fb;
+    static const wchar_t* names[3] = {L"Your adventure", L"Attractions", L"Milestones"};
+    static const wchar_t* descs[3] = {L"Everything you've done in the park", L"Times played, counted since Wonderpark was installed",
+                                      L"Big moments, in order"};
+    TabInfo ti = tab_info(U.jtab);
+    c.id = L"journal";
+    c.name = names[U.jtab];
+    c.desc = descs[U.jtab];
+    c.gem = c.acc = ti.gem;
+    c.ink = ti.ink;
+    c.rows.clear();
+    journal_read();
+    if (!g_journalOk || hle_journal_save_value(0) < 0) {
+        Row top;
+        top.kind = FBTOP;
+        top.label = L"Load a save first";
+        top.desc = L"The Journal reads the game you're playing.";
+        c.rows.push_back(top);
+        return;
+    }
+    if (U.jtab == 0) {
+        Row st;
+        st.kind = STATS;
+        st.items = {0, 1, 2, 3, 4, 5, 6, 7};
+        c.rows.push_back(st);
+        c.rows.push_back(head(L"This week"));
+        Row wk;
+        wk.kind = WEEK;
+        c.rows.push_back(wk);
+        c.rows.push_back(note(L"Play time, berries and friends come from your save. Play time per day, attractions played and milestones are counted "
+                              L"since Wonderpark was installed. Photos, distance, Thunderbolts and jumps are coming soon."));
+    } else if (U.jtab == 1) {
+        for (int a = 0; a < 4; a++) {
+            Row r;
+            r.kind = ACARD;
+            r.act = a;
+            c.rows.push_back(r);
+        }
+        c.rows.push_back(note(L"Best scores and medals are coming soon: where the game keeps them hasn't been found yet."));
+    } else {
+        for (int m = 0; m < g_journal.milestone_count; m++) {
+            Row r;
+            r.kind = MILESTONE;
+            r.act = m;
+            c.rows.push_back(r);
+        }
+        Row t;
+        t.kind = TIP;
+        t.desc = g_journal.milestone_count ? L"Counted since Wonderpark was installed: your first friend, each area you reach, and 50, 100, 150 and 194 friends."
+                                           : L"No milestones yet. From now on Wonderpark notes your first friend, each area you reach, and 50, 100, 150 and 194 friends, with the day.";
+        c.rows.push_back(t);
+    }
+}
+
+void build_jukebox_rows() {
+    Category& c = g_fb;
+    TabInfo ti = tab_info(U.ktab);
+    c.id = L"jukebox";
+    c.name = L"Jukebox";
+    c.desc = L"Every song you've heard in the park";
+    c.gem = c.acc = ti.gem;
+    c.ink = ti.ink;
+    c.rows.clear();
+    Row s;
+    s.kind = SOONBOX;
+    s.label = L"The Jukebox isn't built yet";
+    s.desc = L"Here you'll play the game's own music, from your disc, over the paused game. Each song unlocks the first time the game "
+             L"plays it; ones you haven't heard yet show as ???.";
+    c.rows.push_back(s);
+}
+
+bool gallery_card_ok(int idx) {
+    return g_friendsState == 2 && idx >= 0 && idx < (int)g_friends->size() && fstate((*g_friends)[idx]) == 2;
+}
+
+void build_gallery_rows() {
+    Category& c = g_fb;
+    c.id = L"gallery";
+    c.gem = c.acc = kZoneTabs[U.gzone].gem;
+    c.ink = kZoneTabs[U.gzone].ink;
+    c.name = U.gzone == 0 ? std::wstring(L"Gallery") : zone_name(U.gzone);
+    c.rows.clear();
+    if (!save_loaded()) {
+        c.desc = L"Your friends, on display";
+        Row top;
+        top.kind = FBTOP;
+        top.label = g_friendsState == 3 ? L"Couldn't read the disc" : g_friendsState != 2 ? L"Reading…" : L"Load a save first";
+        c.rows.push_back(top);
+        return;
+    }
+    std::vector<int> list;
+    int made = 0;
+    for (size_t i = 0; i < g_friends->size(); i++) {
+        const Friend& f = (*g_friends)[i];
+        if (U.gzone && zone_of(f.pokemon) != U.gzone) continue;
+        list.push_back((int)i);
+        made += fstate(f) == 2;
+    }
+    c.desc = std::to_wstring(made) + L" of " + std::to_wstring(list.size()) + L" friends on display · befriend more to fill it";
+    for (size_t k = 0; k < list.size(); k += 4) {
+        Row r;
+        r.kind = GCARDS;
+        r.items.assign(list.begin() + k, list.begin() + std::min(list.size(), k + 4));
+        c.rows.push_back(r);
+    }
+    Row tip;
+    tip.kind = TIP;
+    tip.desc = L"Pick a friend to see them up close. Pokémon you haven't befriended stay hidden.";
+    c.rows.push_back(tip);
+}
+
+// A sticker card: cream, ink outline, a hard shadow.
+void cream_card(D2D1_RECT_F b, float rot = 0, float radius = 12) {
+    Rot r(rot, (b.left + b.right) / 2, (b.top + b.bottom) / 2);
+    sticker(b, radius, rgb(0xfff8e6), 3, 2.5f);
+}
+// A small "SOON" stamp at (x, cy).
+void soon_tag(float x, float cy) {
+    IDWriteTextFormat* f = fmt(L"Fredoka", 700, 9.5f);
+    float w = text_w(L"SOON", f, .9f) + 12;
+    Rot r(-6, x + w / 2, cy);
+    G.rt->DrawRoundedRectangle(rr(x + 1, cy - 8, w - 2, 16, 4), brush(rgb(0xe0533f)), 2);
+    text_c(L"SOON", f, x, cy, w, rgb(0xe0533f), CENTER, .9f);
+}
+
+void draw_book_row(int i, const Row& r, const Placed& p, float y0, float dy, bool focused) {
+    const Category& c = cur();
+    const D2D1_COLOR_F soft = rgb(0x6b5a45);
+    if (r.kind == STATS) {
+        struct S { const wchar_t *icon, *label; uint32_t color; };
+        static const S kS[8] = {{L"clock", L"Play time", 0x4a7fe0}, {L"berry", L"Berries collected", 0x8b5bd2},
+                                {L"heart", L"Friends made", 0xe2457f}, {L"camera", L"Photos taken", 0x3fb6c8},
+                                {L"foot", L"Distance run", 0x5bc26a}, {L"bolt", L"Thunderbolts", 0xf6d44a},
+                                {L"jump", L"Jumps", 0xf39a2b}, {L"tent", L"Attractions played", 0xe2457f}};
+        int attractions = 0;
+        for (int a = 0; a < 4; a++) attractions += g_journal.attractions[a];
+        for (size_t k = 0; k < r.items.size() && k < 8; k++) {
+            D2D1_RECT_F b = shift(p.parts[k], 0, dy);
+            float rot = k % 2 ? .8f : -1.f;
+            cream_card(b, rot, 12);
+            Rot rr2(rot, (b.left + b.right) / 2, (b.top + b.bottom) / 2);
+            float cy = (b.top + b.bottom) / 2;
+            circle(b.left + 32, cy, 20, rgb(kS[k].color), 2.5f);
+            D2D1_COLOR_F white = ColorF(1, 1, 1);
+            draw_icon(kS[k].icon, b.left + 32 - 11, cy - 11, 22, rgb(INK), k == 2 ? &white : nullptr);
+            std::wstring v;
+            bool soon = false;
+            switch (k) {
+            case 0: v = hm_text(std::max(0, hle_journal_save_value(0))); break;
+            case 1: v = thousands(std::max(0, hle_journal_save_value(1))); break;
+            case 2: v = std::to_wstring(friends_made()); break;
+            case 7: v = std::to_wstring(attractions); break;
+            default: v = L"—", soon = true; break;
+            }
+            float tx = b.left + 62, tw = b.right - tx - 8;
+            text_c(v, fmt(L"Fredoka", 700, 22), tx, cy - 9, tw, rgb(INK));
+            text_c(kS[k].label, fmt(L"Nunito", 800, 12), tx, cy + 15, tw, soft);
+            if (soon) soon_tag(tx + text_w(v, fmt(L"Fredoka", 700, 22)) + 8, cy - 9);
+            if (focused) draw_focus(b, 12);
+        }
+        return;
+    }
+    if (r.kind == WEEK) {
+        D2D1_RECT_F b = RectF(ROW_X, y0 + 12, ROW_X + ROW_W, y0 + 12 + 150);
+        cream_card(b, 0, 12);
+        // The last seven days, today last.
+        int secs[7] = {}, mx = 0;
+        wchar_t labels[7][4];
+        time_t now = time(nullptr);
+        for (int d = 0; d < 7; d++) {
+            time_t t0 = now - (6 - d) * 86400;
+            struct tm lt;
+            localtime_s(&lt, &t0);
+            char key[11];
+            strftime(key, sizeof(key), "%Y-%m-%d", &lt);
+            static const wchar_t* wd[7] = {L"Sun", L"Mon", L"Tue", L"Wed", L"Thu", L"Fri", L"Sat"};
+            wcscpy_s(labels[d], 4, wd[lt.tm_wday]);
+            for (int k = 0; g_journalOk && k < g_journal.day_count; k++)
+                if (!strcmp(g_journal.days[k].day, key)) secs[d] = g_journal.days[k].seconds;
+            mx = std::max(mx, secs[d]);
+        }
+        float bw = (ROW_W - 40) / 7, base = b.bottom - 30, hmax = 82;
+        for (int d = 0; d < 7; d++) {
+            float x = b.left + 20 + d * bw, h = mx ? hmax * secs[d] / mx : 0;
+            if (secs[d] && h < 4) h = 4;
+            if (h > 0) {
+                G.rt->FillRoundedRectangle(rr(x + 10 + 2, base - h + 2, bw - 20, h, 5), brush(rgb(INK)));
+                G.rt->FillRoundedRectangle(rr(x + 10, base - h, bw - 20, h, 5), brush(rgb(c.gem)));
+                G.rt->DrawRoundedRectangle(rr(x + 10 + 1.25f, base - h + 1.25f, bw - 22.5f, h - 2.5f, 4), brush(rgb(INK)), 2.5f);
+                text_c(hm_text(secs[d]), fmt(L"Nunito", 800, 10.5f), x, base - h - 10, bw, soft, CENTER);
+            }
+            text_c(labels[d], fmt(L"Fredoka", 600, 12), x, base + 14, bw, d == 6 ? rgb(INK) : soft, CENTER);
+        }
+        G.rt->DrawLine(Point2F(b.left + 16, base), Point2F(b.right - 16, base), brush(rgb(INK, .35f)), 2);
+        if (!mx) text_c(L"No play time counted yet this week", fmt(L"Nunito", 800, 13), b.left, base - 44, ROW_W, soft, CENTER);
+        return;
+    }
+    if (r.kind == ACARD) {
+        D2D1_RECT_F b = RectF(ROW_X, y0 + 10, ROW_X + ROW_W, y0 + 10 + 78);
+        cream_card(b, i % 2 ? .5f : -.6f, 12);
+        float cy = (b.top + b.bottom) / 2;
+        circle(b.left + 40, cy, 24, rgb(0xd9d2c0), 2.5f);
+        text_c(L"?", fmt(L"Fredoka", 700, 20), b.left + 16, cy, 48, rgb(0x8f826a), CENTER);
+        int n = g_journalOk ? g_journal.attractions[r.act] : 0;
+        text_c(kAttractionNames[r.act], fmt(L"Fredoka", 600, 18), b.left + 78, cy - 10, 250, rgb(INK));
+        text_c(L"Played " + std::to_wstring(n) + (n == 1 ? L" time" : L" times"), fmt(L"Nunito", 800, 12.5f), b.left + 78, cy + 14, 250, soft);
+        text_c(L"Best score", fmt(L"Nunito", 800, 11.5f), b.right - 120, cy - 12, 104, soft, RIGHT);
+        soon_tag(b.right - 64, cy + 12);
+        if (focused) draw_focus(b, 12);
+        return;
+    }
+    if (r.kind == MILESTONE) {
+        if (!g_journalOk || r.act >= g_journal.milestone_count) return;
+        const JournalMilestone& m = g_journal.milestones[r.act];
+        std::wstring title;
+        static const uint32_t dots[3] = {0xe2457f, 0x4a7fe0, 0xf39a2b};
+        if (m.kind == JOURNAL_FIRST_FRIEND) {
+            std::wstring who;
+            if (g_friendsState == 2)
+                for (auto& f : *g_friends)
+                    if (f.pokemon == m.value) who = f.name;
+            title = who.empty() ? L"First friend!" : L"First friend: " + who;
+        } else if (m.kind == JOURNAL_AREA) {
+            char label[16];
+            snprintf(label, sizeof(label), "Fd%02d%02d", m.value >> 8, m.value & 255);
+            std::wstring place = disc_text(label, L"");
+            if (place.empty()) snprintf(label, sizeof(label), "Fd%02d", m.value >> 8), place = disc_text(label, L"a new place");
+            title = L"Reached " + place;
+        } else {
+            title = std::to_wstring(m.value) + L" friends!";
+        }
+        float lx = ROW_X + 12;
+        G.rt->DrawLine(Point2F(lx, y0), Point2F(lx, y0 + p.h), brush(rgb(0xffe2b4, .55f)), 2.5f, G.dashed.Get());
+        circle(lx, y0 + p.h / 2, 8, rgb(dots[(m.kind - 1) % 3]), 2.5f);
+        D2D1_RECT_F b = RectF(ROW_X + 34, y0 + 6, ROW_X + ROW_W, y0 + 6 + 62);
+        cream_card(b, 0, 10);
+        text_c(title, fmt(L"Fredoka", 600, 16), b.left + 16, b.top + 22, b.right - b.left - 30, rgb(INK));
+        text_c(day_text(m.day), fmt(L"Nunito", 800, 12), b.left + 16, b.top + 44, 200, soft);
+        if (focused) draw_focus(b, 10);
+        return;
+    }
+    if (r.kind == SOONBOX) {
+        D2D1_RECT_F b = RectF(ROW_X, y0 + 14, ROW_X + ROW_W, y0 + p.h - 6);
+        G.rt->DrawRoundedRectangle(rr(b.left + 1.25f, b.top + 1.25f, b.right - b.left - 2.5f, b.bottom - b.top - 2.5f, 14), brush(rgb(0xffe2b4, .6f)), 2.5f,
+                                   G.dashed.Get());
+        text(r.label, fmt(L"Fredoka", 600, 20), b.left + 20, b.top + 16, ROW_W - 40, rgb(PAGE_TEXT));
+        stamp(L"Coming soon", b.left + 20, b.top + 60, false);
+        text(r.desc, fmt(L"Nunito", 700, 13.5f), b.left + 20, b.top + 82, ROW_W - 40, rgb(PAGE_SOFT));
+        return;
+    }
+    if (r.kind == GCARDS && g_friendsState == 2) {
+        for (size_t k = 0; k < r.items.size(); k++) {
+            int idx = r.items[k];
+            Friend& f = (*g_friends)[idx];
+            bool friendOk = fstate(f) == 2;
+            bool hi = friendOk && ((focused && U.focusSlot == (int)k) || (U.hoverRow == i && U.hoverPart == (int)k));
+            D2D1_RECT_F b = shift(p.parts[k], 0, dy + (hi ? -3.f : 0.f));
+            float cx = (b.left + b.right) / 2, pcy = b.top + 14 + 32;
+            if (friendOk) {
+                cream_card(b, 0, 16);
+                portrait(f, idx, cx, pcy, 32, false, rgb(INK), rgb(INK));
+                text_fit(f.name, fmt(L"Nunito", 800, 13), b.left + 4, b.top + 88, b.right - b.left - 8, rgb(INK), CENTER);
+            } else {
+                // Not befriended: who it is stays hidden.
+                G.rt->DrawRoundedRectangle(rr(b.left + 1.25f, b.top + 1.25f, b.right - b.left - 2.5f, b.bottom - b.top - 2.5f, 15),
+                                           brush(rgb(0xffe2b4, .55f)), 2.5f, G.dashed.Get());
+                circle(cx, pcy, 32, ColorF(0, 0, 0));
+                text_c(L"???", fmt(L"Nunito", 800, 13), b.left, b.top + 98, b.right - b.left, rgb(0xffeccd, .75f), CENTER);
+            }
+            if (focused && U.focusSlot == (int)k && friendOk) draw_focus(b, 16);
+        }
+    }
+}
+
+// The Gallery's viewer: the friend on a pedestal, in front of a background
+// drawn by us. The 3D model view is coming: for now its icon, large.
+void draw_viewer(float t) {
+    (void)t;
+    if (g_friendsState != 2 || U.sheet < 0 || U.sheet >= (int)g_friends->size()) return;
+    Friend& f = (*g_friends)[U.sheet];
+    int z = zone_of(f.pokemon);
+    float sx = 24, sy = 156, sw = PANEL_W - 24 - 12, sh = PANEL_H - sy + 4;
+    H.sheet = RectF(PANEL_X + sx, PANEL_Y + sy - 12, PANEL_X + sx + sw, PANEL_Y + PANEL_H);
+    G.rt->FillRoundedRectangle(rr(sx, sy - 8, sw, sh, 8), brush(rgb(INK, .12f)));
+    auto page = rrect_path(sx, sy, sw, sh, 8, 8, 0, 0);
+    G.rt->FillGeometry(page.Get(), grad(Point2F(sx, 0), Point2F(sx + sw, 0), {{0, rgb(0xf3e6c6)}, {.08f, rgb(0xfff8e6)}, {1, rgb(0xfff8e6)}}).Get());
+    G.rt->DrawGeometry(page.Get(), brush(rgb(0x3b2414)), 3);
+    {
+        float tx0 = sx + sw * .4f;
+        Rot rot(-3, tx0 + 45, sy - 1);
+        tape(RectF(tx0, sy - 12, tx0 + 90, sy + 10), rgb(GOLD, .9f), .3f, 6, {{0, 0}, {1, 0}, {1, 1}, {0, 1}});
+    }
+    float x0 = sx + 20, w = sw - 40, y = sy + 18;
+    text_fit(f.name, fmt(L"Fredoka", 700, 26), x0, y, w - 50, rgb(INK), LEFT);
+    {
+        // Where it lives; Friend.
+        std::wstring where = place_name(place_of(f.pokemon));
+        if (z > 0) where += (where.empty() ? L"" : L", ") + zone_name(z);
+        float cx = x0, cy = y + 50;
+        IDWriteTextFormat* cf = fmt(L"Nunito", 800, 12);
+        if (!where.empty()) {
+            float cw = 2 + 10 + 19 + text_w(where, cf) + 12;
+            sticker(RectF(cx, cy - 13, cx + cw, cy + 13), 8, ColorF(1, 1, 1), 0, 2);
+            draw_icon(L"pin", cx + 12, cy - 7, 14, rgb(INK));
+            text_c(where, cf, cx + 31, cy, cw, rgb(INK));
+            cx += cw + 6;
+        }
+        float fw = 2 + 10 + 19 + text_w(L"Friend", cf) + 12;
+        sticker(RectF(cx, cy - 13, cx + fw, cy + 13), 8, rgb(GOLD), 0, 2);
+        draw_star(cx + 19, cy, 14, rgb(INK), rgb(INK), 0);
+        text_c(L"Friend", cf, cx + 31, cy, fw, rgb(INK));
+    }
+    {
+        float bx = sx + sw - 20 - 38, by = sy + 16;
+        sticker(RectF(bx, by, bx + 38, by + 38), 10, U.hoverBtn == 5 ? rgb(0xfff3cf) : ColorF(1, 1, 1), 2, 3);
+        draw_icon(L"close", bx + 9, by + 9, 20, rgb(INK));
+        H.sheetClose = RectF(PANEL_X + bx, PANEL_Y + by, PANEL_X + bx + 38, PANEL_Y + by + 38);
+    }
+    // The stage: Park (sky and grass), Studio (soft grey), Night (stars).
+    y += 80;
+    D2D1_RECT_F v = RectF(x0, y, x0 + w, y + 230);
+    G.rt->PushLayer(D2D1::LayerParameters(D2D1::InfiniteRect(), rrect_path(v.left, v.top, w, 230, 14, 14, 14, 14).Get()), nullptr);
+    if (U.gbg == 0) {
+        G.rt->FillRectangle(v, vgrad(v.top, v.bottom, rgb(0xcdeefc), rgb(0xeaf8ff)).Get());
+        G.rt->FillEllipse(D2D1::Ellipse(Point2F((v.left + v.right) / 2, v.bottom + 40), w * .75f, 120), brush(rgb(0x7ad68a)));
+    } else if (U.gbg == 1) {
+        G.rt->FillRectangle(v, rglow((v.left + v.right) / 2, v.top + 90, 300, rgb(0xffffff)).Get());
+        G.rt->FillRectangle(v, brush(rgb(0xd8dbe2, .6f)));
+    } else {
+        G.rt->FillRectangle(v, vgrad(v.top, v.bottom, rgb(0x16224f), rgb(0x2e4388)).Get());
+        for (int s = 0; s < 40; s++)
+            G.rt->FillEllipse(D2D1::Ellipse(Point2F(v.left + (s * 97 % 457) / 457.f * w, v.top + (s * 61 % 211) / 211.f * 150), 1.3f, 1.3f),
+                              brush(ColorF(1, 1, 1, .8f)));
+    }
+    float pcx = (v.left + v.right) / 2, pcy = v.top + 112;
+    G.rt->FillEllipse(D2D1::Ellipse(Point2F(pcx, v.top + 192), 96, 20), brush(rgb(INK, .18f)));
+    G.rt->DrawEllipse(D2D1::Ellipse(Point2F(pcx, v.top + 188), 92, 18), brush(rgb(INK, .6f)), 2.5f, G.dashed.Get());
+    portrait(f, U.sheet, pcx, pcy, 70, false, rgb(INK), rgb(INK));
+    G.rt->PopLayer();
+    G.rt->DrawRoundedRectangle(rr(v.left + 1.25f, v.top + 1.25f, w - 2.5f, 227.5f, 13), brush(rgb(INK)), 2.5f);
+    stamp(L"3D view coming soon", v.right - 190, v.top + 22, false, true, true);
+    // Animation (with the 3D view), Background, Save a picture.
+    y = v.bottom + 16;
+    IDWriteTextFormat* lf = fmt(L"Nunito", 800, 13);
+    text_c(L"Background", lf, x0, y + 18, 100, rgb(INK));
+    const wchar_t* bgs[3] = {L"Park", L"Studio", L"Night"};
+    float px = x0 + 104;
+    for (int b = 0; b < 3; b++) {
+        float pw = pill_w(bgs[b]);
+        D2D1_RECT_F pb = RectF(px, y, px + pw, y + 36);
+        if (U.gbg == b) {
+            Rot rot(-2.5f, (pb.left + pb.right) / 2, y + 18);
+            sticker(shift(pb, -1, -1), 11, rgb(GOLD), 3);
+        } else {
+            sticker(pb, 11, U.hoverBtn == 10 + b ? rgb(0xfff3cf) : ColorF(1, 1, 1), 2);
+        }
+        text_c(bgs[b], pill_font(false), pb.left, y + 18, pw, rgb(INK), CENTER);
+        H.bg[b] = RectF(PANEL_X + pb.left, PANEL_Y + pb.top, PANEL_X + pb.right, PANEL_Y + pb.bottom);
+        px += pw + 7;
+    }
+    y += 50;
+    text_c(L"Animation", lf, x0, y + 18, 100, rgb(INK));
+    {
+        Fade fd(.55f);
+        float aw = pill_w(L"Idle", false, true);
+        sticker(RectF(x0 + 104, y, x0 + 104 + aw, y + 36), 11, ColorF(1, 1, 1), 0, 2.5f, rgb(INK), true);
+        text_c(L"Idle", pill_font(false), x0 + 104 + 14, y + 18, 40, rgb(INK));
+        text_c(L"SOON", fmt(L"Nunito", 800, 10), x0 + 104 + 14 + text_w(L"Idle", pill_font(false)) + 6, y + 19, 40, rgb(0xc9346c));
+        float sw2 = pill_w(L"Save a picture", false, true);
+        float sx2 = x0 + w - sw2;
+        sticker(RectF(sx2, y, sx2 + sw2, y + 36), 11, ColorF(1, 1, 1), 0, 2.5f, rgb(INK), true);
+        text_c(L"Save a picture", pill_font(false), sx2 + 14, y + 18, sw2, rgb(INK));
+        text_c(L"SOON", fmt(L"Nunito", 800, 10), sx2 + 14 + text_w(L"Save a picture", pill_font(false)) + 6, y + 19, 40, rgb(0xc9346c));
+    }
 }
 
 // Text in the game's font: white with the menu's dark red outline, `h`
@@ -3504,6 +4061,22 @@ extern "C" const uint32_t* settings_ui_draw(int w, int h) {
                     changed();
                     pending = std::to_string(NTABS + 3) + "b-hint";
                 }
+            } else if (s >= 2 * NTABS + 4 && s <= 2 * NTABS + 9) {
+                // The other books: the Journal's three pages, the Jukebox, the
+                // Gallery and its viewer (on the first friend).
+                int k = s - (2 * NTABS + 4);
+                if (k == 0) close_sheet(), set_view(BK_JOURNAL), pending = "11-journal";
+                else if (k == 1) set_tab(1), pending = "11b-journal-attractions";
+                else if (k == 2) set_tab(2), pending = "11c-journal-milestones";
+                else if (k == 3) set_view(BK_JUKEBOX), pending = "12-jukebox";
+                else if (k == 4) set_view(BK_GALLERY), pending = "13-gallery";
+                else {
+                    for (auto& r : g_fb.rows)
+                        if (r.kind == GCARDS && U.sheet < 0)
+                            for (int idx : r.items)
+                                if (U.sheet < 0 && gallery_card_ok(idx)) open_sheet(idx);
+                    if (U.sheet >= 0) pending = "13b-gallery-viewer";
+                }
             } else {
                 open_tab(false);
                 g_shotStep = -1;
@@ -3648,7 +4221,9 @@ extern "C" void settings_ui_controller(uint32_t b) {
     if (down & XPAD_B) nav(N_BACK);
     if (down & XPAD_LB) nav(N_PREV);
     if (down & XPAD_RB) nav(N_NEXT);
-    if (down & XPAD_Y) nav(N_BOOK);
+    if (down & XPAD_RT) nav(N_BOOK);       // the next book
+    if (down & XPAD_LT) nav(N_BOOK_PREV);  // the one before
+    if (down & XPAD_Y) set_view(U.view == BK_FRIENDS ? BK_SETTINGS : BK_FRIENDS);
 }
 
 extern "C" int settings_ui_message(void* hwnd, unsigned msg, uintptr_t wp, intptr_t lp) {
@@ -3656,7 +4231,21 @@ extern "C" int settings_ui_message(void* hwnd, unsigned msg, uintptr_t wp, intpt
     if (g_wp_headless) return 0;
     bool keyDown = msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN;
     if (keyDown && wp == VK_F1) {
-        if (!(lp & (1 << 30))) open_tab(!U.open);
+        // F1: opens and closes the notebook; in a book, back to Settings.
+        if (!(lp & (1 << 30))) {
+            if (U.open && U.view != BK_SETTINGS && G.ok) {
+                if (U.sheet >= 0) close_sheet();
+                set_view(BK_SETTINGS);
+            } else {
+                open_tab(!U.open);
+            }
+        }
+        return 1;
+    }
+    if (keyDown && wp >= VK_F2 && wp <= VK_F5 && !U.open && !(lp & (1 << 30)) && G.ok) {
+        // F2-F5 with the notebook closed: opened at that book.
+        open_tab(true);
+        set_view((int)(wp - VK_F1));
         return 1;
     }
     if (!U.open && O.shown && g_artState == 2) {
@@ -3737,7 +4326,10 @@ extern "C" int settings_ui_message(void* hwnd, unsigned msg, uintptr_t wp, intpt
             if (U.sheet >= 0) close_sheet();
             else open_tab(false);
             break;
-        case VK_F2: nav(N_BOOK); break;
+        case VK_F2:
+        case VK_F3:
+        case VK_F4:
+        case VK_F5: set_view(U.view == (int)(wp - VK_F1) ? 0 : (int)(wp - VK_F1)); break;
         case VK_UP: nav(N_UP); break;
         case VK_DOWN: nav(N_DOWN); break;
         case VK_LEFT: nav(N_LEFT); break;
@@ -3759,8 +4351,8 @@ extern "C" int settings_ui_message(void* hwnd, unsigned msg, uintptr_t wp, intpt
         Hit h = hit_test(GET_X_LPARAM(lp), GET_Y_LPARAM(lp));
         if (U.dragRow >= 0) slider_drag(U.dragRow, GET_X_LPARAM(lp));
         if (U.sheet >= 0 && h.what == 4) h = Hit();  // under the hint card
-        int hr = h.what == 4 ? h.row : -1, hp = h.what == 4 ? h.part : h.what == 7 ? 100 + h.part : -1;
-        int hb = h.what == 4 || h.what == 7 || h.what == 8 ? 0 : h.what;
+        int hr = h.what == 4 ? h.row : -1, hp = h.what == 4 ? h.part : h.what == 7 ? 100 + h.part : h.what == 9 ? 200 + h.part : -1;
+        int hb = h.what == 4 || h.what == 7 || h.what == 8 || h.what == 9 ? 0 : h.what == 10 ? 10 + h.part : h.what;
         if (hr != U.hoverRow || hp != U.hoverPart || hb != U.hoverBtn) {
             U.hoverRow = hr, U.hoverPart = hp, U.hoverBtn = hb;
             changed();
@@ -3769,7 +4361,7 @@ extern "C" int settings_ui_message(void* hwnd, unsigned msg, uintptr_t wp, intpt
         // same highlight the stick and keys move; A or a click selects).
         if (U.sheet < 0) {
             if (h.what == 1) U.focus = FOCUS_TOP, U.focusSlot = CLOSE_SLOT;
-            else if (h.what == 3) U.focus = FOCUS_TOP, U.focusSlot = FB_SLOT;
+            else if (h.what == 9) U.focus = FOCUS_TOP, U.focusSlot = BOOK_SLOT + h.part;
             else if (h.what == 2) U.focus = FOCUS_RESET, U.focusSlot = 0;
             else if (h.what == 7) U.focus = FOCUS_TOP, U.focusSlot = h.part;
             else if (h.what == 4) U.focus = h.row, U.focusSlot = h.part;
@@ -3783,9 +4375,10 @@ extern "C" int settings_ui_message(void* hwnd, unsigned msg, uintptr_t wp, intpt
         if (U.sheet >= 0 && h.what == 4) h = Hit();
         if (h.what == 1) open_tab(false);
         else if (h.what == 2) U.view ? set_view(0) : reset_tab();
-        else if (h.what == 3) set_view(!U.view);
+        else if (h.what == 9) set_view(h.part);
         else if (h.what == 5) close_sheet();
         else if (h.what == 6) U.revealed = true;
+        else if (h.what == 10) U.gbg = h.part;
         else if (h.what == 7) {
             if (U.sheet >= 0) close_sheet();
             set_tab(h.part);

@@ -261,7 +261,14 @@ Multiplayer (the four player slots from the connected controllers, the
 keyboard as its own player; the rest local and every Online row "Coming
 soon"), Silly. Every tab has its Reset button.
 
-The **Friend Book** (the pink ribbon at the top, F2, or Y on a controller)
+The notebook has five books, bookmarks on its right edge: Settings (F1),
+Friend Book (F2), Journal (F3), Jukebox (F4) and Gallery (F5); LT / RT go
+round them, Y opens the Friend Book, and in a book F1 goes back to
+Settings. The Journal (`runtime/hle/hle_journal.c`, `journal.json` in the
+data folder), the Jukebox ("Coming soon") and the Gallery are described in
+`docs/books-and-extras.md`. `WONDERPARK_LOG=journal` logs milestones.
+
+The **Friend Book** (F2, or Y on a controller)
 is a view of its own: the index tabs become the park's areas (All, Cove,
 Arbor, Crag, Tech, Arcane, Wish Park), with a ring of friends made, an
 All / Friends / Not yet filter, the area's places as chips, and a polaroid
@@ -328,7 +335,9 @@ Test hooks: `WONDERPARK_F1_SHOT=<prefix>` opens the tab
 `<prefix>-<n>[b]-<category>.bmp` (the frame as shown; `b`: scrolled to the
 end) for the seven tabs, then the Friend Book (`8-friendbook`, `9-cove`,
 `10-hint` with a hint card open, `10b-hint` after its "show more" when it
-has one), then closes it. `WONDERPARK_F1_SCRIPT="<seconds>:<key>,..."` presses
+has one), the Journal (`11-journal`, `11b-journal-attractions`,
+`11c-journal-milestones`), `12-jukebox`, the Gallery (`13-gallery`,
+`13b-gallery-viewer`), then closes it. `WONDERPARK_F1_SCRIPT="<seconds>:<key>,..."` presses
 keys (f1 esc up down left right enter q e backspace, a letter or digit) or
 `shot=<file.bmp>`, through the tab's own key handling (headless too).
 
