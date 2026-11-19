@@ -367,8 +367,13 @@ end) for the seven tabs, then the Friend Book (`8-friendbook`, `9-cove`,
 has one), the Journal (`11-journal`, `11b-journal-attractions`,
 `11c-journal-milestones`), `12-jukebox`, the Gallery (`13-gallery`,
 `13b-gallery-viewer`), then closes it. `WONDERPARK_F1_SCRIPT="<seconds>:<key>,..."` presses
-keys (f1 esc up down left right enter q e backspace, a letter or digit) or
-`shot=<file.bmp>`, through the tab's own key handling (headless too).
+keys (f1-f5 esc up down left right enter q e backspace, a letter or digit),
+`shot=<file.bmp>` or `anim=<0-3>` (the Gallery viewer's animation), through
+the tab's own key handling (headless too). The Gallery's 3D view:
+`WONDERPARK_G3_CHARACTER=<name>,<name>,...` shows those models instead of
+the friend's, a new one every 1.5 s (when the viewer is drawn again);
+`WONDERPARK_G3_DUMP=<frame>` prints each bone's position once the shown
+animation reaches that frame (`runtime/host/gallery3d.cpp`).
 
 ## Environment variables (development)
 

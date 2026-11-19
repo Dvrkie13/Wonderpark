@@ -79,6 +79,7 @@ void hle_set_game_text_speed(int fast);
 int dvd_voices_ready(void);              /* dvd.c: the Japanese voices are set up */
 void* win_handle(void);
 }
+#include "gallery3d.h"  // the Gallery's 3D view (C++ and C both)
 
 using Microsoft::WRL::ComPtr;
 using D2D1::ColorF;
@@ -544,6 +545,9 @@ struct UI {
     int view = 0;                // the book: 0 Settings, 1 Friend Book, 2 Journal, 3 Jukebox, 4 Gallery
     int jtab = 0, ktab = 0, gzone = 0;  // the Journal's, Jukebox's and Gallery's left tab
     int gbg = 0;                 // the Gallery viewer's background: 0 Park, 1 Studio, 2 Night
+    int ganim = 0;               // ... its animation (gallery3d.h: Idle, Happy, Walk, Random)
+    bool dragStage = false;      // ... its 3D view being turned with the mouse
+    int dragX = 0;
     int zone = 0;                // Friend Book: 0 everyone, 1-6 an area
     int ffilter = 0;             // Friend Book: 0 all, 1 friends, 2 not yet
     int place = -1;              // Friend Book: the place chosen, -1 all
@@ -1565,6 +1569,8 @@ struct Hits {
     D2D1_RECT_F tabs[NTABS]{};
     D2D1_RECT_F books[5]{};  // the bookmarks
     D2D1_RECT_F bg[3]{};     // the Gallery viewer's backgrounds
+    D2D1_RECT_F anim[4]{};   // ... its animations (G3_ANIMS)
+    D2D1_RECT_F stage{};     // ... and its stage (drag to turn the 3D view)
     float tabX = 0, k = 1;  // window = (tab coordinates + (tabX, 10)) * k
 } H;
 
@@ -2254,9 +2260,13 @@ Hit hit_test(int px, int py) {
     if (U.sheet >= 0) {
         if (in(H.sheetClose)) return {5};
         if (U.view == BK_FRIENDS && sheet_can_reveal() && !U.revealed && in(H.reveal)) return {6};
-        if (U.view == BK_GALLERY)
+        if (U.view == BK_GALLERY) {
             for (int b = 0; b < 3; b++)
                 if (in(H.bg[b])) return {10, -1, b};
+            for (int b = 0; b < G3_ANIMS; b++)
+                if (in(H.anim[b])) return {11, -1, b};
+            if (gallery3d_state() == 2 && in(H.stage)) return {12};
+        }
         if (in(H.sheet)) return {8};
     }
     if (in(H.reset)) return {2};
@@ -2694,6 +2704,7 @@ int hle_friend_points(int p);
 struct Friend {
     int pokemon = 0;
     std::wstring name;
+    std::string character;  // its internal name (Ic<character>.tpl; its model <character>.brres)
     Img icon;
     std::wstring want, then, about;  // the Pad's notes: FL_<NAME>_020, _040, _100
 };
@@ -2837,6 +2848,7 @@ void load_friends() {
             }
             Friend f;
             f.pokemon = p;
+            f.character = best;
             auto nm = names.find(label);
             f.name = nm != names.end() && !nm->second.empty() ? nm->second : widen(best.empty() ? inner : best.c_str());
             if (!best.empty()) tpl(files["Ic" + best + ".tpl"], f.icon);
@@ -3765,10 +3777,14 @@ void draw_book_row(int i, const Row& r, const Placed& p, float y0, float dy, boo
 }
 
 // The Gallery's viewer: the friend on a pedestal, in front of a background
-// drawn by us. The 3D model view is coming: for now its icon, large.
+// drawn by us: its 3D model (gallery3d.cpp, drawn over this picture by the
+// renderer; drag to turn it), its icon while that loads or if there's none.
+bool g_viewerDrawn;  // drawn this time (else the 3D view is hidden)
+int g_viewerState;   // the 3D view's state it was drawn with
 void draw_viewer(float t) {
     (void)t;
     if (g_friendsState != 2 || U.sheet < 0 || U.sheet >= (int)g_friends->size()) return;
+    g_viewerDrawn = true;
     Friend& f = (*g_friends)[U.sheet];
     int z = zone_of(f.pokemon);
     float sx = 24, sy = 156, sw = PANEL_W - 24 - 12, sh = PANEL_H - sy + 4;
@@ -3827,10 +3843,24 @@ void draw_viewer(float t) {
     float pcx = (v.left + v.right) / 2, pcy = v.top + 112;
     G.rt->FillEllipse(D2D1::Ellipse(Point2F(pcx, v.top + 192), 96, 20), brush(rgb(INK, .18f)));
     G.rt->DrawEllipse(D2D1::Ellipse(Point2F(pcx, v.top + 188), 92, 18), brush(rgb(INK, .6f)), 2.5f, G.dashed.Get());
-    portrait(f, U.sheet, pcx, pcy, 70, false, rgb(INK), rgb(INK));
+    {
+        // The 3D view: where the stage is in the window (this picture is
+        // the window's size), and which friend; the renderer draws the
+        // model there, over this picture.
+        D2D1_MATRIX_3X2_F m;
+        G.rt->GetTransform(&m);
+        float x0w = v.left * m._11 + v.top * m._21 + m._31, y0w = v.left * m._12 + v.top * m._22 + m._32;
+        float x1w = v.right * m._11 + v.bottom * m._21 + m._31, y1w = v.right * m._12 + v.bottom * m._22 + m._32;
+        gallery3d_show(f.character.c_str(), U.ganim, x0w, y0w, x1w - x0w, y1w - y0w);
+        H.stage = RectF(PANEL_X + v.left, PANEL_Y + v.top, PANEL_X + v.right, PANEL_Y + v.bottom);
+    }
+    int g3 = gallery3d_state();
+    g_viewerState = g3;
+    if (g3 != 2) portrait(f, U.sheet, pcx, pcy, 70, false, rgb(INK), rgb(INK));
+    if (g3 == 1) text_c(L"Loading the 3D model…", fmt(L"Nunito", 800, 12), v.left, v.bottom - 16, w, rgb(INK, .7f), CENTER);
     G.rt->PopLayer();
     G.rt->DrawRoundedRectangle(rr(v.left + 1.25f, v.top + 1.25f, w - 2.5f, 227.5f, 13), brush(rgb(INK)), 2.5f);
-    stamp(L"3D view coming soon", v.right - 190, v.top + 22, false, true, true);
+    if (g3 == 3) stamp(L"No 3D model", v.right - 140, v.top + 22, false, true, true);
     // Animation (with the 3D view), Background, Save a picture.
     y = v.bottom + 16;
     IDWriteTextFormat* lf = fmt(L"Nunito", 800, 13);
@@ -3853,11 +3883,29 @@ void draw_viewer(float t) {
     y += 50;
     text_c(L"Animation", lf, x0, y + 18, 100, rgb(INK));
     {
+        // Idle, Happy, Walk, Random: those the model has (gallery3d.h).
+        const wchar_t* anims[G3_ANIMS] = {L"Idle", L"Happy", L"Walk", L"Random"};
+        float ax = x0 + 104;
+        bool ready = gallery3d_state() == 2;
+        for (int b = 0; b < G3_ANIMS; b++) {
+            float pw = pill_w(anims[b]);
+            D2D1_RECT_F pb = RectF(ax, y, ax + pw, y + 36);
+            bool has = ready && gallery3d_has_anim(b);
+            H.anim[b] = has ? RectF(PANEL_X + pb.left, PANEL_Y + pb.top, PANEL_X + pb.right, PANEL_Y + pb.bottom) : RectF(0, 0, 0, 0);
+            Fade fd(has ? 1.f : .45f);
+            if (has && U.ganim == b) {
+                Rot rot(-2.5f, (pb.left + pb.right) / 2, y + 18);
+                sticker(shift(pb, -1, -1), 11, rgb(GOLD), 3);
+            } else {
+                sticker(pb, 11, has && U.hoverBtn == 20 + b ? rgb(0xfff3cf) : ColorF(1, 1, 1), 2);
+            }
+            text_c(anims[b], pill_font(false), pb.left, y + 18, pw, rgb(INK), CENTER);
+            ax += pw + 7;
+        }
+    }
+    y += 50;
+    {
         Fade fd(.55f);
-        float aw = pill_w(L"Idle", false, true);
-        sticker(RectF(x0 + 104, y, x0 + 104 + aw, y + 36), 11, ColorF(1, 1, 1), 0, 2.5f, rgb(INK), true);
-        text_c(L"Idle", pill_font(false), x0 + 104 + 14, y + 18, 40, rgb(INK));
-        text_c(L"SOON", fmt(L"Nunito", 800, 10), x0 + 104 + 14 + text_w(L"Idle", pill_font(false)) + 6, y + 19, 40, rgb(0xc9346c));
         float sw2 = pill_w(L"Save a picture", false, true);
         float sx2 = x0 + w - sw2;
         sticker(RectF(sx2, y, sx2 + sw2, y + 36), 11, ColorF(1, 1, 1), 0, 2.5f, rgb(INK), true);
@@ -4233,7 +4281,10 @@ extern "C" const uint32_t* fps_badge_draw(int fps, int target, int win_h, int* b
 extern "C" const uint32_t* settings_ui_draw(int w, int h) {
     static unsigned drawnGen = 0;
     static int dw, dh;
-    if (!U.open || w <= 0 || h <= 0) return nullptr;
+    if (!U.open || w <= 0 || h <= 0) {
+        gallery3d_hide();
+        return nullptr;
+    }
     if (!ensure_target(w, h)) return nullptr;
     // The friends list: read from the disc the first time; the Friend Book
     // built again when what it shows changes.
@@ -4354,8 +4405,16 @@ extern "C" const uint32_t* settings_ui_draw(int w, int h) {
     if (spin) lastSpin = t;
     bool animating = !U.reduced && (t - U.openT < .5 || U.listenRow >= 0);
     if (spin) U.gen++;
+    // The Gallery's 3D view: drawn again when its model is loaded (or
+    // isn't), so the icon makes way for it. The state is noted as it was
+    // when drawn (drawing can start a load).
+    static int g3 = -1;
+    if (gallery3d_state() != g3) U.gen++;
     if (drawnGen != U.gen || dw != w || dh != h || animating) {
+        g_viewerDrawn = false;
         render((float)t);
+        if (!g_viewerDrawn) gallery3d_hide();
+        g3 = g_viewerDrawn ? g_viewerState : gallery3d_state();  // (a load can end while drawing)
         copy_out(w, h);
         if (drawnGen != U.gen || animating) U.gen += animating ? 1 : 0;
         drawnGen = U.gen;
@@ -4398,8 +4457,14 @@ static void run_key_script() {
             snprintf(g_dump_next, sizeof(g_dump_next), "%s", k.c_str() + 5);
             continue;
         }
+        if (k.rfind("anim=", 0) == 0) {  // the Gallery viewer's animation (gallery3d.h)
+            U.ganim = std::max(0, std::min(G3_ANIMS - 1, atoi(k.c_str() + 5)));
+            changed();
+            continue;
+        }
         static const std::map<std::string, int> kKeys = {
-            {"f1", VK_F1}, {"esc", VK_ESCAPE}, {"up", VK_UP}, {"down", VK_DOWN}, {"left", VK_LEFT},
+            {"f1", VK_F1}, {"f2", VK_F2}, {"f3", VK_F3}, {"f4", VK_F4}, {"f5", VK_F5},
+            {"esc", VK_ESCAPE}, {"up", VK_UP}, {"down", VK_DOWN}, {"left", VK_LEFT},
             {"right", VK_RIGHT}, {"enter", VK_RETURN}, {"q", 'Q'}, {"e", 'E'}, {"backspace", VK_BACK}};
         auto it = kKeys.find(k);
         int vk = it != kKeys.end() ? it->second : k.size() == 1 ? toupper((unsigned char)k[0]) : 0;
@@ -4617,9 +4682,14 @@ extern "C" int settings_ui_message(void* hwnd, unsigned msg, uintptr_t wp, intpt
     case WM_MOUSEMOVE: {
         Hit h = hit_test(GET_X_LPARAM(lp), GET_Y_LPARAM(lp));
         if (U.dragRow >= 0) slider_drag(U.dragRow, GET_X_LPARAM(lp));
+        if (U.dragStage) {
+            gallery3d_drag((float)(GET_X_LPARAM(lp) - U.dragX));
+            U.dragX = GET_X_LPARAM(lp);
+        }
         if (U.sheet >= 0 && h.what == 4) h = Hit();  // under the hint card
         int hr = h.what == 4 ? h.row : -1, hp = h.what == 4 ? h.part : h.what == 7 ? 100 + h.part : h.what == 9 ? 200 + h.part : -1;
-        int hb = h.what == 4 || h.what == 7 || h.what == 8 || h.what == 9 ? 0 : h.what == 10 ? 10 + h.part : h.what;
+        int hb = h.what == 4 || h.what == 7 || h.what == 8 || h.what == 9 || h.what == 12 ? 0
+                 : h.what == 10 ? 10 + h.part : h.what == 11 ? 20 + h.part : h.what;
         if (hr != U.hoverRow || hp != U.hoverPart || hb != U.hoverBtn) {
             U.hoverRow = hr, U.hoverPart = hp, U.hoverBtn = hb;
             changed();
@@ -4646,7 +4716,12 @@ extern "C" int settings_ui_message(void* hwnd, unsigned msg, uintptr_t wp, intpt
         else if (h.what == 5) close_sheet();
         else if (h.what == 6) U.revealed = true;
         else if (h.what == 10) U.gbg = h.part;
-        else if (h.what == 7) {
+        else if (h.what == 11) U.ganim = h.part;
+        else if (h.what == 12) {  // the 3D view's stage: drag to turn it
+            U.dragStage = true;
+            U.dragX = GET_X_LPARAM(lp);
+            SetCapture((HWND)win_handle());
+        } else if (h.what == 7) {
             if (U.sheet >= 0) close_sheet();
             set_tab(h.part);
         } else if (h.what == 4) {
@@ -4667,8 +4742,9 @@ extern "C" int settings_ui_message(void* hwnd, unsigned msg, uintptr_t wp, intpt
         return 1;
     }
     case WM_LBUTTONUP:
-        if (U.dragRow >= 0) ReleaseCapture();
+        if (U.dragRow >= 0 || U.dragStage) ReleaseCapture();
         U.dragRow = -1;
+        U.dragStage = false;
         return 1;
     case WM_MOUSEWHEEL:
         U.scroll -= GET_WHEEL_DELTA_WPARAM(wp) / 120.f * 60;

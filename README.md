@@ -43,7 +43,7 @@ Wonderpark is a work in progress (a development preview): it has been played fro
 | **Mod manager** | Install texture and file mods from a .zip in the launcher, and turn each on or off with a switch. |
 | **HD Pack** | Upscale the game's textures 4x on your own PC, from your own disc, with one button in the launcher. |
 | **Saves** | Back up, restore, export and import your saves in the launcher (Dolphin's folder or a .zip), with a backup before every Play. |
-| **Journal, Jukebox, Gallery** | In F1: your play time, friends and milestones; the game's music, played from your disc; your friends on display. |
+| **Journal, Jukebox, Gallery** | In F1: your play time, friends and milestones; the game's music, played from your disc; your friends on display, each as its own 3D model, animated (drag to turn it). |
 | **Japanese voices** | Switch the Pokémon's voices to Japanese with your own Japanese disc. |
 | **Smooth play** | A shader setup that never stutters, fast loading (the game's files read into RAM), save backups. |
 
@@ -60,7 +60,7 @@ Wonderpark is a work in progress (a development preview): it has been played fro
 | F1 settings, the Options page's PC Settings, the Friend Book | Working |
 | Japanese voices (needs your own Japanese disc) | Working, from the next start |
 | Mod manager, HD Pack, save manager | Working (the online mod list isn't up yet) |
-| Journal, Jukebox, Gallery (F1) | Working; some Journal stats and the Gallery's 3D view are "Coming soon" |
+| Journal, Jukebox, Gallery (F1) | Working (the Gallery shows each friend's own 3D model, animated); some Journal stats are "Coming soon" |
 | Local multiplayer (2-4 players) | In progress: extra controllers join as Wii Remotes 2-4 in Multiplayer Attractions; a full multiplayer round hasn't been tested yet |
 | Skipping movies | In progress (not working yet) |
 | A full playthrough | Not done yet |

@@ -41,6 +41,7 @@
 #include "gx_device.h"
 #include "host_settings.h"
 #include "wp_stats.h" /* Show FPS: last second's frame rate */
+#include "gallery3d.h" /* the Gallery's 3D view */
 
 /* ------------------------------------------------------------------------ */
 /* GL 2+ entry points */
@@ -2852,6 +2853,183 @@ static void draw_fps(int w, int h) {
     gl_forget();
 }
 
+/* The Gallery's 3D view (gallery3d.cpp): the friend's model, posed and
+ * projected on the CPU, drawn into a framebuffer of its own (colour and
+ * depth) the size of the viewer's stage, then laid over the window there,
+ * over the F1 notebook's picture. Every present, so it moves smoothly while
+ * the game is paused. */
+static const char* kG3VertexShader =
+    "#version 330 core\n"
+    "layout(location = 0) in vec4 a_pos;\n"
+    "layout(location = 1) in vec2 a_uv;\n"
+    "layout(location = 2) in vec4 a_col;\n"
+    "out vec2 v_uv;\n"
+    "out vec4 v_col;\n"
+    "void main() { v_uv = a_uv; v_col = a_col; gl_Position = a_pos; }\n";
+static const char* kG3FragmentShader =
+    "#version 330 core\n"
+    "in vec2 v_uv;\n"
+    "in vec4 v_col;\n"
+    "out vec4 o_color;\n"
+    "uniform sampler2D u_tex;\n"
+    "uniform ivec4 u_mode; /* has a texture, alpha test */\n"
+    "void main() {\n"
+    "    vec4 c = v_col;\n"
+    "    if (u_mode.x != 0) c *= texture(u_tex, v_uv);\n"
+    "    if (u_mode.y != 0 && c.a < 0.5) discard;\n"
+    "    o_color = vec4(min(c.rgb, vec3(1.0)), c.a);\n"
+    "}\n";
+static const char* kG3BlitVertexShader =
+    "#version 330 core\n"
+    "out vec2 v_uv;\n"
+    "void main() {\n"
+    "    vec2 p = vec2((gl_VertexID & 1) * 2, (gl_VertexID >> 1) * 2);\n"
+    "    v_uv = p;\n"
+    "    gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);\n"
+    "}\n";
+
+static GLuint sG3Prog, sG3Blit, sG3Vao, sG3Vbo, sG3Fbo, sG3Color, sG3Depth, sG3Tex[64];
+static GLint uG3Mode;
+static int sG3W, sG3H, sG3TexCount, sG3Broken;
+static unsigned sG3Gen = ~0u;
+
+static GLuint g3_program(const char* vs, const char* fs) {
+    GLint ok;
+    GLuint p = p_glCreateProgram();
+    p_glAttachShader(p, compile(GL_VERTEX_SHADER, vs));
+    p_glAttachShader(p, compile(GL_FRAGMENT_SHADER, fs));
+    p_glLinkProgram(p);
+    p_glGetProgramiv(p, GL_LINK_STATUS, &ok);
+    if (!ok) {
+        char log[2048];
+        p_glGetProgramInfoLog(p, sizeof(log), NULL, log);
+        fprintf(stderr, "gl: gallery 3D link error:\n%s\n", log);
+        return 0;
+    }
+    return p;
+}
+
+static void draw_gallery3d(int winW, int winH) {
+    G3Frame f;
+    int i;
+    if (sG3Broken || !gallery3d_frame(&f, winW, winH)) return;
+    if (f.w > winW) f.w = winW;
+    if (f.h > winH) f.h = winH;
+    if (!sG3Prog) {
+        sG3Prog = g3_program(kG3VertexShader, kG3FragmentShader);
+        sG3Blit = g3_program(kG3BlitVertexShader, kOverlayFragmentShader);
+        if (!sG3Prog || !sG3Blit) {
+            sG3Broken = 1;
+            return;
+        }
+        p_glUseProgram(sG3Prog);
+        p_glUniform1i(p_glGetUniformLocation(sG3Prog, "u_tex"), 0);
+        uG3Mode = p_glGetUniformLocation(sG3Prog, "u_mode");
+        p_glUseProgram(sG3Blit);
+        p_glUniform1i(p_glGetUniformLocation(sG3Blit, "u_image"), 0);
+        p_glGenVertexArrays(1, &sG3Vao);
+        p_glGenBuffers(1, &sG3Vbo);
+        p_glBindVertexArray(sG3Vao);
+        p_glBindBuffer(GL_ARRAY_BUFFER, sG3Vbo);
+        p_glEnableVertexAttribArray(0);
+        p_glEnableVertexAttribArray(1);
+        p_glEnableVertexAttribArray(2);
+        p_glVertexAttribPointer(0, 4, GL_FLOAT, GL_FALSE, G3_FLOATS * 4, (void*)0);
+        p_glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, G3_FLOATS * 4, (void*)16);
+        p_glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, G3_FLOATS * 4, (void*)24);
+        p_glGenFramebuffers(1, &sG3Fbo);
+        glGenTextures(1, &sG3Color);
+        p_glGenRenderbuffers(1, &sG3Depth);
+    }
+    /* The stage's framebuffer, at its size. */
+    if (f.w != sG3W || f.h != sG3H) {
+        glBindTexture(GL_TEXTURE_2D, sG3Color);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, f.w, f.h, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        p_glBindRenderbuffer(GL_RENDERBUFFER, sG3Depth);
+        p_glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, f.w, f.h);
+        p_glBindFramebuffer(GL_FRAMEBUFFER, sG3Fbo);
+        p_glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, sG3Color, 0);
+        p_glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, sG3Depth);
+        sG3W = f.w, sG3H = f.h;
+    }
+    /* The model's textures, when they change (another friend). */
+    if (f.texGen != sG3Gen) {
+        if (sG3TexCount) glDeleteTextures(sG3TexCount, sG3Tex);
+        sG3TexCount = f.ntextures < 64 ? f.ntextures : 64;
+        glGenTextures(sG3TexCount, sG3Tex);
+        for (i = 0; i < sG3TexCount; i++) {
+            int tw, th, ws, wt;
+            const uint8_t* px = gallery3d_texture(&f, i, &tw, &th, &ws, &wt);
+            glBindTexture(GL_TEXTURE_2D, sG3Tex[i]);
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, tw, th, 0, GL_RGBA, GL_UNSIGNED_BYTE, px);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, wrap_mode(ws));
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, wrap_mode(wt));
+        }
+        sG3Gen = f.texGen;
+    }
+    /* The model. */
+    p_glBindFramebuffer(GL_FRAMEBUFFER, sG3Fbo);
+    glViewport(0, 0, f.w, f.h);
+    glDisable(GL_SCISSOR_TEST);
+    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+    glDepthMask(GL_TRUE);
+    glClearColor(0, 0, 0, 0);
+    glClearDepth(1);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    glEnable(GL_DEPTH_TEST);
+    glDepthFunc(GL_LEQUAL);
+    p_glUseProgram(sG3Prog);
+    p_glBindVertexArray(sG3Vao);
+    p_glBindBuffer(GL_ARRAY_BUFFER, sG3Vbo);
+    p_glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)f.nverts * G3_FLOATS * 4, f.verts, GL_STREAM_DRAW);
+    p_glActiveTexture(GL_TEXTURE0);
+    glFrontFace(GL_CW); /* GX: front faces wind clockwise */
+    for (i = 0; i < f.ndraws; i++) {
+        const G3Draw* d = &f.draws[i];
+        int mode[4] = {d->tex >= 0 && d->tex < sG3TexCount, !d->xlu, 0, 0};
+        if (d->cull == 0) glDisable(GL_CULL_FACE);
+        else {
+            glEnable(GL_CULL_FACE);
+            glCullFace(d->cull == 1 ? GL_FRONT : d->cull == 2 ? GL_BACK : GL_FRONT_AND_BACK);
+        }
+        if (d->xlu) {
+            glEnable(GL_BLEND);
+            p_glBlendEquation(GL_FUNC_ADD);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+            glDepthMask(GL_FALSE);
+        } else {
+            glDisable(GL_BLEND);
+            glDepthMask(GL_TRUE);
+        }
+        if (mode[0]) glBindTexture(GL_TEXTURE_2D, sG3Tex[d->tex]);
+        p_glUniform4iv(uG3Mode, 1, mode);
+        glDrawArrays(GL_TRIANGLES, d->first, d->count);
+    }
+    glDepthMask(GL_TRUE);
+    glDisable(GL_CULL_FACE);
+    glFrontFace(GL_CCW);
+    glDisable(GL_DEPTH_TEST);
+    /* Over the window, at the stage. */
+    p_glBindFramebuffer(GL_FRAMEBUFFER, sWinFbo);
+    glViewport(f.x, f.y, f.w, f.h);
+    p_glUseProgram(sG3Blit);
+    p_glBindVertexArray(sCopyVao);
+    glBindTexture(GL_TEXTURE_2D, sG3Color);
+    glEnable(GL_BLEND);
+    p_glBlendEquation(GL_FUNC_ADD);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glDrawArrays(GL_TRIANGLES, 0, 3);
+    glDisable(GL_BLEND);
+    glViewport(0, 0, winW, winH);
+    p_glUseProgram(sProgram);
+    p_glBindVertexArray(sVao);
+    gl_forget();
+}
+
 static int finish_present(int w, int h, int may_drop) {
     int dropped;
     draw_fps(w, h);
@@ -2907,6 +3085,7 @@ static int finish_present(int w, int h, int may_drop) {
             p_glBindVertexArray(sVao);
         }
     }
+    draw_gallery3d(w, h);
     if (sDumpDir && sPresented >= sDumpFrom && sPresented % (unsigned)sDumpEvery == 0 && !sChain) {
         char path[512];
         p_glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);

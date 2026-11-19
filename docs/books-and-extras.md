@@ -75,16 +75,51 @@ apart yet). No titles from soundtrack sites. Tabs: All, Park, Wish Park
 Controls: previous, play / pause, next (among heard songs), shuffle, repeat
 (round again from the song's own loop start).
 
-## A3. Gallery (built with the fallback)
+## A3. Gallery (built, with the 3D view)
 
 A grid of every befriendable Pokémon per area; one not befriended is a
 black circle with "???" (no name, can't be focused or clicked). A friend
-opens the viewer: its icon at large size on a pedestal, backgrounds Park /
-Studio / Night drawn by us, "3D view coming soon". The 3D model (loading a
-Pokémon's model and animations from the disc into an offscreen view while
-the game is paused) wasn't attempted: the game's renderer runs on its
-paused thread, and our GX replay would need the model's own display lists.
-Animation and "Save a picture" are "Coming soon".
+opens the viewer: backgrounds Park / Studio / Night drawn by us, and the
+Pokémon's own 3D model on a pedestal, turning slowly (drag on the stage
+to turn it), playing Idle, Happy, Walk or Random (those it has).
+"Save a picture" is "Coming soon".
+
+The 3D view (`runtime/host/gallery3d.cpp`, drawn by `gl_backend.c`
+draw_gallery3d) doesn't use the game's renderer (paused with the game):
+it reads the model itself, on a thread of its own, from the extracted
+disc:
+- Where: `files/Pokemon/<Name>.brres`, or `<Name>.brres` in
+  `files/Pokemon/Res00-03.dan` (U8 archives; only their file tables and the
+  model's bytes are read). `<Name>` is the character name the icon has
+  (`Ic<Name>.tpl`). 238 models; 5 icons are named a little differently
+  from their model (Bassrao: BassraoR/B, Dustdas: Dustdus, Minomucchi:
+  Minomucchi000, Onondo: Onond, Pururill: PururillF/M), so the nearest name
+  is taken (one that starts with it, not the FR or WP variants, else the
+  longest shared start).
+- What (checked 2026-11-19 on every one of the 238: all parse, all have
+  NorIdle0; 226 Joy0, 204 Walk0, 212 Random00): MDL0 v11 bones (bind SRT,
+  parent, inverse bind at +0xA0), vertex/normal/colour/UV arrays (each
+  array's own index at +0x10), materials (cull at +0x18, the first layer's
+  texture name and wrap), the Definitions' draw lists (op 4: material,
+  object) and envelopes (op 3: node, weights), objects (VCD at +0x0C/+0x10,
+  the primitive display list at +0x24/+0x28/+0x2C, array ids at +0x48;
+  LOAD_INDX_A (0x20) commands map PNMTXIDX slots to nodes). Single-bound
+  vertices are in their bone's space; weighted ones in model space
+  (skinned with world x inverse bind). TEX0 decoded with gx_texture.c.
+  CHR0 v5: per bone scale / rotation / translation flags (has 22-24,
+  isotropic 4-6, fixed 13-21, formats at 25 / 27 / 30), i4 / i6 / i12
+  Hermite keys and linear rotations (4, 5, 6). Rotations X, then Y, then Z.
+- The face: the eye and mouth textures are sheets of expressions; the
+  default face is frame 0 of the SRT0 FaceDef, which (in the models
+  checked) shifts by 0, so the model's own UVs are used. Expressions in
+  the animations (SRT0) aren't applied: the face stays the default.
+- Walk carries the model forward (Piplup: 1.76 units a cycle); in the
+  Gallery the top two bones' animated X and Z translation are left at
+  rest, so it walks on the spot. Rotations are blended the short way.
+- Drawn on the CPU (skinned, lit by one light, projected), into a
+  framebuffer the stage's size, laid over the notebook's picture there,
+  every present while paused. Framed so the whole Pokémon fits, its feet on
+  the pedestal's ring.
 
 ## B1. Get mods ("Coming soon")
 
