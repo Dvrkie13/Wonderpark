@@ -269,7 +269,8 @@ void build_rows() {
                               L"In game, moves HUD items at the sides (the minimap) out to the screen's edges, in widescreen."));
         c.rows.push_back(xrow(TOGGLE, X_BLOOM, L"Bloom", L"The soft glow around bright lights."));
         c.rows.push_back(xrow(TOGGLE, X_FOG, L"Fog", L"The haze that softens faraway parts of the park."));
-        c.rows.push_back(xrow(TOGGLE, X_PER_PIXEL_LIGHTING, L"Per-pixel lighting", L"Smoother lighting on Pokémon and the park.", {}, true));
+        c.rows.push_back(xrow(TOGGLE, X_PER_PIXEL_LIGHTING, L"Per-pixel lighting",
+                              L"Lights each pixel instead of each corner: smoother shading on Pokémon and round things. A little more work for the graphics card."));
         c.rows.push_back(xrow(TOGGLE, X_HDR, L"HDR", nullptr, {}, true));
         c.rows.push_back(xrow(CHOICE, X_COLORS, L"Colors", nullptr, {L"Original", L"Vivid"}));
         c.rows.push_back(head(L"Performance"));

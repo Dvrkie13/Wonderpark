@@ -199,6 +199,56 @@ static void load_gl(void) {
  * light contributes color * attenuation * diffuse term; attenuation is
  * none, specular or spot, the diffuse term none, signed or clamped
  * N.L. */
+/* XF memory access and the hardware's lighting (below), shared by the
+ * vertex shader and, for per-pixel lighting, the fragment shader. */
+#define GLSL_XF_LIGHTING \
+    "uint xw(int a) { int i = a < 0x1000 ? a : a - 0x1000 + " GX_XF_MEM_WORDS_STR "; return xfm[i >> 2][i & 3]; }\n" \
+    "float xfl(int a) { return uintBitsToFloat(xw(a)); }\n" \
+    "vec4 row(int a) { return uintBitsToFloat(xfm[a >> 2]); }\n" /* rows of 4 start on multiples of 4 */ \
+    "vec3 vec3at(int a) { return vec3(xfl(a), xfl(a + 1), xfl(a + 2)); }\n" \
+    "vec4 unpack(uint c) { return vec4(float((c >> 24) & 255u), float((c >> 16) & 255u), float((c >> 8) & 255u), float(c & 255u)) / 255.0; }\n" \
+    "vec4 light(int j, uint ctrl, vec3 pos, vec3 n) {\n" \
+    "  int b = 0x600 + j * 16;\n" \
+    "  vec3 cosatt = vec3at(b + 4), distatt = vec3at(b + 7), lpos = vec3at(b + 10), ldirv = vec3at(b + 13);\n" \
+    "  uint dfn = (ctrl >> 7) & 3u, afn = (ctrl >> 9) & 3u;\n" \
+    "  vec3 ldir; float attn;\n" \
+    "  if (afn == 1u) {\n" /* specular */ \
+    "    ldir = normalize(lpos - pos);\n" \
+    "    attn = dot(n, ldir) >= 0.0 ? max(0.0, dot(n, ldirv)) : 0.0;\n" \
+    "    vec3 da = dfn == 0u ? distatt : normalize(distatt);\n" \
+    "    attn = max(0.0, dot(cosatt, vec3(1.0, attn, attn * attn))) / dot(da, vec3(1.0, attn, attn * attn));\n" \
+    "  } else if (afn == 3u) {\n" /* spot */ \
+    "    vec3 d = lpos - pos; float dist2 = dot(d, d), dist = sqrt(dist2); ldir = d / dist;\n" \
+    "    attn = max(0.0, dot(ldir, ldirv));\n" \
+    "    attn = max(0.0, cosatt.x + cosatt.y * attn + cosatt.z * attn * attn) / dot(distatt, vec3(1.0, dist, dist2));\n" \
+    "  } else {\n" /* none, directional */ \
+    "    vec3 d = lpos - pos; ldir = length(d) == 0.0 ? n : normalize(d); attn = 1.0;\n" \
+    "  }\n" \
+    "  float diff = dfn == 0u ? 1.0 : (dfn == 1u ? dot(ldir, n) : max(0.0, dot(ldir, n)));\n" \
+    "  return attn * diff * unpack(xw(b + 3));\n" \
+    "}\n" \
+    "vec4 lights(uint ctrl, vec3 pos, vec3 n) {\n" \
+    "  uint mask = ((ctrl >> 2) & 15u) | (((ctrl >> 11) & 15u) << 4);\n" \
+    "  vec4 sum = vec4(0.0);\n" \
+    "  for (int j = 0; j < 8; j++) if ((mask & (1u << uint(j))) != 0u) sum += light(j, ctrl, pos, n);\n" \
+    "  return sum;\n" \
+    "}\n" \
+    "vec4 channel(int i, vec4 vcol, vec3 pos, vec3 n) {\n" \
+    "  uint cc = xw(0x100E + i), ac = xw(0x1010 + i);\n" \
+    "  vec4 matr = unpack(xw(0x100C + i)), ambr = unpack(xw(0x100A + i)), r;\n" \
+    "  vec3 mat = (cc & 1u) != 0u ? vcol.rgb : matr.rgb;\n" \
+    "  if ((cc & 2u) != 0u) {\n" \
+    "    vec3 amb = (cc & 64u) != 0u ? vcol.rgb : ambr.rgb;\n" \
+    "    r.rgb = mat * clamp(amb + lights(cc, pos, n).rgb, 0.0, 1.0);\n" \
+    "  } else r.rgb = mat;\n" \
+    "  float mata = (ac & 1u) != 0u ? vcol.a : matr.a;\n" \
+    "  if ((ac & 2u) != 0u) {\n" \
+    "    float amba = (ac & 64u) != 0u ? vcol.a : ambr.a;\n" \
+    "    r.a = mata * clamp(amba + lights(ac, pos, n).a, 0.0, 1.0);\n" \
+    "  } else r.a = mata;\n" \
+    "  return clamp(r, 0.0, 1.0);\n" \
+    "}\n"
+
 static const char* kVertexShader =
     "#version 330 compatibility\n"
     "layout(std140) uniform XF { uvec4 xfm[" GX_XF_WORDS_STR " / 4]; };\n"
@@ -206,52 +256,10 @@ static const char* kVertexShader =
     "in vec4 a_tex01, a_tex23, a_tex45, a_tex67;\n"
     "uniform vec4 u_wide;\n"
     "out vec4 v_col0; out vec4 v_col1; out vec3 v_tex[8];\n"
-    "uint xw(int a) { int i = a < 0x1000 ? a : a - 0x1000 + " GX_XF_MEM_WORDS_STR "; return xfm[i >> 2][i & 3]; }\n"
-    "float xfl(int a) { return uintBitsToFloat(xw(a)); }\n"
-    "vec4 row(int a) { return uintBitsToFloat(xfm[a >> 2]); }\n" /* rows of 4 start on multiples of 4 */
-    "vec3 vec3at(int a) { return vec3(xfl(a), xfl(a + 1), xfl(a + 2)); }\n"
-    "vec4 unpack(uint c) { return vec4(float((c >> 24) & 255u), float((c >> 16) & 255u), float((c >> 8) & 255u), float(c & 255u)) / 255.0; }\n"
-    "vec4 light(int j, uint ctrl, vec3 pos, vec3 n) {\n"
-    "  int b = 0x600 + j * 16;\n"
-    "  vec3 cosatt = vec3at(b + 4), distatt = vec3at(b + 7), lpos = vec3at(b + 10), ldirv = vec3at(b + 13);\n"
-    "  uint dfn = (ctrl >> 7) & 3u, afn = (ctrl >> 9) & 3u;\n"
-    "  vec3 ldir; float attn;\n"
-    "  if (afn == 1u) {\n" /* specular */
-    "    ldir = normalize(lpos - pos);\n"
-    "    attn = dot(n, ldir) >= 0.0 ? max(0.0, dot(n, ldirv)) : 0.0;\n"
-    "    vec3 da = dfn == 0u ? distatt : normalize(distatt);\n"
-    "    attn = max(0.0, dot(cosatt, vec3(1.0, attn, attn * attn))) / dot(da, vec3(1.0, attn, attn * attn));\n"
-    "  } else if (afn == 3u) {\n" /* spot */
-    "    vec3 d = lpos - pos; float dist2 = dot(d, d), dist = sqrt(dist2); ldir = d / dist;\n"
-    "    attn = max(0.0, dot(ldir, ldirv));\n"
-    "    attn = max(0.0, cosatt.x + cosatt.y * attn + cosatt.z * attn * attn) / dot(distatt, vec3(1.0, dist, dist2));\n"
-    "  } else {\n" /* none, directional */
-    "    vec3 d = lpos - pos; ldir = length(d) == 0.0 ? n : normalize(d); attn = 1.0;\n"
-    "  }\n"
-    "  float diff = dfn == 0u ? 1.0 : (dfn == 1u ? dot(ldir, n) : max(0.0, dot(ldir, n)));\n"
-    "  return attn * diff * unpack(xw(b + 3));\n"
-    "}\n"
-    "vec4 lights(uint ctrl, vec3 pos, vec3 n) {\n"
-    "  uint mask = ((ctrl >> 2) & 15u) | (((ctrl >> 11) & 15u) << 4);\n"
-    "  vec4 sum = vec4(0.0);\n"
-    "  for (int j = 0; j < 8; j++) if ((mask & (1u << uint(j))) != 0u) sum += light(j, ctrl, pos, n);\n"
-    "  return sum;\n"
-    "}\n"
-    "vec4 channel(int i, vec4 vcol, vec3 pos, vec3 n) {\n"
-    "  uint cc = xw(0x100E + i), ac = xw(0x1010 + i);\n"
-    "  vec4 matr = unpack(xw(0x100C + i)), ambr = unpack(xw(0x100A + i)), r;\n"
-    "  vec3 mat = (cc & 1u) != 0u ? vcol.rgb : matr.rgb;\n"
-    "  if ((cc & 2u) != 0u) {\n"
-    "    vec3 amb = (cc & 64u) != 0u ? vcol.rgb : ambr.rgb;\n"
-    "    r.rgb = mat * clamp(amb + lights(cc, pos, n).rgb, 0.0, 1.0);\n"
-    "  } else r.rgb = mat;\n"
-    "  float mata = (ac & 1u) != 0u ? vcol.a : matr.a;\n"
-    "  if ((ac & 2u) != 0u) {\n"
-    "    float amba = (ac & 64u) != 0u ? vcol.a : ambr.a;\n"
-    "    r.a = mata * clamp(amba + lights(ac, pos, n).a, 0.0, 1.0);\n"
-    "  } else r.a = mata;\n"
-    "  return clamp(r, 0.0, 1.0);\n"
-    "}\n"
+    /* For per-pixel lighting: the position and normal (view space) and the
+     * vertex colors, lit again for each pixel by the fragment shader. */
+    "out vec3 v_world; out vec3 v_nrm; out vec4 v_vcol0; out vec4 v_vcol1;\n"
+    GLSL_XF_LIGHTING
     "int texmtx(int i) { return int(i < 3 ? a_mtx0[i + 1] : i < 7 ? a_mtx1[i - 3] : a_mtx2.x); }\n"
     "vec2 texin(int i) { vec4 p = i < 2 ? a_tex01 : i < 4 ? a_tex23 : i < 6 ? a_tex45 : a_tex67; return (i & 1) == 0 ? p.xy : p.zw; }\n"
     "void main() {\n"
@@ -272,6 +280,7 @@ static const char* kVertexShader =
     "  gl_Position = vec4(clip.x * u_wide.x + u_wide.y * clip.w, clip.y * (u_wide.z != 0.0 ? u_wide.z : 1.0), -clip.z, clip.w);\n"
     "  v_col0 = channel(0, a_col0, world, n);\n"
     "  v_col1 = channel(1, a_col1, world, n);\n"
+    "  v_world = world; v_nrm = n; v_vcol0 = a_col0; v_vcol1 = a_col1;\n"
     "  int ntex = int(xw(0x103F) & 15u);\n"
     "  bool dual = (xw(0x1012) & 1u) != 0u;\n"
     "  for (int i = 0; i < 8; i++) {\n"
@@ -312,6 +321,10 @@ static const char* kVertexShader =
 static const char* kFsVersion = "#version 330 compatibility\n";
 static const char* kFragmentShader =
     "in vec4 v_col0; in vec4 v_col1; in vec3 v_tex[8];\n"
+    "in vec3 v_world; in vec3 v_nrm; in vec4 v_vcol0; in vec4 v_vcol1;\n"
+    "layout(std140) uniform XF { uvec4 xfm[" GX_XF_WORDS_STR " / 4]; };\n"
+    "uniform ivec4 u_ppl; /* x: per-pixel lighting on */\n"
+    GLSL_XF_LIGHTING
     "out vec4 o_color;\n"
     "uniform sampler2D u_tex0, u_tex1, u_tex2, u_tex3, u_tex4, u_tex5, u_tex6, u_tex7;\n"
     "uniform int u_num_stages;\n"
@@ -410,6 +423,15 @@ static const char* kFragmentShader =
     "void main() {\n"
     "  vec4 r0 = u_reg[0], r1 = u_reg[1], r2 = u_reg[2], r3 = u_reg[3];\n"
     "  vec4 last = r0;\n"
+    /* Per-pixel lighting: the two color channels lit here, for each pixel,
+     * from the interpolated position and normal; the vertices' own when
+     * off (or for flat, unlit draws, which come out the same). */
+    "  vec4 col0 = v_col0, col1 = v_col1;\n"
+    "  if (u_ppl.x != 0) {\n"
+    "    vec3 n = dot(v_nrm, v_nrm) > 0.0 ? normalize(v_nrm) : v_nrm;\n"
+    "    col0 = channel(0, v_vcol0, v_world, n);\n"
+    "    col1 = channel(1, v_vcol1, v_world, n);\n"
+    "  }\n"
     "  ivec3 it0 = ivec3(0), it1 = ivec3(0), it2 = ivec3(0), it3 = ivec3(0); ivec2 ind_coord = ivec2(0);\n"
     "  if (u_ind.y != 0) {\n"
     "    for (int k = 0; k < u_ind.x && k < 4; k++) {\n"
@@ -450,7 +472,7 @@ static const char* kFragmentShader =
     "      else { vec3 tc = texc(map.y); tex = sample_map(map.x, tc.xy / (tc.z == 0.0 ? 1.0 : tc.z)); }\n"
     "    }\n"
     "    tex = swizzle(tex, sel.w & 3);\n"
-    "    vec4 ras = map.w == 0 ? v_col0 : (map.w == 1 ? v_col1 : vec4(0.0));\n"
+    "    vec4 ras = map.w == 0 ? col0 : (map.w == 1 ? col1 : vec4(0.0));\n"
     "    if (map.w == 5) ras = vec4(0.0, 0.0, 0.0, float(bump) / 255.0);\n"
     "    else if (map.w == 6) ras = vec4(0.0, 0.0, 0.0, float(bump | (bump >> 5)) / 255.0);\n"
     "    ras = swizzle(ras, sel.w >> 2);\n"
@@ -529,11 +551,11 @@ static const char* kFragmentShader =
 typedef struct DrawProg {
     GLuint id;
     GLint uNumStages, uCin, uAin, uCop, uAop, uMap, uSel, uReg, uKonst, uSwap, uAlpha, uAlphaRef, uFog, uFogF,
-        uFogColor, uInd, uIndCmd, uIndStage, uIndMtx, uTcSize, uFogRange, uWide;
+        uFogColor, uInd, uIndCmd, uIndStage, uIndMtx, uTcSize, uFogRange, uWide, uPpl;
     GLfloat lWide[4];
     GLint lCin[64], lAin[64], lCop[64], lAop[64], lMap[64], lSel[64], lSwap[16], lAlpha[4], lFog[4];
     GLfloat lReg[16], lKonst[16], lAlphaRef[4], lFogF[4], lFogColor[4], lFogRange[16];
-    GLint lInd[4], lIndCmd[16], lIndStage[16], lIndMtx[24], lTcSize[16];
+    GLint lInd[4], lIndCmd[16], lIndStage[16], lIndMtx[24], lTcSize[16], lPpl[4];
     int set, stages;
 } DrawProg;
 
@@ -604,6 +626,7 @@ static void prog_locate(DrawProg* p) {
     LOC(uTcSize, "u_tc_size");
     LOC(uFogRange, "u_fog_range");
     LOC(uWide, "u_wide");
+    LOC(uPpl, "u_ppl");
 #undef LOC
     block = p_glGetUniformBlockIndex(p->id, "XF");
     if (block != 0xFFFFFFFFu) p_glUniformBlockBinding(p->id, block, 0);
@@ -2047,6 +2070,11 @@ static void apply_draw_state(const GXDrawState* st) {
     {
         GLfloat wide[4] = {st->wide_sx, st->wide_ox, st->wide_sy, 0};
         UNIFORM_IF_CHANGED(p_glUniform4fv, P, Wide, 1, wide);
+    }
+    {
+        /* Per-pixel lighting (Graphics; [graphics] per_pixel_lighting). */
+        GLint ppl[4] = {g_x[X_PER_PIXEL_LIGHTING] != 0, 0, 0, 0};
+        UNIFORM_IF_CHANGED(p_glUniform4iv, P, Ppl, 1, ppl);
     }
     UNIFORM_IF_CHANGED(p_glUniform4iv, P, Ind, 1, ind);
     if (st->ind_any) {

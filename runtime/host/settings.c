@@ -83,7 +83,7 @@ static const struct {
     {"graphics", "hud_edges", 0, 0, 1, "in game, HUD items at the sides out at the screen's edges (widescreen)"},
     {"graphics", "bloom", 1, 0, 1, "the soft glow around bright lights"},
     {"graphics", "fog", 1, 0, 1, "distance fog"},
-    {"graphics", "per_pixel_lighting", 0, 0, 1, "not yet"},
+    {"graphics", "per_pixel_lighting", 0, 0, 1, "1: lighting worked out for each pixel instead of each vertex"},
     {"graphics", "hdr", 0, 0, 1, "not yet"},
     {"graphics", "colors", 0, 0, 1, "0 original, 1 vivid"},
     {"graphics", "shader_mode", 0, 0, 2, "0 smooth (the ubershader), 1 fast (specialised shaders, from the next start), 2 precompile (not yet: as fast)"},
