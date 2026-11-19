@@ -161,7 +161,13 @@ int pad_icons_pad_set(void) {
     case 1: return PADSET_XB;
     case 2: return PADSET_PS;
     case 3: return PADSET_NS;
-    default: return pad_icons_detected();
+    default: {
+        /* The pad's own type from SDL (pad_sdl.c); without one, the
+         * game controllers Windows lists. */
+        extern int pad_sdl_type(int player);
+        int t = pad_sdl_type(0);
+        return t ? t : pad_icons_detected();
+    }
     }
 }
 

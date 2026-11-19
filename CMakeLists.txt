@@ -39,6 +39,25 @@ file(GLOB WP_RUNTIME_SOURCES CONFIGURE_DEPENDS
 add_executable(Wonderpark ${WP_RUNTIME_SOURCES} runtime/host/wonderpark.rc runtime/host/pad_icons.rc)
 target_include_directories(Wonderpark PRIVATE runtime/core runtime/gpu runtime/host)
 target_link_libraries(Wonderpark PRIVATE wp_generated)
+
+# SDL3 (zlib license; the tools/sdl3 submodule, pinned to a release), for
+# controllers: every pad by its position (Xbox, PlayStation, Switch and the
+# rest without Steam Input or DS4Windows), its type, rumble, and later
+# gyros. Built static with the game, offline; only the parts we use.
+set(SDL_STATIC ON CACHE BOOL "" FORCE)
+set(SDL_SHARED OFF CACHE BOOL "" FORCE)
+set(SDL_TEST_LIBRARY OFF CACHE BOOL "" FORCE)
+set(SDL_TESTS OFF CACHE BOOL "" FORCE)
+set(SDL_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(SDL_INSTALL OFF CACHE BOOL "" FORCE)
+foreach(_sdl_off AUDIO VIDEO GPU RENDER CAMERA POWER DIALOG TRAY)
+    set(SDL_${_sdl_off} OFF CACHE BOOL "" FORCE)
+endforeach()
+foreach(_sdl_on JOYSTICK HAPTIC HIDAPI SENSOR)
+    set(SDL_${_sdl_on} ON CACHE BOOL "" FORCE)
+endforeach()
+add_subdirectory(tools/sdl3 EXCLUDE_FROM_ALL)
+target_link_libraries(Wonderpark PRIVATE SDL3::SDL3-static)
 if(WIN32)
     target_link_libraries(Wonderpark PRIVATE opengl32 gdi32 user32 winmm shell32 ole32 dwmapi d2d1 dwrite windowscodecs)
 endif()

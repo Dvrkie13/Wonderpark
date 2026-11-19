@@ -2,7 +2,8 @@
 
 The Windows side.
 
-- `input_win32.c`: keyboard, mouse and XInput controller to Wii Remote buttons and pointer; mouse capture.
+- `input_win32.c`: keyboard, mouse and controller to Wii Remote buttons and pointer; mouse capture.
+- `pad_sdl.c` (shared with the launcher): controllers through SDL3 (`tools/sdl3`): any pad SDL knows (Xbox, PlayStation, Switch and most others, without Steam Input or DS4Windows), by button position, with rumble and each pad's type; pads kept in the order they connect (the first is player 1's), connected and gone ones noticed at each poll.
 - `pad_icons_core.cpp` (shared with the launcher) and `pad_icons.cpp`: controller button icons (Flat Gamepad Icons, CC BY-SA 4.0, built in by `pad_icons.rc` from `assets/ui/pad-icons/`), the connected pad's type (HID, by maker), the Button icons setting, key caps and the game's prompt icons.
 - `audio_win32.c`: sound output (waveOut, 48 kHz, upsampled from the game's 32 kHz).
 - `settings.c`: `settings.ini` and `bindings.ini`, `WONDERPARK_<KEY>` overrides.

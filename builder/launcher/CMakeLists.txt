@@ -2,18 +2,38 @@
 # built on its own by tools/build_launcher.py. It contains no game code or
 # data, so it can be shipped as is.
 cmake_minimum_required(VERSION 3.20)
-project(WonderparkLauncher CXX RC)
+project(WonderparkLauncher C CXX RC)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # Static runtime: the launcher runs with nothing else installed.
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
-# The controller icons (CC BY-SA 4.0) and the pad's type, shared with the game.
+# Controllers through SDL3 (zlib license; the tools/sdl3 submodule), as the
+# game reads them: static, only the parts used.
+set(SDL_STATIC ON CACHE BOOL "" FORCE)
+set(SDL_SHARED OFF CACHE BOOL "" FORCE)
+set(SDL_TEST_LIBRARY OFF CACHE BOOL "" FORCE)
+set(SDL_TESTS OFF CACHE BOOL "" FORCE)
+set(SDL_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(SDL_INSTALL OFF CACHE BOOL "" FORCE)
+foreach(_sdl_off AUDIO VIDEO GPU RENDER CAMERA POWER DIALOG TRAY)
+    set(SDL_${_sdl_off} OFF CACHE BOOL "" FORCE)
+endforeach()
+foreach(_sdl_on JOYSTICK HAPTIC HIDAPI SENSOR)
+    set(SDL_${_sdl_on} ON CACHE BOOL "" FORCE)
+endforeach()
+add_subdirectory(../../tools/sdl3 sdl3 EXCLUDE_FROM_ALL)
+
+# The controller icons (CC BY-SA 4.0), the pad's type and the pads
+# themselves, shared with the game.
 add_executable(WonderparkLauncher WIN32 launcher.cpp mods.cpp launcher.rc
-               ../../runtime/host/pad_icons_core.cpp ../../runtime/host/pad_icons.rc)
+               ../../runtime/host/pad_icons_core.cpp ../../runtime/host/pad_icons.rc
+               ../../runtime/host/pad_sdl.c)
 target_compile_definitions(WonderparkLauncher PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
+target_include_directories(WonderparkLauncher PRIVATE ../../runtime/host)
 if(MSVC)
-  target_compile_options(WonderparkLauncher PRIVATE /W3 /utf-8)
+  target_compile_options(WonderparkLauncher PRIVATE $<$<COMPILE_LANGUAGE:CXX>:/W3> /utf-8)
 endif()
-target_link_libraries(WonderparkLauncher PRIVATE d2d1 dwrite d3d11 dxgi dxguid windowscodecs ole32 shell32 shlwapi uuid setupapi)
+target_link_libraries(WonderparkLauncher PRIVATE SDL3::SDL3-static d2d1 dwrite d3d11 dxgi dxguid windowscodecs ole32 shell32
+                      shlwapi uuid setupapi)

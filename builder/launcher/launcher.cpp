@@ -40,6 +40,7 @@
 
 #include "mods.h"
 #include "../../runtime/host/pad_icons.h"  // controller icons (pad_icons_core.cpp, shared with the game)
+#include "../../runtime/host/pad_sdl.h"    // controllers through SDL3 (pad_sdl.c, shared with the game)
 
 #include <algorithm>
 #include <atomic>
@@ -1996,7 +1997,7 @@ static void render(double t, const Shared& s) {
     {
         float op = (1 - mk) * (1 - fade(.5f));
         if (g_padOn && op > 0) {
-            int set = pad_icons_detected();
+            int set = pad_sdl_type(0) ? pad_sdl_type(0) : pad_icons_detected();  // the pad's own type from SDL
             struct Item { uint32_t b; const wchar_t* label; } items[] = {{0x1000, L"Choose"}, {0x8000, L"Mods"}};
             float ih = 30, gap = 8, sep = 22, x = 0, total = 0;
             std::vector<float> iw;
@@ -2699,26 +2700,20 @@ static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
 }
 
 // Controller: A presses the main button (or opens the menu on the title).
-typedef DWORD(WINAPI* XInputGetState_t)(DWORD, void*);
-static XInputGetState_t g_xinput;
+// Any pad, through SDL3 (pad_sdl.c, shared with the game): buttons by
+// position, so the bottom face button is "A" on every pad.
 static void poll_controller() {
-    static WORD prev[4];
-    if (!g_xinput) return;
-    struct { DWORD packet; WORD buttons; BYTE lt, rt; SHORT lx, ly, rx, ry; } st;
-    // (Asking about an empty slot is slow: the others only every second.)
+    static uint32_t prev[4];
     static int connected = 0, wasConnected = -1;
-    static ULONGLONG lastAll;
-    bool all = GetTickCount64() - lastAll > 1000;
-    if (all) lastAll = GetTickCount64();
-    for (DWORD i = 0; i < 4; i++) {
-        if (!all && !(connected >> i & 1)) continue;
-        if (g_xinput(i, &st) != 0) {
+    PadState st;
+    for (int i = 0; i < 4; i++) {
+        if (!pad_sdl_state(i, &st)) {
             prev[i] = 0;
             connected &= ~(1 << i);
             continue;
         }
         connected |= 1 << i;
-        WORD down = st.buttons & ~prev[i];
+        uint32_t down = st.buttons & ~prev[i];
         prev[i] = st.buttons;
         if (down) V.keys = true;
         if (V.mods) {  // the Mods page: d-pad moves, A chooses, B closes
@@ -2762,9 +2757,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show) {
     JOBOBJECT_EXTENDED_LIMIT_INFORMATION jl = {};
     jl.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
     SetInformationJobObject(g_job, JobObjectExtendedLimitInformation, &jl, sizeof(jl));
-    HMODULE xi = LoadLibraryW(L"xinput1_4.dll");
-    if (!xi) xi = LoadLibraryW(L"xinput9_1_0.dll");
-    if (xi) g_xinput = (XInputGetState_t)GetProcAddress(xi, "XInputGetState");
+    pad_sdl_init();         // controllers (SDL3)
     pad_icons_core_init();  // the controller icons and the pad's type, on a thread of their own
 
     WNDCLASSEXW wc = {sizeof(wc)};

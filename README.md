@@ -127,6 +127,9 @@ Disc extraction alone: `python tools/extract_disc.py path\to\your\disc.iso`
   (GPL-3.0-or-later), the PowerPC-to-C recompiler, used as a git submodule.
   A `Wonderpark.exe` you build contains GPL-3.0 code from DolRecomp (its CPU
   helpers and the code it generates).
+- **[SDL3](https://github.com/libsdl-org/SDL)** (zlib license), for
+  controllers in the game and the launcher: a git submodule in `tools/sdl3`,
+  pinned to release 3.4.20, built with them offline.
 - **encounter, [decomp-toolkit](https://github.com/encounter/decomp-toolkit)**
   for disc extraction.
 - Fonts: [Fredoka](https://fonts.google.com/specimen/Fredoka) and

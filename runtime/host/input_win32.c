@@ -1,5 +1,5 @@
 /* From MildRain479/PokePark-Wiicompiled recomp/boot/input_win32.c (CC0). */
-/* Wii Remote 0 from the keyboard and the first XInput controller, for
+/* Wii Remote 0 from the keyboard and the first controller (SDL3), for
  * hle_wpad.c. PokePark is played with the remote held sideways, like a
  * classic pad: the d-pad moves, 1 and 2 are the face buttons. By default:
  *
@@ -33,21 +33,11 @@
 #include "host_input.h"
 #include "host_settings.h"
 
-typedef struct {
-    WORD wButtons;
-    BYTE bLeftTrigger, bRightTrigger;
-    SHORT sThumbLX, sThumbLY, sThumbRX, sThumbRY;
-} XPadGamepad;
-typedef struct {
-    DWORD dwPacketNumber;
-    XPadGamepad Gamepad;
-} XPadState;
-typedef struct {
-    WORD wLeftMotorSpeed, wRightMotorSpeed;
-} XPadVibration;
-
-static DWORD(WINAPI* pXInputGetState)(DWORD, XPadState*);
-static DWORD(WINAPI* pXInputSetState)(DWORD, XPadVibration*);
+/* Wonderpark: controllers through SDL3 (pad_sdl.c) instead of XInput, so
+ * PlayStation, Switch and other pads work natively; the readings come in
+ * XInput's form, so the rest of this file is as it was. */
+#include "pad_sdl.h"
+extern int g_wp_headless; /* main.c */
 
 static int has_focus(void) {
     DWORD pid = 0;
@@ -174,13 +164,13 @@ static float stick_axis(SHORT v) {
 }
 
 static void read_sticks(float* lx, float* ly, float* rx, float* ry) {
-    XPadState s;
+    PadState s;
     *lx = *ly = *rx = *ry = 0;
-    if (!pXInputGetState || pXInputGetState(0, &s) != ERROR_SUCCESS || menu_is_open()) return;
-    *lx = stick_axis(s.Gamepad.sThumbLX);
-    *ly = stick_axis(s.Gamepad.sThumbLY);
-    *rx = stick_axis(s.Gamepad.sThumbRX);
-    *ry = stick_axis(s.Gamepad.sThumbRY);
+    if (!pad_sdl_state(0, &s) || menu_is_open()) return;
+    *lx = stick_axis(s.lx);
+    *ly = stick_axis(s.ly);
+    *rx = stick_axis(s.rx);
+    *ry = stick_axis(s.ry);
 }
 
 /* The right stick turns the camera as the mouse does: full over turns it
@@ -240,29 +230,20 @@ static uint32_t keyboard(void) {
 #define STICK_THRESHOLD 16384
 
 /* The controller's buttons (XPAD_*), and separately the directions the
- * left stick is pushed, as d-pad bits. Read once per poll: asking about
- * a controller that isn't plugged in takes milliseconds, and the menu
- * gets the same reading. */
+ * left stick is pushed, as d-pad bits. Read once per poll, and the menu
+ * gets the same reading. (A pad connecting or going away is noticed in
+ * pad_sdl.c, which tells the button icons.) */
 static void controller_state(uint32_t* buttons, uint32_t* stick) {
-    XPadState s;
-    static int wasConnected = -1;
-    int connected;
+    PadState s;
     *buttons = *stick = 0;
-    connected = pXInputGetState && pXInputGetState(0, &s) == ERROR_SUCCESS;
-    if (connected != wasConnected) {
-        /* A pad came or went: look at its type again (pad_icons.cpp). */
-        extern void pad_icons_hotplug(void);
-        if (wasConnected >= 0) pad_icons_hotplug();
-        wasConnected = connected;
-    }
-    if (!connected) return;
-    *buttons = s.Gamepad.wButtons;
-    if (s.Gamepad.bLeftTrigger > 128) *buttons |= XPAD_LT;
-    if (s.Gamepad.bRightTrigger > 128) *buttons |= XPAD_RT;
-    if (s.Gamepad.sThumbLY > STICK_THRESHOLD) *stick |= XPAD_UP;
-    if (s.Gamepad.sThumbLY < -STICK_THRESHOLD) *stick |= XPAD_DOWN;
-    if (s.Gamepad.sThumbLX < -STICK_THRESHOLD) *stick |= XPAD_LEFT;
-    if (s.Gamepad.sThumbLX > STICK_THRESHOLD) *stick |= XPAD_RIGHT;
+    if (!pad_sdl_state(0, &s)) return;
+    *buttons = s.buttons;
+    if (s.lt > 128) *buttons |= XPAD_LT;
+    if (s.rt > 128) *buttons |= XPAD_RT;
+    if (s.ly > STICK_THRESHOLD) *stick |= XPAD_UP;
+    if (s.ly < -STICK_THRESHOLD) *stick |= XPAD_DOWN;
+    if (s.lx < -STICK_THRESHOLD) *stick |= XPAD_LEFT;
+    if (s.lx > STICK_THRESHOLD) *stick |= XPAD_RIGHT;
 }
 
 /* The left stick always moves, besides what the d-pad is bound to. */
@@ -366,13 +347,12 @@ static int sRumbling;
 
 static void set_motors(int on) {
     static const WORD kSpeed[4] = {0, 0x3000, 0x6000, 0xC000};
-    XPadVibration v;
-    v.wLeftMotorSpeed = v.wRightMotorSpeed = on ? kSpeed[g_settings.rumble & 3] : 0;
-    pXInputSetState(0, &v);
+    WORD s = on ? kSpeed[g_settings.rumble & 3] : 0;
+    pad_sdl_rumble(0, s, s);
 }
 
 static void rumble(int chan, int on) {
-    if (chan != 0 || !pXInputSetState) return;
+    if (chan != 0) return;
     sRumbling = on;
     set_motors(on);
 }
@@ -382,7 +362,6 @@ static void rumble(int chan, int on) {
 static ULONGLONG sPreviewEnd;
 
 void input_rumble_preview(void) {
-    if (!pXInputSetState) return;
     set_motors(1);
     sPreviewEnd = GetTickCount64() + 200;
 }
@@ -398,12 +377,7 @@ static void preview_tick(void) {
 static int script_input(uint32_t held) { return options_script(held) || menu_is_open(); }
 
 void input_init(void) {
-    HMODULE x = LoadLibraryA("xinput1_4.dll");
-    if (!x) x = LoadLibraryA("xinput9_1_0.dll");
-    if (x) {
-        pXInputGetState = (DWORD(WINAPI*)(DWORD, XPadState*))(void*)GetProcAddress(x, "XInputGetState");
-        pXInputSetState = (DWORD(WINAPI*)(DWORD, XPadVibration*))(void*)GetProcAddress(x, "XInputSetState");
-    }
+    if (!g_wp_headless) pad_sdl_init(); /* (no controllers in tests run headless) */
     g_host_pad_read = read_pad;
     g_host_script_input = script_input;
     g_host_pad_rumble = rumble;

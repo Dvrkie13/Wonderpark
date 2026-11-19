@@ -1,3 +1,6 @@
 [submodule "tools/dolrecomp"]
 	path = tools/dolrecomp
 	url = https://github.com/ExpansionPak/DolRecomp.git
+[submodule "tools/sdl3"]
+	path = tools/sdl3
+	url = https://github.com/libsdl-org/SDL.git
