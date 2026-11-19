@@ -190,7 +190,7 @@ also `WONDERPARK_<KEY>`, key in capitals, for example `WONDERPARK_WINDOW_MODE=1`
 | `[graphics] colors` | 0 original, 1 vivid | works, at once: more saturation (1.3x) and a little contrast on the shown picture |
 | `[graphics] per_pixel_lighting` | 0, 1 | works, at once: the vertex shader also passes the view-space position and normal and the vertex colors, and the fragment shader works out the two color channels' lighting again for each pixel (the same hardware model, `GLSL_XF_LIGHTING` shared by both; `u_ppl`), so shading on round things is smoother. Park, dev build: no measurable GPU cost |
 | `[graphics] hdr` | | not yet |
-| `[graphics] shader_mode` | 0 smooth, 1 fast, 2 precompile | from the next start: 1 (and 2, for now the same) turns on the specialised draw programs, as `WONDERPARK_SHADERS=spec` does (`gl_backend.c` spec_init; that variable still wins): less GPU time (Wish Park at 4x: 12 -> 5 ms a frame), but on AMD's driver the first draw with each new program blocks 50-300 ms. Precompile (waiting for the saved ones before the game starts) isn't built. Tried 2026-11-18 on the RX 9060 XT: one throwaway draw with each program as it's made, to take the driver's first-draw cost then; in the park Fast had 1 slow second of 34 and that 3 of 31 (noise), as the saved programs are already made and first drawn during the start-up screens. Left out |
+| `[graphics] shader_mode` | 0 smooth, 1 fast (2, the old precompile, reads as fast; F1 offers Smooth / Fast only) | from the next start: 1 (and 2) turns on the specialised draw programs, as `WONDERPARK_SHADERS=spec` does (`gl_backend.c` spec_init; that variable still wins): less GPU time (Wish Park at 4x: 12 -> 5 ms a frame), but on AMD's driver the first draw with each new program blocks 50-300 ms. Precompile (waiting for the saved ones before the game starts) isn't built. Tried 2026-11-18 on the RX 9060 XT: one throwaway draw with each program as it's made, to take the driver's first-draw cost then; in the park Fast had 1 slow second of 34 and that 3 of 31 (noise), as the saved programs are already made and first drawn during the start-up screens. Left out |
 | `[controls] free_camera` | 0, 1 (default 1) | works (but see `docs/camera-and-extras.md`: frame rate dips while it keeps turning): in the park the mouse and right stick turn and tilt the follow camera (tilt -20 to 45 degrees); B (the game's look-around) eases it back behind the player; the eye is pulled in from walls and kept off the ground, for drawing only; another camera or scene starts over. Off eases back. Not in minigames (`runtime/hle/hle_camera.c`, adapted from MildRain479/PokePark-2-Wiicompiled's, CC0; the scene from `runtime/hle/hle_scene.c`). `WONDERPARK_MOUSE=<dx>,<dy>[,<updates>]` (tests) turns it by that many pixels an update (only for that many turned updates, when given) |
 | `[controls] stick_sensitivity` | 10-300 % | works: the right stick's turning (600 mouse pixels a second at 100%) |
 | `[controls] invert_x` | 0, 1 | works: the camera's left and right, mouse and stick (Mirror world flips it too) |
@@ -219,16 +219,38 @@ also `WONDERPARK_<KEY>`, key in capitals, for example `WONDERPARK_WINDOW_MODE=1`
 
 ## The F1 settings tab
 
-`runtime/host/settings_ui.cpp`, matching `docs/settings/ingame-f1-settings.html`.
+`runtime/host/settings_ui.cpp`, matching `docs/settings/ingame-f1-settings.html`
+(the "Explorer's Notebook" look: a green cover with gold corners, a brown
+leather page with paw prints, colored index tabs, washi-tape section titles,
+sticker buttons with navy outlines and hard shadows, small tilts done with
+one rotation matrix per element; all drawn in code). Seven tabs: Display,
+Graphics (View: field of view, draw distance), Controls, Audio, Gameplay,
+Multiplayer (the four player slots from the connected controllers, the
+keyboard as its own player; the rest local and every Online row "Coming
+soon"), Silly. Every tab has its Reset button.
 
-The Gameplay page ends with a **Friends** list (the friendship tracker): "N
-of 194" and a row per Pokémon that can be befriended, not yet first, each
-with its icon and English name. Those are read once, on a thread of their
-own, from the player's extracted disc (`Archive/PokemonIcon.dac`,
-`Archive/ResidentMessage.dac`'s `Pokemon.msbt`); whether each is a friend
-(100 friendship points or more) is read live from the loaded save
-(`runtime/hle/hle_friends.c`, from MildRain479/PokePark-2-Wiicompiled, CC0).
-With no save loaded it says so. Not grouped by zone yet.
+The **Friend Book** (the pink ribbon at the top, F2, or Y on a controller)
+is a view of its own: the index tabs become the park's areas (All, Cove,
+Arbor, Crag, Tech, Arcane, Wish Park), with a ring of friends made, an
+All / Friends / Not yet filter, the area's places as chips, and a polaroid
+card per Pokémon (a gold star on friends, a dashed "???" with no friendship
+points yet). A card opens a hint card: friendship points, and the Pad's own
+note on what that Pokémon wants (`Flavor_Pokemon.msbt` `FL_<NAME>_020`,
+"show more" for `_040`; `_100` once a friend). Names, icons, notes and place
+names are read once, on a thread of their own, from the player's extracted
+disc (`Archive/PokemonIcon.dac`; `Archive/ResidentMessage.dac`'s
+`Pokemon.msbt`, `Flavor_Pokemon.msbt`, `PlaceName.msbt`); friendship is read
+live from the loaded save (`runtime/hle/hle_friends.c`, from
+MildRain479/PokePark-2-Wiicompiled, CC0). Each Pokémon's area and place is a
+table of letters in the Pad's order (`kWhere`, from the handoff roster,
+whose order matches the game's name table at `0x80435C10`); which Wish Park
+zone each of its Pokémon is in isn't known, so Wish Park has no place chips.
+"Not met yet" means no friendship points yet: the save's own "met" flag
+hasn't been found. With no save loaded the book says so.
+
+Fixed with it: the LZ11 decoder stopped a few bytes early when the data
+ended with a back-reference, cutting off an archive's last file
+(`Flavor_Pokemon.msbt`).
 
 F1 or a controller's Back + Start opens it; F1, Esc, Close or the
 controller's B close it. It's drawn by the runtime with Direct2D and
@@ -245,8 +267,9 @@ controller. Changes apply at once and save to `settings.ini` /
 tab closes (they rebuild the EFB). The same pause holds the game while its
 window is in the background, with "Pause in the background" on.
 
-Settings not built yet are shown greyed with "Coming soon" (a choice not
-available yet is a dimmed pill). Text speed is the game's own value, read
+Settings not built yet stay visible, dimmed, with a red "Coming soon" rubber
+stamp (a section title can carry it: Online); a choice not available yet
+(Vulkan) is a dashed pill marked "soon". Text speed is the game's own value, read
 and written in its loaded save (`runtime/hle/hle_options.c`; greyed "Load
 a save first" before one is loaded).
 
@@ -271,7 +294,9 @@ addresses in `docs/handoff/SETTINGS.md`). Values the game can't show yet
 Test hooks: `WONDERPARK_F1_SHOT=<prefix>` opens the tab
 `WONDERPARK_F1_SHOT_AT` seconds after the first frame (default 1) and saves
 `<prefix>-<n>[b]-<category>.bmp` (the frame as shown; `b`: scrolled to the
-end), then closes it. `WONDERPARK_F1_SCRIPT="<seconds>:<key>,..."` presses
+end) for the seven tabs, then the Friend Book (`8-friendbook`, `9-cove`,
+`10-hint` with a hint card open, `10b-hint` after its "show more" when it
+has one), then closes it. `WONDERPARK_F1_SCRIPT="<seconds>:<key>,..."` presses
 keys (f1 esc up down left right enter q e backspace, a letter or digit) or
 `shot=<file.bmp>`, through the tab's own key handling (headless too).
 
