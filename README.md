@@ -65,7 +65,7 @@ Wonderpark is a work in progress (a development preview): it has been played fro
 | Skipping movies | In progress (not working yet) |
 | A full playthrough | Not done yet |
 | Vulkan renderer, HDR, aim assist, online play | Planned |
-| Release downloads | First beta: v0.1.0-beta |
+| Release downloads | Beta: v0.1.1-beta |
 | Linux / macOS / Steam Deck | Not planned yet |
 
 Found a bug? [Open an issue](../../issues/new/choose). The template asks for what we need.

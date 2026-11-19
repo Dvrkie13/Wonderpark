@@ -3,4 +3,4 @@
  * each release (docs/RELEASING.md); tools/make_release.py names the zip by it. */
 #pragma once
 
-#define WONDERPARK_VERSION "0.1.0-beta"
+#define WONDERPARK_VERSION "0.1.1-beta"
