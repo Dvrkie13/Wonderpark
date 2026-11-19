@@ -126,7 +126,7 @@ Settings are saved in `%APPDATA%\Wonderpark\settings.ini` and controls in `%APPD
 
 ## Mods
 
-Open the launcher, click **MODS** on the right edge, then **Install from .zip**. Each mod gets an on/off switch, and changes apply the next time you press Play.
+Open the launcher, click **EXTRAS** on the right edge, then **Mods → Install from .zip**. Each mod gets an on/off switch, and changes apply the next time you press Play.
 
 A Wonderpark mod is a `.zip` with a `mod.json` at its root:
 
@@ -146,7 +146,7 @@ Supported content: `textures/` (replacement textures, matched by Wonderpark's ow
 ## FAQ
 
 **Where are my saves?**
-In `%APPDATA%\Wonderpark\nand\title\00010000\53324c45\data\`, laid out like a Wii's (and Dolphin's) NAND. With Save backups on (the default), a copy of each slot is kept in `%APPDATA%\Wonderpark\backups\` before every save.
+In `%APPDATA%\Wonderpark\nand\title\00010000\53324c45\data\`, laid out like a Wii's (and Dolphin's) NAND. With Save backups on (the default), a copy of each slot is kept in `%APPDATA%\Wonderpark\backups\` before every save. In the launcher, **EXTRAS → Saves** shows both save files, backs them up (automatically before every Play), restores backups, exports a file as a .zip and imports a Wii `data.bin`, a Dolphin save folder or a .zip.
 
 **Can I share my built copy with a friend?**
 No. Your built Wonderpark folder contains game code recompiled from your disc, so sharing it means sharing the game. Your friend can build their own from their own disc.

@@ -27,7 +27,7 @@ add_subdirectory(../../tools/sdl3 sdl3 EXCLUDE_FROM_ALL)
 
 # The controller icons (CC BY-SA 4.0), the pad's type and the pads
 # themselves, shared with the game.
-add_executable(WonderparkLauncher WIN32 launcher.cpp mods.cpp launcher.rc
+add_executable(WonderparkLauncher WIN32 launcher.cpp mods.cpp saves.cpp wii_save.c launcher.rc
                ../../runtime/host/pad_icons_core.cpp ../../runtime/host/pad_icons.rc
                ../../runtime/host/pad_sdl.c)
 target_compile_definitions(WonderparkLauncher PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)

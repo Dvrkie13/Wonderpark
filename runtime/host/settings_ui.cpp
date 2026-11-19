@@ -2571,7 +2571,7 @@ std::map<std::string, std::wstring> msbt_texts(const std::vector<uint8_t>& m) {
                 t += 2;
                 if (!ch) break;
                 if (ch == 0x0E) {
-                    t += 4 + be16(t + 4);
+                    t += 6 + be16(t + 4);  // the tag: group, type, size, then size bytes
                     continue;
                 }
                 s += ch >= 32 ? (wchar_t)ch : L' ';

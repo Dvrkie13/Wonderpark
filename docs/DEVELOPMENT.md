@@ -118,13 +118,45 @@ switches; Enter, Space or A choose. The mouse wheel scrolls the list.
   background thread and shown from the frame after it's ready. Replacing
   only: a mod can't add new disc files.
 
+**Extras** (the right-edge tab, EXTRAS, with the installed mods' count;
+`M` or Y opens it) has three pages: **Mods** (Installed: the above; Get
+mods: the curated list, "Coming soon" until the wonderpark-mods-index list
+exists, its address `[mods] index_url` in `launcher.ini`), **Saves** and
+**HD Pack** ("Coming soon").
+
+**Saves** (`builder/launcher/saves.cpp`): the game's two save files (`GD0`
+and `GD1`, each with its mirror `GD<n>M` and photos `Pic<n>`) in
+`%APPDATA%\Wonderpark\nand\title\00010000\53324c45\data`, each shown with
+where it was saved, friends, berries, play time and when it was last
+written. From the save file (5,344 bytes, big-endian): play time in seconds
+at `+0x1470` (checked: 465 is the game's "0:07"), berries at `+0x1474`,
+area and zone at `+0x14A6` (named by the disc's `PlaceName.msbt`,
+`Fd<area><zone>`), friendship as in `hle_friends.c` (the entry table read
+from `game\sys\main.dol`). A file with no play time and no berries (a new
+game's) shows "Empty". Per file: **Back up** and **Export** (a .zip of its
+files in Dolphin's layout). **Import a save…**: a Wii's `data.bin` (from an
+SD card), a .zip, or any file in Dolphin's save folder (the folder is
+taken); the files brought in replace theirs and the other file is kept.
+Reading, decrypting and zipping is MildRain479/PokePark-2-Wiicompiled's
+`wii_save.c` (CC0, unchanged). **Backups**: folders in
+`%APPDATA%\Wonderpark\backups\saves\` (an `about.ini` with the label),
+each restorable; "Back up before every Play" (on by default, `[saves]
+backup_before_play` in `launcher.ini`) keeps the newest 10 automatic ones.
+Restoring and importing always back up first. Nothing can be changed while
+`Wonderpark.exe` runs (checked every 2 s; the page says so). The game's
+own per-save backups (Save backups in F1) stay in `backups\` beside these.
+
 Test options: `--test-iso <file>` (instead of the file picker), `--test-zip
-<file>` (instead of the Mods page's file picker) and
+<file>` (instead of the Mods page's file picker), `--test-save <file>`
+(instead of the Saves page's import and export pickers) and
 `--test-script "<seconds>:<action>,..."` with actions `logo`, `press`,
 `cancel` (no question), `shot=<file.png>` (saves the next frame),
 `wait-state=ready|built|noiso|building`, `wait-progress=<0-100>`, `mods`,
 `mods-close`, `install=<file>`, `toggle=<n>` (the n-th card's switch, from
-0), `wait-install=<0-100>` (101: until it ends), `quit`;
+0), `wait-install=<0-100>` (101: until it ends), `page=<0-2>` (an Extras
+page), `sub=<0-1>` (Installed / Get mods), `click=<code>` (anything on the
+panel by its code: 300 + 2n back up file n, 301 + 2n export it, 320 import,
+322 the auto-backup switch, 330 + n restore backup n), `quit`;
 `+N` times are after the previous action. `WONDERPARK_DATA_DIR` moves
 `mods\` and `mods.ini` too. `WONDERPARK_LAUNCHER_STATS=<file>`
 writes the average time per frame spent drawing, in `EndDraw` and in

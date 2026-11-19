@@ -39,6 +39,7 @@
 #include <wincodec.h>
 
 #include "mods.h"
+#include "saves.h"
 #include "../../runtime/host/pad_icons.h"  // controller icons (pad_icons_core.cpp, shared with the game)
 #include "../../runtime/host/pad_sdl.h"    // controllers through SDL3 (pad_sdl.c, shared with the game)
 
@@ -514,6 +515,8 @@ struct Gfx {
     // The corner hint and the Mods page.
     ComPtr<IDWriteTextFormat> tfPill, tfTab, tfBadge, tfMTitle, tfMSub, tfDrop, tfDropSmall, tfMProg, tfMLabel,
         tfModName, tfModSum, tfMFoot, tfMErr, tfTip;
+    // Extras: the page tabs, small buttons, the "Coming soon" stamp.
+    ComPtr<IDWriteTextFormat> tfSeg, tfBtn, tfStamp;
     ComPtr<ID2D1PathGeometry> puzzle, upload, card;  // card: 422 x 61, uneven corners
     ComPtr<ID2D1StrokeStyle> dash;                    // the drop zone's dashed border
     // Built once (scene units)
@@ -704,6 +707,9 @@ static bool load_fonts() {
     fmt(L"Nunito", DWRITE_FONT_WEIGHT_BOLD, 12, G.tfMFoot);
     fmt(L"Nunito", DWRITE_FONT_WEIGHT_BOLD, 13.5f, G.tfMErr);
     fmt(L"Nunito", DWRITE_FONT_WEIGHT_BOLD, 12.5f, G.tfTip);
+    fmt(L"Fredoka", DWRITE_FONT_WEIGHT_SEMI_BOLD, 16, G.tfSeg);
+    fmt(L"Fredoka", DWRITE_FONT_WEIGHT_SEMI_BOLD, 14, G.tfBtn);
+    fmt(L"Fredoka", DWRITE_FONT_WEIGHT_BOLD, 11, G.tfStamp);
     G.tfMSub->SetLineSpacing(DWRITE_LINE_SPACING_METHOD_UNIFORM, 13.5f * 1.45f, 13.5f * 1.08f);
     // Card text: one line, cut off with "…".
     for (IDWriteTextFormat* f : {G.tfModName.Get(), G.tfModSum.Get(), G.tfMProg.Get()}) {
@@ -1205,6 +1211,20 @@ struct View {
     double inst_done_t = -100; // when it finished (the bar shows "Done" for .25 s)
     float list_h = 0, content_h = 0;  // the list's visible and full height (scrolling)
     bool keys = false;         // last input was keyboard/controller: focus rings show
+    // Extras: which page (0 Mods, 1 Saves, 2 HD Pack) and Mods' sub-page
+    // (0 Installed, 1 Get mods). Everything clickable on the panel, in
+    // order, for the mouse and the keyboard/controller focus (fcode: the
+    // focused one's code, 0 none).
+    int page = 0, modsSub = 0;
+    std::vector<std::pair<D2D1_RECT_F, int>> items;
+    int fcode = 0;
+    // The Saves page: what was read last, and the last action's result.
+    std::vector<SaveFile> saves;
+    std::vector<SaveBackup> backups;
+    bool game_running = false;
+    double saves_t = -100;     // when they were read (again every 2 s while it shows)
+    std::wstring saves_msg;
+    bool saves_err = false;
 };
 static View V;
 static std::vector<ModInfo> g_mods;  // installed, in mods.ini's order
@@ -1292,6 +1312,307 @@ static void focus_ring(D2D1_RECT_F r, float rad) {  // outline: 3px teal, 3px ou
         brush(rgb(0x3fd0d8)).Get(), 3);
 }
 
+// ---- Extras: helpers for the pages (scene units, the panel's transform set)
+
+static void ui_reg(D2D1_RECT_F r, int code) { V.items.push_back({r, code}); }
+static void ui_ring(D2D1_RECT_F r, float rad, int code) {
+    if (V.fcode == code) focus_ring(r, rad);
+}
+// A pill button 34 high at (x, by): solid (teal) or outlined; returns its width.
+static float ui_button(float x, float by, const std::wstring& label, int code, bool solid, bool enabled = true) {
+    ID2D1DeviceContext2* dc = G.dc.Get();
+    float tw = 0;
+    text_height(label, G.tfBtn.Get(), 1000, &tw);
+    float w = tw + 30, h = 34;
+    D2D1_RECT_F b = RectF(x, by, x + w, by + h);
+    bool hov = enabled && V.hover == code;
+    float op = enabled ? 1.f : .45f;
+    if (solid) dc->FillRoundedRectangle(D2D1::RoundedRect(b, 17, 17), brush(hov ? rgb(0x7ae4ea, op) : rgb(0x3fd0d8, op)).Get());
+    else dc->FillRoundedRectangle(D2D1::RoundedRect(b, 17, 17), brush(hov ? rgb(0x24335f, op) : rgb(0x121b3a, .6f * op)).Get());
+    dc->DrawRoundedRectangle(D2D1::RoundedRect(RectF(x + 1, by + 1, x + w - 1, by + h - 1), 16, 16),
+                             brush(solid ? rgb(0xe8fdff, .8f * op) : rgb(0xf3cf6b, .6f * op)).Get(), 1.5f);
+    float th = text_height(label, G.tfBtn.Get(), w);
+    draw_text(label, G.tfBtn.Get(), x, by + h / 2 - th / 2, w, th, solid ? rgb(0x10223a, op) : rgb(0xffe7a3, op),
+              DWRITE_TEXT_ALIGNMENT_CENTER);
+    if (enabled) {
+        ui_reg(b, code);
+        ui_ring(b, 17, code);
+    }
+    return w;
+}
+static float ui_button_w(const std::wstring& label) {
+    float tw = 0;
+    text_height(label, G.tfBtn.Get(), 1000, &tw);
+    return tw + 30;
+}
+// The red "Coming soon" rubber stamp, tilted, at (x, cy); returns its width.
+static float ui_stamp(float x, float cy, const std::wstring& s) {
+    ID2D1DeviceContext2* dc = G.dc.Get();
+    ComPtr<IDWriteTextLayout> l = spaced(s, G.tfStamp.Get(), 1.1f);
+    DWRITE_TEXT_METRICS m;
+    l->GetMetrics(&m);
+    float w = m.widthIncludingTrailingWhitespace + 18, h = 22;
+    Matrix3x2F old;
+    dc->GetTransform(&old);
+    dc->SetTransform(Matrix3x2F::Rotation(-6, Point2F(x + w / 2, cy)) * old);
+    dc->FillRoundedRectangle(D2D1::RoundedRect(RectF(x, cy - h / 2, x + w, cy + h / 2), 6, 6), brush(rgb(0x3a160e, .35f)).Get());
+    dc->DrawRoundedRectangle(D2D1::RoundedRect(RectF(x + 1.25f, cy - h / 2 + 1.25f, x + w - 1.25f, cy + h / 2 - 1.25f), 5, 5),
+                             brush(rgb(0xff8a7a)).Get(), 2.5f);
+    dc->DrawTextLayout(Point2F(x + 9, cy - m.height / 2), l.Get(), brush(rgb(0xff8a7a)).Get());
+    dc->SetTransform(old);
+    return w;
+}
+// A small capitals label (YOUR SAVE FILES); returns its height.
+static float ui_label(float x, float ly, const std::wstring& s) {
+    ComPtr<IDWriteTextLayout> l = spaced(s, G.tfMLabel.Get(), 11.5f * .12f);
+    DWRITE_TEXT_METRICS m;
+    l->GetMetrics(&m);
+    G.dc->DrawTextLayout(Point2F(x, ly), l.Get(), brush(rgb(0xc6d0e6)).Get());
+    return m.height;
+}
+// A switch, 52 x 30 (as the mods' switches), not animated.
+static void ui_switch(D2D1_RECT_F r, bool on, int code, bool enabled = true) {
+    ID2D1DeviceContext2* dc = G.dc.Get();
+    float kv = on ? 1.f : 0.f, op = enabled ? 1.f : .45f;
+    D2D1_ROUNDED_RECT tr = D2D1::RoundedRect(r, 15, 15);
+    dc->FillRoundedRectangle(tr, brush(mix(rgb(0x3a466b, op), rgb(0x3fd0d8, op), kv)).Get());
+    dc->DrawRoundedRectangle(D2D1::RoundedRect(RectF(r.left + 1, r.top + 1, r.right - 1, r.bottom - 1), 14, 14),
+                             brush(mix(rgb(0x5d6a8a, op), rgb(0xe8fdff, op), kv)).Get(), 2);
+    float kx = r.left + 4 + 11 + 22 * kv, ky = r.top + 4 + 11;
+    fill_ellipse(kx, ky + 2, 11, brush(rgb(0x10182f, .4f)).Get());
+    fill_ellipse(kx, ky, 11, brush(mix(rgb(0xb6c1d6), rgb(0xf3cf6b), kv)).Get());
+    if (enabled) {
+        ui_reg(r, code);
+        ui_ring(r, 15, code);
+    }
+}
+
+// The Get mods list's address (launcher.ini, [mods] index_url): empty until
+// the list exists.
+static std::wstring mods_index_url() {
+    wchar_t buf[1024];
+    GetPrivateProfileStringW(L"mods", L"index_url", L"", buf, 1024, (mods_data_dir() + L"\\launcher.ini").c_str());
+    return buf;
+}
+
+static std::wstring play_time_text(int s) {
+    wchar_t b[32];
+    if (s >= 3600) swprintf(b, 32, L"%dh %02dm", s / 3600, s / 60 % 60);
+    else swprintf(b, 32, L"%dm", s / 60);
+    return b;
+}
+static std::wstring thousands(int n) {
+    std::wstring s = std::to_wstring(n), out;
+    for (size_t i = 0; i < s.size(); i++) {
+        if (i && (s.size() - i) % 3 == 0) out += L',';
+        out += s[i];
+    }
+    return out;
+}
+// "today, 9:14 PM", "yesterday, 9:14 PM", "Nov 2" or "Nov 2, 2025".
+static std::wstring when_text(uint64_t ft) {
+    if (!ft) return L"";
+    FILETIME f = {(DWORD)ft, (DWORD)(ft >> 32)}, lf;
+    SYSTEMTIME s, now;
+    FileTimeToLocalFileTime(&f, &lf);
+    FileTimeToSystemTime(&lf, &s);
+    GetLocalTime(&now);
+    static const wchar_t* mon[12] = {L"Jan", L"Feb", L"Mar", L"Apr", L"May", L"Jun", L"Jul", L"Aug", L"Sep", L"Oct", L"Nov", L"Dec"};
+    wchar_t b[64], clock[24];
+    swprintf(clock, 24, L"%d:%02d %s", s.wHour % 12 ? s.wHour % 12 : 12, s.wMinute, s.wHour < 12 ? L"AM" : L"PM");
+    auto day = [](const SYSTEMTIME& x) {
+        FILETIME y;
+        SYSTEMTIME d = x;
+        d.wHour = d.wMinute = d.wSecond = d.wMilliseconds = 0;
+        SystemTimeToFileTime(&d, &y);
+        return ((uint64_t)y.dwHighDateTime << 32 | y.dwLowDateTime) / 864000000000ull;
+    };
+    uint64_t dd = day(now) - day(s);
+    if (dd == 0) swprintf(b, 64, L"today, %s", clock);
+    else if (dd == 1) swprintf(b, 64, L"yesterday, %s", clock);
+    else if (s.wYear == now.wYear) swprintf(b, 64, L"%s %d", mon[(s.wMonth + 11) % 12], s.wDay);
+    else swprintf(b, 64, L"%s %d, %d", mon[(s.wMonth + 11) % 12], s.wDay, s.wYear);
+    return b;
+}
+
+static void refresh_saves() {
+    V.saves = saves_read(g_root);
+    V.backups = saves_backups();
+    V.game_running = saves_game_running();
+}
+
+// ---- Extras > Saves: the game's two save files, import and export, backups.
+// Codes: 300 + 2 * file back up, 301 + 2 * file export, 320 import, 321 open
+// the folder, 322 the "Back up before every Play" switch, 330 + n restore
+// backup n.
+static void render_saves_page(double t, Matrix3x2F M, float L, float Rr, float y, float footTop, float px, float pw) {
+    ID2D1DeviceContext2* dc = G.dc.Get();
+    float CW = Rr - L;
+    if (V.saves_t < 0) refresh_saves(), V.saves_t = t;
+    if (t - V.saves_t > 2) {  // whether the game started or stopped
+        V.saves_t = t;
+        if (saves_game_running() != V.game_running) refresh_saves();
+    }
+    bool locked = V.game_running;
+    // The status line.
+    {
+        D2D1_ROUNDED_RECT r = D2D1::RoundedRect(RectF(L, y, Rr, y + 38), 12, 12);
+        uint32_t c = locked ? 0xf39a2b : 0x5bc26a;
+        dc->FillRoundedRectangle(r, brush(rgb(c, .14f)).Get());
+        dc->DrawRoundedRectangle(D2D1::RoundedRect(RectF(L + .5f, y + .5f, Rr - .5f, y + 37.5f), 12, 12), brush(rgb(c, .55f)).Get(), 1);
+        fill_ellipse(L + 18, y + 19, 5, brush(rgb(c)).Get());
+        std::wstring s = locked ? L"The game is running: your saves are locked until you close it."
+                                : L"The game is closed, so your saves are safe to change.";
+        float th = text_height(s, G.tfMFoot.Get(), CW - 40);
+        draw_text(s, G.tfMFoot.Get(), L + 32, y + 19 - th / 2, CW - 40, th, locked ? rgb(0xffd8a8) : rgb(0xbff0c6));
+        y += 38 + 12;
+    }
+    // The rest scrolls.
+    D2D1_RECT_F region = RectF(px + 2, y, px + pw - 2, footTop);
+    V.list = region;
+    V.list_h = footTop - y;
+    dc->PushAxisAlignedClip(region, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+    float cy = y + 6 - V.scroll;
+    auto visible = [&](D2D1_RECT_F r) { return r.top >= region.top - 1 && r.bottom <= region.bottom + 1; };
+    auto button = [&](float x, float by, const std::wstring& s, int code, bool solid, bool enabled) {
+        D2D1_RECT_F r = RectF(x, by, x + ui_button_w(s), by + 34);
+        return ui_button(x, by, s, code, solid, enabled && visible(r));
+    };
+    cy += ui_label(L, cy, L"YOUR SAVE FILES") + 10;
+    const float cardH = 100;
+    for (auto& f : V.saves) {
+        D2D1_RECT_F card = RectF(L, cy, Rr, cy + cardH);
+        if (f.exists) {
+            dc->FillRoundedRectangle(D2D1::RoundedRect(RectF(L, cy + 3, Rr, cy + cardH + 3), 16, 16), brush(rgb(0x080c1e, .45f)).Get());
+            dc->FillRoundedRectangle(D2D1::RoundedRect(card, 16, 16),
+                                     linear(Point2F(0, cy), Point2F(0, cy + cardH), {{0, rgb(0x2c3d70, .7f)}, {1, rgb(0x1e2b52, .75f)}}).Get());
+            dc->DrawRoundedRectangle(D2D1::RoundedRect(RectF(L + .75f, cy + .75f, Rr - .75f, cy + cardH - .75f), 15, 15),
+                                     brush(rgb(0xf3cf6b, .32f)).Get(), 1.5f);
+        } else {
+            dc->DrawRoundedRectangle(D2D1::RoundedRect(RectF(L + 1, cy + 1, Rr - 1, cy + cardH - 1), 15, 15), brush(rgb(0xf3cf6b, .35f)).Get(), 1.5f,
+                                     G.dash.Get());
+        }
+        // The file's number on a gold tile.
+        D2D1_RECT_F nb = RectF(L + 16, cy + cardH / 2 - 23, L + 16 + 46, cy + cardH / 2 + 23);
+        dc->FillRoundedRectangle(D2D1::RoundedRect(RectF(nb.left, nb.top + 3, nb.right, nb.bottom + 3), 12, 12), brush(rgb(0xa8741d, f.exists ? 1.f : .5f)).Get());
+        dc->FillRoundedRectangle(D2D1::RoundedRect(nb, 12, 12),
+                                 linear(Point2F(0, nb.top), Point2F(0, nb.bottom), {{0, rgb(0xffe7a3, f.exists ? 1.f : .5f)}, {1, rgb(0xf3cf6b, f.exists ? 1.f : .5f)}}).Get());
+        std::wstring num = std::to_wstring(f.slot + 1);
+        float nh = text_height(num, G.tfDrop.Get(), 46);
+        draw_text(num, G.tfDrop.Get(), nb.left, (nb.top + nb.bottom) / 2 - nh / 2, 46, nh, rgb(0x1b2440), DWRITE_TEXT_ALIGNMENT_CENTER);
+        float tx = nb.right + 14, bw = std::max(ui_button_w(L"Back up"), ui_button_w(L"Export")), tw = Rr - 14 - bw - 10 - tx;
+        if (f.exists) {
+            std::wstring title = L"File " + num + (f.place.empty() ? L"" : L" · " + f.place);
+            std::wstring stats;
+            if (f.friends >= 0) stats += std::to_wstring(f.friends) + (f.friends == 1 ? L" friend · " : L" friends · ");
+            stats += thousands(f.berries) + L" berries · " + play_time_text(f.play_seconds);
+            std::wstring last = L"Last played " + when_text(f.last_played);
+            float h1 = text_height(title, G.tfModName.Get(), tw), h2 = text_height(stats, G.tfModSum.Get(), tw), h3 = text_height(last, G.tfModSum.Get(), tw);
+            float ty = cy + cardH / 2 - (h1 + 3 + h2 + 2 + h3) / 2;
+            draw_text(title, G.tfModName.Get(), tx, ty, tw, h1, rgb(0xffe7a3));
+            draw_text(stats, G.tfModSum.Get(), tx, ty + h1 + 3, tw, h2, rgb(0xe6ebf5));
+            draw_text(last, G.tfModSum.Get(), tx, ty + h1 + 3 + h2 + 2, tw, h3, rgb(0xb9c4dc));
+            float bx = Rr - 14 - bw;
+            button(bx, cy + cardH / 2 - 34 - 4, L"Back up", 300 + 2 * f.slot, false, !locked);
+            button(bx, cy + cardH / 2 + 4, L"Export", 301 + 2 * f.slot, false, true);
+        } else {
+            float h1 = text_height(L"Empty", G.tfModName.Get(), tw), h2 = text_height(L"No save in this file yet.", G.tfModSum.Get(), tw);
+            float ty = cy + cardH / 2 - (h1 + 3 + h2) / 2;
+            draw_text(L"Empty", G.tfModName.Get(), tx, ty, tw, h1, rgb(0xffe7a3, .7f));
+            draw_text(L"No save in this file yet.", G.tfModSum.Get(), tx, ty + h1 + 3, tw, h2, rgb(0xb9c4dc, .8f));
+        }
+        cy += cardH + 10;
+    }
+    cy += 4;
+    {
+        float w = button(L, cy, L"Import a save…", 320, false, !locked);
+        button(L + w + 10, cy, L"Open saves folder", 321, false, true);
+        cy += 34 + 8;
+    }
+    if (!V.saves_msg.empty()) {
+        float h = text_height(V.saves_msg, G.tfMFoot.Get(), CW);
+        draw_text(V.saves_msg, G.tfMFoot.Get(), L, cy, CW, h, V.saves_err ? rgb(0xffb4b4) : rgb(0xbff0c6));
+        cy += h + 6;
+    }
+    {
+        std::wstring s = L"Import: a Wii's data.bin (from an SD card), a .zip, or any file in Dolphin's save folder. Your saves are backed up first.";
+        float h = text_height(s, G.tfMFoot.Get(), CW);
+        draw_text(s, G.tfMFoot.Get(), L, cy, CW, h, rgb(0x8f9cbd));
+        cy += h + 18;
+    }
+    cy += ui_label(L, cy, L"BACKUPS") + 10;
+    {
+        float h1 = text_height(L"Back up before every Play", G.tfBtn.Get(), CW - 70);
+        std::wstring sub = L"Keeps the last 10 automatic backups.";
+        float h2 = text_height(sub, G.tfModSum.Get(), CW - 70);
+        draw_text(L"Back up before every Play", G.tfBtn.Get(), L, cy, CW - 70, h1, rgb(0xffe7a3));
+        draw_text(sub, G.tfModSum.Get(), L, cy + h1 + 2, CW - 70, h2, rgb(0xb9c4dc));
+        D2D1_RECT_F sw = RectF(Rr - 52, cy + (h1 + 2 + h2) / 2 - 15, Rr, cy + (h1 + 2 + h2) / 2 + 15);
+        ui_switch(sw, saves_auto_backup(), 322, visible(sw));
+        cy += std::max(h1 + 2 + h2, 30.f) + 14;
+    }
+    if (V.backups.empty()) {
+        draw_text(L"No backups yet.", G.tfStatus.Get(), L, cy, CW, 30, rgb(0xaab6cf));
+        cy += 30;
+    }
+    for (size_t i = 0; i < V.backups.size() && i < 30; i++) {
+        const SaveBackup& b = V.backups[i];
+        float rh = 48;
+        dc->FillRoundedRectangle(D2D1::RoundedRect(RectF(L, cy, Rr, cy + rh), 12, 12), brush(rgb(0x121b3a, .55f)).Get());
+        std::wstring when = when_text(b.when);
+        if (!when.empty()) when[0] = towupper(when[0]);
+        float h1 = text_height(b.label, G.tfBtn.Get(), CW - 120), h2 = text_height(when, G.tfModSum.Get(), CW - 120);
+        float ty = cy + rh / 2 - (h1 + 1 + h2) / 2;
+        draw_text(b.label, G.tfBtn.Get(), L + 14, ty, CW - 120, h1, rgb(0xe6ebf5));
+        draw_text(when, G.tfModSum.Get(), L + 14, ty + h1 + 1, CW - 120, h2, rgb(0xb9c4dc));
+        float bw = ui_button_w(L"Restore");
+        button(Rr - 8 - bw, cy + rh / 2 - 17, L"Restore", 330 + (int)i, false, !locked);
+        cy += rh + 8;
+    }
+    float content = cy + V.scroll - y + 10;
+    V.content_h = content;
+    dc->PopAxisAlignedClip();
+    V.scroll = std::max(0.f, std::min(V.scroll, content - V.list_h));
+    if (content > V.list_h + 1) {
+        float th = std::max(30.f, V.list_h * V.list_h / content);
+        float sy = y + (V.list_h - th) * (V.scroll / (content - V.list_h));
+        dc->FillRoundedRectangle(D2D1::RoundedRect(RectF(px + pw - 12, sy + 4, px + pw - 7, sy + th - 4), 2.5f, 2.5f),
+                                 brush(rgb(0xf3cf6b, .5f)).Get());
+    }
+    (void)M;
+}
+
+// ---- Extras > HD Pack: sharper textures made on this PC from the player's
+// own disc (not built yet: shown with its steps and "Coming soon").
+static void render_hd_page(double t, Matrix3x2F M, float L, float Rr, float y, float footTop, float px, float pw) {
+    ID2D1DeviceContext2* dc = G.dc.Get();
+    float CW = Rr - L;
+    (void)t, (void)M, (void)footTop, (void)px, (void)pw;
+    std::wstring s = L"Make sharper textures from your own disc, upscaled on this PC with an AI upscaler. Everything stays on this PC: "
+                     L"the pack is made from the game's art, so never share it.";
+    float h = text_height(s, G.tfMSub.Get(), CW);
+    draw_text(s, G.tfMSub.Get(), L, y, CW, h, rgb(0xc6d0e6));
+    y += h + 16;
+    const wchar_t* steps[3][2] = {{L"Pull textures from your disc", L"Read from your own game files"},
+                                  {L"Upscale them on this PC", L"AI upscaler on your graphics card (Vulkan)"},
+                                  {L"Turn on as a texture pack", L"Added to Mods automatically, with a switch"}};
+    for (int i = 0; i < 3; i++) {
+        D2D1_ROUNDED_RECT r = D2D1::RoundedRect(RectF(L, y, Rr, y + 58), 14, 14);
+        dc->FillRoundedRectangle(r, brush(rgb(0x121b3a, .55f)).Get());
+        dc->DrawRoundedRectangle(D2D1::RoundedRect(RectF(L + .5f, y + .5f, Rr - .5f, y + 57.5f), 14, 14), brush(rgb(0xf3cf6b, .3f)).Get(), 1);
+        G.dc->DrawEllipse(D2D1::Ellipse(Point2F(L + 32, y + 29), 15, 15), brush(rgb(0x8f9cbd)).Get(), 2);
+        std::wstring n = std::to_wstring(i + 1);
+        float nh = text_height(n, G.tfBtn.Get(), 30);
+        draw_text(n, G.tfBtn.Get(), L + 17, y + 29 - nh / 2, 30, nh, rgb(0xc6d0e6), DWRITE_TEXT_ALIGNMENT_CENTER);
+        draw_text(steps[i][0], G.tfBtn.Get(), L + 60, y + 11, CW - 70, 20, rgb(0xffe7a3, .7f));
+        draw_text(steps[i][1], G.tfModSum.Get(), L + 60, y + 32, CW - 70, 20, rgb(0xb9c4dc, .7f));
+        y += 58 + 8;
+    }
+    y += 16;
+    ui_stamp(L + 4, y + 12, L"COMING SOON");
+    draw_text(L"Not built yet.", G.tfMSub.Get(), L + 140, y + 3, CW - 140, 30, rgb(0xc6d0e6));
+}
+
 static void render_mods(double t, float /*mk*/) {
     ID2D1DeviceContext2* dc = G.dc.Get();
     Matrix3x2F R = root_m();
@@ -1307,7 +1628,7 @@ static void render_mods(double t, float /*mk*/) {
     // ---- The tab (slides off to the right as the page opens: 130%, .45 s).
     {
         float tk = V.reduced ? lin : ease_pop(clamp01(tsec / .45f));
-        ComPtr<IDWriteTextLayout> word = spaced(L"MODS", G.tfTab.Get(), 17 * .14f);
+        ComPtr<IDWriteTextLayout> word = spaced(L"EXTRAS", G.tfTab.Get(), 17 * .14f);
         DWRITE_TEXT_METRICS m;
         word->GetMetrics(&m);
         float len = m.widthIncludingTrailingWhitespace, lh = m.height;
@@ -1398,192 +1719,275 @@ static void render_mods(double t, float /*mk*/) {
     };
     float L = px + 24, Rr = px + pw - 24, CW = Rr - L;
 
-    // Head: the title and the close button; the line under it.
+    // Everything clickable, gathered as it's drawn (the mouse and the focus).
+    V.items.clear();
+
+    // Head: the title and the close button.
     Matrix3x2F M = group(.2f);
+    float y = top + 2 + 22;
     {
-        float y = top + 2 + 22;
-        float th = text_height(L"Mods", G.tfMTitle.Get(), 300);
-        draw_text(L"Mods", G.tfMTitle.Get(), L, y + 22 - th / 2 + 3, 300, th, rgb(0x6b4410));
-        draw_text(L"Mods", G.tfMTitle.Get(), L, y + 22 - th / 2, 300, th, rgb(0xffe7a3));
+        float th = text_height(L"Extras", G.tfMTitle.Get(), 300);
+        draw_text(L"Extras", G.tfMTitle.Get(), L, y + 22 - th / 2 + 3, 300, th, rgb(0x6b4410));
+        draw_text(L"Extras", G.tfMTitle.Get(), L, y + 22 - th / 2, 300, th, rgb(0xffe7a3));
         D2D1_ELLIPSE c = D2D1::Ellipse(Point2F(Rr - 22, y + 22), 22, 22);
         dc->FillEllipse(c, brush(V.hover == 6 ? rgb(0x24335f) : rgb(0x121b3a, .6f)).Get());
         dc->DrawEllipse(D2D1::Ellipse(c.point, 21, 21), brush(rgb(0xf3cf6b, .6f)).Get(), 2);
         float a = 5;
         dc->DrawLine(Point2F(c.point.x - a, c.point.y - a), Point2F(c.point.x + a, c.point.y + a), brush(rgb(0xffe7a3)).Get(), 2.2f, G.round.Get());
         dc->DrawLine(Point2F(c.point.x + a, c.point.y - a), Point2F(c.point.x - a, c.point.y + a), brush(rgb(0xffe7a3)).Get(), 2.2f, G.round.Get());
-        if (V.focus == 1) focus_ring(RectF(Rr - 44, y, Rr, y + 44), 22);
         V.close = RectF(Rr - 44, y, Rr, y + 44);
-        std::wstring sub = L"Add mods from your own .zip files. Changes apply the next time you press Play.";
-        draw_text(sub, G.tfMSub.Get(), L, y + 44 + 6, CW, 100, rgb(0xc6d0e6));
+        ui_reg(V.close, 6);
+        ui_ring(V.close, 22, 6);
     }
     dc->PopLayer();
-    float y = top + 2 + 22 + 44 + 6 + text_height(L"Add mods from your own .zip files. Changes apply the next time you press Play.",
-                                                   G.tfMSub.Get(), CW) + 14;
+    y += 44 + 16;
 
-    // The drop zone, the progress and any error.
-    std::wstring ifile, istage, ierr;
-    float iprog = 0;
-    bool irun;
+    // The page tabs: Mods, Saves, HD Pack (the chosen one gold).
+    M = group(.25f);
     {
-        std::lock_guard<std::mutex> lk(g_install.m);
-        irun = g_install.running;
-        ifile = g_install.file, istage = g_install.stage, ierr = g_install.error, iprog = g_install.progress;
-    }
-    bool showProg = irun || (ierr.empty() && t - V.inst_done_t < .35);
-    M = group(.3f);
-    {
-        D2D1_RECT_F r = RectF(L, y, Rr, y + 76);
-        bool lit = !irun && (V.hover == 7 || V.drag_over);
-        if (irun) dc->PushLayer(D2D1::LayerParameters1(D2D1::InfiniteRect(), nullptr, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE,
-                                                        Matrix3x2F::Identity(), .5f), nullptr);
-        dc->FillRoundedRectangle(D2D1::RoundedRect(r, 16, 16), brush(rgb(0x3fd0d8, lit ? .14f : .06f)).Get());
-        dc->DrawRoundedRectangle(D2D1::RoundedRect(RectF(L + 1, y + 1, Rr - 1, y + 75), 15, 15),
-                                 brush(lit ? rgb(0x3fd0d8) : rgb(0xf3cf6b, .6f)).Get(), 2, G.dash.Get());
-        dc->SetTransform(Matrix3x2F::Scale(1.25f, 1.25f) * Matrix3x2F::Translation(L + 2 + 18, y + 38 - 15) * M);
-        strokeG(G.upload.Get(), brush(rgb(0x3fd0d8)).Get(), 2, G.round.Get());
-        dc->SetTransform(M);
-        float tx = L + 2 + 18 + 30 + 14;
-        float h1 = text_height(L"Install from .zip", G.tfDrop.Get(), Rr - tx);
-        std::wstring hintLine = L"Click to choose a file, or drop a .zip here";
-        float h2 = text_height(hintLine, G.tfDropSmall.Get(), Rr - tx - 18);
-        float ty = y + 38 - (h1 + h2) / 2;
-        draw_text(L"Install from .zip", G.tfDrop.Get(), tx, ty, Rr - tx, h1, rgb(0xffe7a3));
-        draw_text(hintLine, G.tfDropSmall.Get(), tx, ty + h1, Rr - tx - 18, h2, rgb(0xc6d0e6));
-        if (irun) dc->PopLayer();
-        if (V.focus == 0) focus_ring(r, 16);
-        V.drop = r;
-        y += 76;
-        if (showProg) {
-            y += 12;
-            float rh = text_height(L"Ag", G.tfMProg.Get(), 1000);
-            float bh = 1 + 14 + rh + 8 + 14 + 8 + rh + 14 + 1;
-            D2D1_ROUNDED_RECT box = D2D1::RoundedRect(RectF(L, y, Rr, y + bh), 14, 14);
-            dc->FillRoundedRectangle(box, brush(rgb(0x121b3a, .7f)).Get());
-            dc->DrawRoundedRectangle(grow(box, -.5f), brush(rgb(0xf3cf6b, .3f)).Get(), 1);
-            float ix = L + 17, iw = CW - 34, iy = y + 15;
-            float pct = irun ? iprog : 100;
-            std::wstring ps = std::to_wstring((int)(pct + .5f)) + L"%";
-            draw_text(ps, G.tfMProg.Get(), ix, iy, iw, rh, rgb(0xe6ebf5), DWRITE_TEXT_ALIGNMENT_TRAILING);
-            draw_text(ifile, G.tfMProg.Get(), ix, iy, iw - 60, rh, rgb(0xe6ebf5));
-            float by = iy + rh + 8;
-            D2D1_ROUNDED_RECT bar = D2D1::RoundedRect(RectF(ix + 1, by + 1, ix + iw - 1, by + 13), 6, 6);
-            dc->FillRoundedRectangle(bar, brush(rgb(0x121b3a)).Get());
-            float fw = (iw - 4) * clamp01(pct / 100);
-            if (fw > 1)
-                dc->FillRoundedRectangle(D2D1::RoundedRect(RectF(ix + 2, by + 2, ix + 2 + fw, by + 12), 5, 5),
-                                         brush(rgb(0x3fd0d8)).Get());
-            dc->DrawRoundedRectangle(bar, brush(rgb(0xf3cf6b)).Get(), 2);
-            draw_text(irun ? istage : L"Done", G.tfMProg.Get(), ix, by + 14 + 8, iw, rh, rgb(0xe6ebf5));
-            y += bh;
-        }
-        if (!irun && !ierr.empty()) {
-            y += 12;
-            float eh = text_height(ierr, G.tfMErr.Get(), CW);
-            draw_text(ierr, G.tfMErr.Get(), L, y, CW, eh, rgb(0xffb4b4));
-            y += eh;
+        const wchar_t* names[3] = {L"Mods", L"Saves", L"HD Pack"};
+        D2D1_ROUNDED_RECT box = D2D1::RoundedRect(RectF(L, y, Rr, y + 48), 14, 14);
+        dc->FillRoundedRectangle(box, brush(rgb(0x121b3a, .7f)).Get());
+        dc->DrawRoundedRectangle(grow(box, -.5f), brush(rgb(0xf3cf6b, .3f)).Get(), 1);
+        float bw = (CW - 8) / 3;
+        for (int i = 0; i < 3; i++) {
+            D2D1_RECT_F b = RectF(L + 4 + i * bw, y + 4, L + 4 + (i + 1) * bw, y + 44);
+            bool sel = V.page == i, hov = V.hover == 200 + i;
+            if (sel) {
+                dc->FillRoundedRectangle(D2D1::RoundedRect(RectF(b.left, b.top + 3, b.right, b.bottom + 3), 11, 11), brush(rgb(0xa8741d)).Get());
+                dc->FillRoundedRectangle(D2D1::RoundedRect(b, 11, 11),
+                                         linear(Point2F(0, b.top), Point2F(0, b.bottom), {{0, rgb(0xffe7a3)}, {1, rgb(0xf3cf6b)}}).Get());
+            } else if (hov) {
+                dc->FillRoundedRectangle(D2D1::RoundedRect(b, 11, 11), brush(rgb(0x24335f)).Get());
+            }
+            float th = text_height(names[i], G.tfSeg.Get(), bw);
+            draw_text(names[i], G.tfSeg.Get(), b.left, (b.top + b.bottom) / 2 - th / 2, bw, th, sel ? rgb(0x1b2440) : rgb(0xe6ebf5),
+                      DWRITE_TEXT_ALIGNMENT_CENTER);
+            ui_reg(b, 200 + i);
+            ui_ring(b, 11, 200 + i);
         }
     }
     dc->PopLayer();
+    y += 48 + 14;
 
-    // The footer (measured first: the list fills the space above it).
-    std::wstring foot = L"Mods are stored in %APPDATA%\\Wonderpark\\mods. Only install mods you trust.";
+    // The footer (measured first: the page fills the space above it).
+    std::wstring foot = V.page == 0 ? L"Mods are stored in %APPDATA%\\Wonderpark\\mods. Only install mods you trust."
+                      : V.page == 1 ? L"Saves live in %APPDATA%\\Wonderpark\\nand (the game's own folders). Backups in %APPDATA%\\Wonderpark\\backups\\saves."
+                                    : L"The HD pack is made on this PC, saved with your build on this drive, and never shared.";
     float fh = text_height(foot, G.tfMFoot.Get(), CW);
     float footTop = bot - 2 - (12 + fh + 18);
 
-    // The list of installed mods (scrolls).
-    M = group(.4f);
-    {
-        D2D1_RECT_F lr = RectF(px + 2, y, px + pw - 2, footTop);
-        V.list = lr;
-        float lblH = 0;
-        ComPtr<IDWriteTextLayout> lbl = spaced(L"INSTALLED", G.tfMLabel.Get(), 11.5f * .12f);
-        DWRITE_TEXT_METRICS lm;
-        lbl->GetMetrics(&lm);
-        lblH = lm.height;
-        const float cardH = 61, gap = 10;
-        float content = 14 + 4 + lblH + gap + (n ? n * (cardH + gap) - gap : 20) + 10;
-        V.list_h = footTop - y;
-        V.content_h = content;
-        V.scroll = std::max(0.f, std::min(V.scroll, content - V.list_h));
-        dc->PushAxisAlignedClip(lr, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
-        float cy = y + 14 - V.scroll;
-        dc->DrawTextLayout(Point2F(L, cy + 4), lbl.Get(), brush(rgb(0xc6d0e6)).Get());
-        cy += 4 + lblH + gap;
-        if (!n) draw_text(L"No mods yet.", G.tfStatus.Get(), L, cy + 6, CW, 30, rgb(0xaab6cf));
-        for (size_t i = 0; i < n; i++, cy += cardH + gap) {
-            const ModInfo& md = g_mods[i];
-            // The switch's knob slides over .2 s.
-            float want = md.enabled ? 1.f : 0.f;
-            auto it = g_knob.find(md.id);
-            float kv = it == g_knob.end() || V.reduced ? want : it->second;
-            kv = kv < want ? std::min(want, kv + dt / .2f) : std::max(want, kv - dt / .2f);
-            g_knob[md.id] = kv;
-            if (kv != want) fast(.3);
-            if (cy > footTop || cy + cardH < y) continue;
-            bool fresh = !V.fresh.empty() && md.id == V.fresh;
-            float fk = fresh && !V.reduced ? ease_pop(clamp01(since(V.fresh_t, t) / .5f)) : 1.f;
-            float sc = .88f + .12f * fk;
-            Matrix3x2F C = Matrix3x2F::Translation(L, cy) * Matrix3x2F::Scale(sc, sc, Point2F(L + CW / 2, cy + cardH / 2)) * M;
-            if (fk < 1)
-                dc->PushLayer(D2D1::LayerParameters1(D2D1::InfiniteRect(), nullptr, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE,
-                                                     Matrix3x2F::Identity(), fk), nullptr);
-            bool hov = V.hover == 100 + (int)i || V.tip == (int)i;
-            if (fresh)
-                for (int g = 4; g >= 1; g--) {  // gold glow (0 0 18px)
-                    dc->SetTransform(Matrix3x2F::Scale(1 + g * 4.5f / 211, 1 + g * 4.5f / 30.5f, Point2F(211, 30.5f)) * C);
-                    fillG(G.card.Get(), brush(rgb(0xf3cf6b, .06f)).Get());
-                }
-            dc->SetTransform(Matrix3x2F::Translation(0, 3) * C);
-            fillG(G.card.Get(), brush(rgb(0x080c1e, .45f)).Get());
-            dc->SetTransform(C);
-            ID2D1Brush* cb = cached("modCard", [] {
-                return linear(Point2F(0, 0), Point2F(0, 61), {{0, rgb(0x2c3d70, .7f)}, {1, rgb(0x1e2b52, .75f)}});
-            });
-            fillG(G.card.Get(), cb);
-            dc->DrawLine(Point2F(14, 1.5f), Point2F(422 - 16, 1.5f), brush(ColorF(1, 1, 1, .08f)).Get(), 1);
-            strokeG(G.card.Get(), brush(fresh ? rgb(0xf3cf6b) : rgb(0xf3cf6b, hov ? .6f : .32f)).Get(), 1.5f);
-            // Title and one-line summary (cut off with "…"; full text on hover).
-            float tx = 1.5f + 16, tw = 422 - 3 - 16 - 12 - 52 - 12;
-            float nh = text_height(L"Ag", G.tfModName.Get(), 1000), sh = text_height(L"Ag", G.tfModSum.Get(), 1000);
-            float ty = cardH / 2 - (nh + 3 + sh) / 2;
-            float a = md.enabled ? 1.f : .55f;
-            draw_text(md.name, G.tfModName.Get(), tx, ty, tw, nh, rgb(0xffe7a3, a));
-            draw_text(md.summary, G.tfModSum.Get(), tx, ty + nh + 3, tw, sh, rgb(0xb9c4dc, a));
-            float full = 0;
-            text_height(md.summary, G.tfModSum.Get(), 100000, &full);
-            V.cut[i] = full > tw + .5f;
-            V.summaries[i] = RectF(L + tx, cy + ty + nh + 3, L + tx + tw, cy + ty + nh + 3 + sh);
-            // The switch: 52 x 30, the knob slides right and turns gold.
-            float sx = 422 - 1.5f - 12 - 52, sy = cardH / 2 - 15;
-            D2D1_ROUNDED_RECT tr = D2D1::RoundedRect(RectF(sx, sy, sx + 52, sy + 30), 15, 15);
-            dc->FillRoundedRectangle(tr, brush(mix(rgb(0x3a466b), rgb(0x3fd0d8), kv)).Get());
-            dc->DrawRoundedRectangle(grow(tr, -1), brush(mix(rgb(0x5d6a8a), rgb(0xe8fdff), kv)).Get(), 2);
-            float kx = sx + 4 + 11 + 22 * kv, ky = sy + 4 + 11;
-            fill_ellipse(kx, ky + 2, 11, brush(rgb(0x10182f, .4f)).Get());
-            fill_ellipse(kx, ky, 11, brush(mix(rgb(0xb6c1d6), rgb(0xf3cf6b), kv)).Get());
-            draw_sparkle(C, kx - 5.5f, ky - 5.5f, 11, mix(rgb(0x7f8daa), rgb(0xa8741d), kv), 1, 1);
-            dc->SetTransform(C);
-            if (V.focus == 2 + (int)i) focus_ring(RectF(sx, sy, sx + 52, sy + 30), 15);
-            V.switches[i] = RectF(L + sx, cy + sy, L + sx + 52, cy + sy + 30);
-            if (fk < 1) dc->PopLayer();
+    if (V.page == 0) {
+        // Installed / Get mods.
+        M = group(.3f);
+        {
+            float x = L;
+            for (int i = 0; i < 2; i++) {
+                const wchar_t* s = i ? L"Get mods" : L"Installed";
+                float tw = 0;
+                text_height(s, G.tfBtn.Get(), 1000, &tw);
+                D2D1_RECT_F b = RectF(x, y, x + tw + 28, y + 32);
+                bool sel = V.modsSub == i, hov = V.hover == 210 + i;
+                dc->FillRoundedRectangle(D2D1::RoundedRect(b, 16, 16), brush(sel ? rgb(0x3fd0d8) : hov ? rgb(0x24335f) : rgb(0x121b3a, .6f)).Get());
+                dc->DrawRoundedRectangle(D2D1::RoundedRect(RectF(b.left + 1, b.top + 1, b.right - 1, b.bottom - 1), 15, 15),
+                                         brush(sel ? rgb(0xe8fdff, .8f) : rgb(0xf3cf6b, .5f)).Get(), 1.5f);
+                float th = text_height(s, G.tfBtn.Get(), 1000);
+                draw_text(s, G.tfBtn.Get(), b.left, y + 16 - th / 2, tw + 28, th, sel ? rgb(0x10223a) : rgb(0xe6ebf5), DWRITE_TEXT_ALIGNMENT_CENTER);
+                ui_reg(b, 210 + i);
+                ui_ring(b, 16, 210 + i);
+                x = b.right + 8;
+            }
         }
-        dc->PopAxisAlignedClip();
-        // A thin scroll bar when the list is longer than its space.
-        if (content > V.list_h + 1) {
-            float th = std::max(30.f, V.list_h * V.list_h / content);
-            float ty = y + (V.list_h - th) * (V.scroll / (content - V.list_h));
-            dc->SetTransform(M);
-            dc->FillRoundedRectangle(D2D1::RoundedRect(RectF(px + pw - 12, ty + 4, px + pw - 7, ty + th - 4), 2.5f, 2.5f),
-                                     brush(rgb(0xf3cf6b, .5f)).Get());
-        }
+        dc->PopLayer();
+        y += 32 + 14;
     }
-    dc->PopLayer();
+
+    if (V.page == 0 && V.modsSub == 0) {
+        std::wstring sub = L"Add mods from your own .zip files. Changes apply the next time you press Play.";
+        M = group(.3f);
+        draw_text(sub, G.tfMSub.Get(), L, y, CW, 100, rgb(0xc6d0e6));
+        dc->PopLayer();
+        y += text_height(sub, G.tfMSub.Get(), CW) + 12;
+
+        // The drop zone, the progress and any error.
+        std::wstring ifile, istage, ierr;
+        float iprog = 0;
+        bool irun;
+        {
+            std::lock_guard<std::mutex> lk(g_install.m);
+            irun = g_install.running;
+            ifile = g_install.file, istage = g_install.stage, ierr = g_install.error, iprog = g_install.progress;
+        }
+        bool showProg = irun || (ierr.empty() && t - V.inst_done_t < .35);
+        M = group(.3f);
+        {
+            D2D1_RECT_F r = RectF(L, y, Rr, y + 76);
+            bool lit = !irun && (V.hover == 7 || V.drag_over);
+            if (irun) dc->PushLayer(D2D1::LayerParameters1(D2D1::InfiniteRect(), nullptr, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE,
+                                                            Matrix3x2F::Identity(), .5f), nullptr);
+            dc->FillRoundedRectangle(D2D1::RoundedRect(r, 16, 16), brush(rgb(0x3fd0d8, lit ? .14f : .06f)).Get());
+            dc->DrawRoundedRectangle(D2D1::RoundedRect(RectF(L + 1, y + 1, Rr - 1, y + 75), 15, 15),
+                                     brush(lit ? rgb(0x3fd0d8) : rgb(0xf3cf6b, .6f)).Get(), 2, G.dash.Get());
+            dc->SetTransform(Matrix3x2F::Scale(1.25f, 1.25f) * Matrix3x2F::Translation(L + 2 + 18, y + 38 - 15) * M);
+            strokeG(G.upload.Get(), brush(rgb(0x3fd0d8)).Get(), 2, G.round.Get());
+            dc->SetTransform(M);
+            float tx = L + 2 + 18 + 30 + 14;
+            float h1 = text_height(L"Install from .zip", G.tfDrop.Get(), Rr - tx);
+            std::wstring hintLine = L"Click to choose a file, or drop a .zip here";
+            float h2 = text_height(hintLine, G.tfDropSmall.Get(), Rr - tx - 18);
+            float ty = y + 38 - (h1 + h2) / 2;
+            draw_text(L"Install from .zip", G.tfDrop.Get(), tx, ty, Rr - tx, h1, rgb(0xffe7a3));
+            draw_text(hintLine, G.tfDropSmall.Get(), tx, ty + h1, Rr - tx - 18, h2, rgb(0xc6d0e6));
+            if (irun) dc->PopLayer();
+            V.drop = r;
+            if (!irun) ui_reg(r, 7);
+            ui_ring(r, 16, 7);
+            y += 76;
+            if (showProg) {
+                y += 12;
+                float rh = text_height(L"Ag", G.tfMProg.Get(), 1000);
+                float bh = 1 + 14 + rh + 8 + 14 + 8 + rh + 14 + 1;
+                D2D1_ROUNDED_RECT box = D2D1::RoundedRect(RectF(L, y, Rr, y + bh), 14, 14);
+                dc->FillRoundedRectangle(box, brush(rgb(0x121b3a, .7f)).Get());
+                dc->DrawRoundedRectangle(grow(box, -.5f), brush(rgb(0xf3cf6b, .3f)).Get(), 1);
+                float ix = L + 17, iw = CW - 34, iy = y + 15;
+                float pct = irun ? iprog : 100;
+                std::wstring ps = std::to_wstring((int)(pct + .5f)) + L"%";
+                draw_text(ps, G.tfMProg.Get(), ix, iy, iw, rh, rgb(0xe6ebf5), DWRITE_TEXT_ALIGNMENT_TRAILING);
+                draw_text(ifile, G.tfMProg.Get(), ix, iy, iw - 60, rh, rgb(0xe6ebf5));
+                float by = iy + rh + 8;
+                D2D1_ROUNDED_RECT bar = D2D1::RoundedRect(RectF(ix + 1, by + 1, ix + iw - 1, by + 13), 6, 6);
+                dc->FillRoundedRectangle(bar, brush(rgb(0x121b3a)).Get());
+                float fw = (iw - 4) * clamp01(pct / 100);
+                if (fw > 1)
+                    dc->FillRoundedRectangle(D2D1::RoundedRect(RectF(ix + 2, by + 2, ix + 2 + fw, by + 12), 5, 5),
+                                             brush(rgb(0x3fd0d8)).Get());
+                dc->DrawRoundedRectangle(bar, brush(rgb(0xf3cf6b)).Get(), 2);
+                draw_text(irun ? istage : L"Done", G.tfMProg.Get(), ix, by + 14 + 8, iw, rh, rgb(0xe6ebf5));
+                y += bh;
+            }
+            if (!irun && !ierr.empty()) {
+                y += 12;
+                float eh = text_height(ierr, G.tfMErr.Get(), CW);
+                draw_text(ierr, G.tfMErr.Get(), L, y, CW, eh, rgb(0xffb4b4));
+                y += eh;
+            }
+        }
+        dc->PopLayer();
+
+        // The list of installed mods (scrolls).
+        M = group(.4f);
+        {
+            D2D1_RECT_F lr = RectF(px + 2, y, px + pw - 2, footTop);
+            V.list = lr;
+            ComPtr<IDWriteTextLayout> lbl = spaced(L"INSTALLED", G.tfMLabel.Get(), 11.5f * .12f);
+            DWRITE_TEXT_METRICS lm;
+            lbl->GetMetrics(&lm);
+            float lblH = lm.height;
+            const float cardH = 61, gap = 10;
+            float content = 14 + 4 + lblH + gap + (n ? n * (cardH + gap) - gap : 20) + 10;
+            V.list_h = footTop - y;
+            V.content_h = content;
+            V.scroll = std::max(0.f, std::min(V.scroll, content - V.list_h));
+            dc->PushAxisAlignedClip(lr, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+            float cy = y + 14 - V.scroll;
+            dc->DrawTextLayout(Point2F(L, cy + 4), lbl.Get(), brush(rgb(0xc6d0e6)).Get());
+            cy += 4 + lblH + gap;
+            if (!n) draw_text(L"No mods yet.", G.tfStatus.Get(), L, cy + 6, CW, 30, rgb(0xaab6cf));
+            for (size_t i = 0; i < n; i++, cy += cardH + gap) {
+                const ModInfo& md = g_mods[i];
+                float want = md.enabled ? 1.f : 0.f;
+                auto it = g_knob.find(md.id);
+                float kv = it == g_knob.end() || V.reduced ? want : it->second;
+                kv = kv < want ? std::min(want, kv + dt / .2f) : std::max(want, kv - dt / .2f);
+                g_knob[md.id] = kv;
+                if (kv != want) fast(.3);
+                if (cy > footTop || cy + cardH < y) continue;
+                bool fresh = !V.fresh.empty() && md.id == V.fresh;
+                float fk = fresh && !V.reduced ? ease_pop(clamp01(since(V.fresh_t, t) / .5f)) : 1.f;
+                float sc = .88f + .12f * fk;
+                Matrix3x2F C = Matrix3x2F::Translation(L, cy) * Matrix3x2F::Scale(sc, sc, Point2F(L + CW / 2, cy + cardH / 2)) * M;
+                if (fk < 1)
+                    dc->PushLayer(D2D1::LayerParameters1(D2D1::InfiniteRect(), nullptr, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE,
+                                                         Matrix3x2F::Identity(), fk), nullptr);
+                bool hov = V.hover == 100 + (int)i || V.tip == (int)i;
+                if (fresh)
+                    for (int g = 4; g >= 1; g--) {
+                        dc->SetTransform(Matrix3x2F::Scale(1 + g * 4.5f / 211, 1 + g * 4.5f / 30.5f, Point2F(211, 30.5f)) * C);
+                        fillG(G.card.Get(), brush(rgb(0xf3cf6b, .06f)).Get());
+                    }
+                dc->SetTransform(Matrix3x2F::Translation(0, 3) * C);
+                fillG(G.card.Get(), brush(rgb(0x080c1e, .45f)).Get());
+                dc->SetTransform(C);
+                ID2D1Brush* cb = cached("modCard", [] {
+                    return linear(Point2F(0, 0), Point2F(0, 61), {{0, rgb(0x2c3d70, .7f)}, {1, rgb(0x1e2b52, .75f)}});
+                });
+                fillG(G.card.Get(), cb);
+                dc->DrawLine(Point2F(14, 1.5f), Point2F(422 - 16, 1.5f), brush(ColorF(1, 1, 1, .08f)).Get(), 1);
+                strokeG(G.card.Get(), brush(fresh ? rgb(0xf3cf6b) : rgb(0xf3cf6b, hov ? .6f : .32f)).Get(), 1.5f);
+                float tx = 1.5f + 16, tw = 422 - 3 - 16 - 12 - 52 - 12;
+                float nh = text_height(L"Ag", G.tfModName.Get(), 1000), sh = text_height(L"Ag", G.tfModSum.Get(), 1000);
+                float ty = cardH / 2 - (nh + 3 + sh) / 2;
+                float a = md.enabled ? 1.f : .55f;
+                draw_text(md.name, G.tfModName.Get(), tx, ty, tw, nh, rgb(0xffe7a3, a));
+                draw_text(md.summary, G.tfModSum.Get(), tx, ty + nh + 3, tw, sh, rgb(0xb9c4dc, a));
+                float full = 0;
+                text_height(md.summary, G.tfModSum.Get(), 100000, &full);
+                V.cut[i] = full > tw + .5f;
+                V.summaries[i] = RectF(L + tx, cy + ty + nh + 3, L + tx + tw, cy + ty + nh + 3 + sh);
+                float sx = 422 - 1.5f - 12 - 52, sy = cardH / 2 - 15;
+                D2D1_ROUNDED_RECT tr = D2D1::RoundedRect(RectF(sx, sy, sx + 52, sy + 30), 15, 15);
+                dc->FillRoundedRectangle(tr, brush(mix(rgb(0x3a466b), rgb(0x3fd0d8), kv)).Get());
+                dc->DrawRoundedRectangle(grow(tr, -1), brush(mix(rgb(0x5d6a8a), rgb(0xe8fdff), kv)).Get(), 2);
+                float kx = sx + 4 + 11 + 22 * kv, ky = sy + 4 + 11;
+                fill_ellipse(kx, ky + 2, 11, brush(rgb(0x10182f, .4f)).Get());
+                fill_ellipse(kx, ky, 11, brush(mix(rgb(0xb6c1d6), rgb(0xf3cf6b), kv)).Get());
+                draw_sparkle(C, kx - 5.5f, ky - 5.5f, 11, mix(rgb(0x7f8daa), rgb(0xa8741d), kv), 1, 1);
+                dc->SetTransform(C);
+                if (V.fcode == 100 + (int)i) focus_ring(RectF(sx, sy, sx + 52, sy + 30), 15);
+                V.switches[i] = RectF(L + sx, cy + sy, L + sx + 52, cy + sy + 30);
+                if (cy + sy >= y && cy + sy + 30 <= footTop) ui_reg(V.switches[i], 100 + (int)i);
+                if (fk < 1) dc->PopLayer();
+            }
+            dc->PopAxisAlignedClip();
+            if (content > V.list_h + 1) {
+                float th = std::max(30.f, V.list_h * V.list_h / content);
+                float ty = y + (V.list_h - th) * (V.scroll / (content - V.list_h));
+                dc->SetTransform(M);
+                dc->FillRoundedRectangle(D2D1::RoundedRect(RectF(px + pw - 12, ty + 4, px + pw - 7, ty + th - 4), 2.5f, 2.5f),
+                                         brush(rgb(0xf3cf6b, .5f)).Get());
+            }
+        }
+        dc->PopLayer();
+    } else if (V.page == 0) {
+        // Get mods: a curated list of mods made and hosted by their authors
+        // (wonderpark-mods-index). Not online yet.
+        M = group(.3f);
+        std::wstring s = L"From the Wonderpark mod list. Mods are made and hosted by their own authors; Wonderpark only lists them, "
+                         L"and never lists mods that contain game files.";
+        float h = text_height(s, G.tfMSub.Get(), CW);
+        draw_text(s, G.tfMSub.Get(), L, y, CW, h, rgb(0xc6d0e6));
+        y += h + 22;
+        D2D1_ROUNDED_RECT box = D2D1::RoundedRect(RectF(L, y, Rr, y + 120), 16, 16);
+        dc->FillRoundedRectangle(box, brush(rgb(0x121b3a, .55f)).Get());
+        dc->DrawRoundedRectangle(grow(box, -1), brush(rgb(0xf3cf6b, .4f)).Get(), 2, G.dash.Get());
+        draw_text(L"The mod list isn't online yet", G.tfModName.Get(), L + 20, y + 20, CW - 40, 30, rgb(0xffe7a3));
+        ui_stamp(L + 20, y + 68, L"COMING SOON");
+        std::wstring url = mods_index_url();
+        std::wstring us = url.empty() ? L"List address: not set (launcher.ini, [mods] index_url)" : L"List address: " + url;
+        draw_text(us, G.tfModSum.Get(), L + 20, y + 92, CW - 40, 20, rgb(0x8f9cbd));
+        dc->PopLayer();
+    } else {
+        M = group(.3f);
+        if (V.page == 1) render_saves_page(t, M, L, Rr, y, footTop, px, pw);
+        else render_hd_page(t, M, L, Rr, y, footTop, px, pw);
+        dc->PopLayer();
+    }
 
     M = group(.5f);
     dc->DrawLine(Point2F(px + 2, footTop + .5f), Point2F(px + pw - 2, footTop + .5f), brush(rgb(0xf3cf6b, .2f)).Get(), 1);
     draw_text(foot, G.tfMFoot.Get(), L, footTop + 12, CW, fh, rgb(0x8f9cbd));
     dc->PopLayer();
-
     // The tooltip with a cut-off summary's full text.
     if (V.tip >= 0 && V.tip < (int)n && V.cut[V.tip]) {
         dc->SetTransform(R);
@@ -2215,7 +2619,9 @@ static void open_mods() {
     g_mods = mods_list();
     V.mods = true;
     V.mods_t = now_s();
-    V.focus = 0;  // the drop zone
+    V.focus = 0;
+    V.fcode = V.page == 0 && V.modsSub == 0 ? 7 : 200 + V.page;  // the drop zone, or the page's tab
+    V.saves_t = -100;  // the Saves page reads them again
     V.scroll = 0;
     V.tip = -1;
     fast(2);
@@ -2301,23 +2707,97 @@ static void update_mods(double t, float dt) {
     }
 }
 
-// Keyboard and controller focus on the page: 0 drop zone, 1 close, 2+ switches.
+// Keyboard and controller focus on the panel: through everything clickable,
+// in the order it's drawn (V.items, the codes click() takes). Past the last
+// one in view, the page scrolls on.
+static void click(int h);
 static void move_focus(int d) {
-    int last = 1 + (int)g_mods.size();
-    V.focus = V.focus < 0 ? 0 : std::max(0, std::min(last, V.focus + d));
-    // Keep a focused switch in view.
-    if (V.focus >= 2 && (size_t)(V.focus - 2) < V.switches.size()) {
-        D2D1_RECT_F r = V.switches[V.focus - 2];
-        if (r.bottom > V.list.bottom - 8) V.scroll += r.bottom - (V.list.bottom - 8);
-        if (r.top < V.list.top + 8) V.scroll -= (V.list.top + 8) - r.top;
+    int n = (int)V.items.size(), i = -1;
+    for (int k = 0; k < n; k++)
+        if (V.items[k].second == V.fcode) i = k;
+    int j = i < 0 ? (d > 0 ? 0 : n - 1) : i + d;
+    if (j >= 0 && j < n) V.fcode = V.items[j].second;
+    else if (d > 0 && V.content_h > V.list_h + V.scroll) V.scroll += 60;
+    else if (d < 0 && V.scroll > 0) V.scroll -= 60;
+    if (j >= 0 && j < n) {  // keep it in view
+        D2D1_RECT_F r = V.items[j].first;
+        if (r.top >= V.list.top && r.bottom > V.list.bottom - 8) V.scroll += r.bottom - (V.list.bottom - 8);
+        if (r.bottom <= V.list.bottom && r.top < V.list.top + 8 && r.top >= V.list.top - 200) V.scroll -= std::max(0.f, (V.list.top + 8) - r.top);
     }
     fast(1);
 }
 
 static void activate_focus() {
-    if (V.focus == 0) pick_zip();
-    else if (V.focus == 1) close_mods();
-    else if (V.focus >= 2) toggle_mod(V.focus - 2);
+    if (V.fcode) click(V.fcode);
+}
+
+// ---- Extras > Saves: the buttons.
+
+static std::wstring g_test_save;  // --test-save: the file pickers answer with this
+
+static std::wstring pick_save_file(bool save, const std::wstring& name) {
+    if (!g_test_save.empty()) return g_test_save;
+    ComPtr<IFileDialog> d;
+    if (save) {
+        ComPtr<IFileSaveDialog> s;
+        if (FAILED(CoCreateInstance(CLSID_FileSaveDialog, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&s)))) return L"";
+        d = s;
+        COMDLG_FILTERSPEC types[] = {{L"Save (.zip, Dolphin's layout)", L"*.zip"}};
+        d->SetFileTypes(1, types);
+        d->SetDefaultExtension(L"zip");
+        d->SetFileName(name.c_str());
+        d->SetTitle(L"Export a save");
+    } else {
+        ComPtr<IFileOpenDialog> o;
+        if (FAILED(CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&o)))) return L"";
+        d = o;
+        COMDLG_FILTERSPEC types[] = {{L"A Wii or Dolphin save (data.bin, .zip, GD0)", L"*.bin;*.zip;GD*;Pic*"}, {L"All files", L"*.*"}};
+        d->SetFileTypes(2, types);
+        d->SetTitle(L"Import a save: a Wii's data.bin, a .zip, or a file in Dolphin's save folder");
+    }
+    if (FAILED(d->Show(g_wnd))) return L"";
+    ComPtr<IShellItem> it;
+    PWSTR path = nullptr;
+    std::wstring out;
+    if (SUCCEEDED(d->GetResult(&it)) && SUCCEEDED(it->GetDisplayName(SIGDN_FILESYSPATH, &path))) {
+        out = path;
+        CoTaskMemFree(path);
+    }
+    return out;
+}
+
+static void saves_result(const std::wstring& err, const std::wstring& ok) {
+    V.saves_err = !err.empty();
+    V.saves_msg = err.empty() ? ok : err;
+    refresh_saves();
+    fast(1);
+}
+
+static void saves_click(int h) {
+    if (h >= 300 && h < 320) {
+        int slot = (h - 300) / 2;
+        if ((h - 300) % 2 == 0) {
+            saves_result(saves_backup(slot, L"File " + std::to_wstring(slot + 1), false), L"File " + std::to_wstring(slot + 1) + L" backed up.");
+        } else {
+            std::wstring p = pick_save_file(true, L"Wonderpark save file " + std::to_wstring(slot + 1) + L".zip");
+            if (!p.empty()) saves_result(saves_export(slot, p), L"Exported to " + p + L".");
+        }
+    } else if (h == 320) {
+        std::wstring p = pick_save_file(false, L"");
+        if (!p.empty()) saves_result(saves_import(p), L"Imported. Your saves from before are in Backups.");
+    } else if (h == 321) {
+        CreateDirectoryW((mods_data_dir() + L"\\nand").c_str(), nullptr);
+        std::wstring d = saves_dir();
+        for (size_t i = 3; i <= d.size(); i++)
+            if (i == d.size() || d[i] == L'\\') CreateDirectoryW(d.substr(0, i).c_str(), nullptr);
+        ShellExecuteW(g_wnd, L"explore", d.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+    } else if (h == 322) {
+        saves_set_auto_backup(!saves_auto_backup());
+        fast(.5);
+    } else if (h >= 330 && h < 400 && (size_t)(h - 330) < V.backups.size()) {
+        SaveBackup b = V.backups[h - 330];
+        saves_result(saves_restore(b), L"Restored \"" + b.label + L"\". Your saves from before are in Backups.");
+    }
 }
 
 // Files dragged onto the window: the page opens and the drop zone lights up;
@@ -2405,6 +2885,8 @@ static void pick_disc() {
 static bool g_quit_after_toast = true;
 
 static void launch_game(const std::wstring& exe) {
+    // Extras > Saves: "Back up before every Play" (the newest 10 kept).
+    if (saves_auto_backup()) saves_backup(-1, L"Before Play", true);
     STARTUPINFOW si = {sizeof(si)};
     PROCESS_INFORMATION pi = {};
     std::wstring cmd = L"\"" + exe + L"\"";
@@ -2485,6 +2967,9 @@ static void run_script(double t) {
         else if (a == L"quit") PostMessageW(g_wnd, WM_CLOSE, 0, 1);
         else if (a == L"mods") open_mods();
         else if (a == L"mods-close") close_mods();
+        else if (a.rfind(L"page=", 0) == 0) click(200 + _wtoi(a.c_str() + 5));
+        else if (a.rfind(L"sub=", 0) == 0) click(210 + _wtoi(a.c_str() + 4));
+        else if (a.rfind(L"click=", 0) == 0) click(_wtoi(a.c_str() + 6));
         else if (a.rfind(L"install=", 0) == 0) start_install(a.substr(8));
         else if (a.rfind(L"toggle=", 0) == 0) toggle_mod((size_t)_wtoi(a.c_str() + 7));
         else if (a.rfind(L"wait-install=", 0) == 0) {
@@ -2551,15 +3036,9 @@ static int hit(int x, int y) {
     float sx = (x - G.ox) / G.k, sy = (y - G.oy) / G.k;  // scene units
     auto in = [&](D2D1_RECT_F r) { return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom; };
     auto ins = [&](D2D1_RECT_F r) { return r.right > r.left && sx >= r.left && sx <= r.right && sy >= r.top && sy <= r.bottom; };
-    if (V.mods) {  // the page takes all clicks while open
-        if (ins(V.close)) return 6;
-        if (ins(V.drop)) {
-            std::lock_guard<std::mutex> lk(g_install.m);
-            return g_install.running ? 0 : 7;
-        }
-        if (ins(V.list))
-            for (size_t i = 0; i < V.switches.size(); i++)
-                if (ins(V.switches[i])) return 100 + (int)i;
+    if (V.mods) {  // the panel takes all clicks while open: what it drew as clickable
+        for (auto& it : V.items)
+            if (ins(it.first)) return it.second;
         return 0;
     }
     if (ins(V.tab)) return 5;
@@ -2575,7 +3054,18 @@ static void click(int h) {
     else if (h == 5) open_mods();
     else if (h == 6) close_mods();
     else if (h == 7) pick_zip();
-    else if (h >= 100) toggle_mod(h - 100);
+    else if (h >= 200 && h < 203) {  // the Extras page tabs
+        V.page = h - 200;
+        V.scroll = 0;
+        V.saves_t = -100;
+        V.saves_msg.clear();
+        fast(1);
+    } else if (h == 210 || h == 211) {  // Installed / Get mods
+        V.modsSub = h - 210;
+        V.scroll = 0;
+        fast(1);
+    } else if (h >= 300 && h < 400) saves_click(h);
+    else if (h >= 100 && h < 200) toggle_mod(h - 100);
     else if (h == 3) press_main();
     else if (h == 4) {
         std::wstring lp;
@@ -2749,6 +3239,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show) {
         if (a == L"--root" && i + 1 < argc) root = argv[++i];
         else if (a == L"--test-iso" && i + 1 < argc) g_test_iso = argv[++i];
         else if (a == L"--test-zip" && i + 1 < argc) g_test_zip = argv[++i];
+        else if (a == L"--test-save" && i + 1 < argc) g_test_save = argv[++i];
         else if (a == L"--test-script" && i + 1 < argc) parse_script(argv[++i]);
         else if (a == L"--reduced-motion") g_force_reduced = true;
     }
