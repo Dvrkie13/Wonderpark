@@ -210,7 +210,7 @@ static int connected(int32_t chan) { return chan >= 0 && chan < WPAD_MAX_CHANS &
  * program start. "4:2 4.2: 9:a 9.2:" presses 2 at 4 s and A at 9 s.
  * WONDERPARK_PAD2_SCRIPT to _PAD4_SCRIPT do the same for players 2-4, and
  * connect their remotes (as if they had a controller). */
-struct ScriptEntry { double t; uint32_t held; };
+struct ScriptEntry { double t; uint32_t held; int scene; /* -1, or t counts from that scene's start */ };
 static struct ScriptEntry* sScripts[WPAD_MAX_CHANS];
 static int sScriptLens[WPAD_MAX_CHANS] = {-1, -1, -1, -1}, sScriptFramesOf[WPAD_MAX_CHANS];
 unsigned gxb_game_frames(void); /* gx_frames.c */
@@ -235,9 +235,16 @@ static void load_script(int chan) {
         char* end;
         double t;
         uint32_t held = 0;
+        int scene = -1;
         while (*p == ' ' || *p == ',') p++;
         if (!*p) break;
-        if (*p == 'f') {
+        if (*p == 's') {
+            /* "s<scene>+<seconds>": that long after the scene first started
+             * (hle_scene.c; 6 the start menu, 0 the park, 5 a lobby, 4 an
+             * attraction), however long loading took. */
+            scene = (int)strtol(p + 1, &end, 10);
+            p = *end == '+' ? end + 1 : end;
+        } else if (*p == 'f') {
             /* "f<n>": at the game's n-th finished frame instead of a time
              * (unaffected by waits for the disc, which vary a lot on a hard
              * drive). The whole script counts frames then. */
@@ -265,6 +272,7 @@ static void load_script(int chan) {
             if (*p == '+') p++;
         }
         sScript[sScriptLen].t = t;
+        sScript[sScriptLen].scene = scene;
         sScript[sScriptLen++].held = held;
     }
     sScripts[chan] = sScript;
@@ -286,7 +294,22 @@ static uint32_t script_held(int chan) {
     /* Wonderpark: timed from program start (monotonic host time), so scripts
      * line up with screenshots and logs. */
     now = sScriptFramesOf[chan] ? (double)gxb_game_frames() : (double)wp_host_time() / PPC_TB_HZ;
-    for (i = 0; i < sScriptLens[chan] && sScripts[chan][i].t <= now; i++) held = sScripts[chan][i].held;
+    {
+        /* The entry that came last, by when it's due (a scene-timed one only
+         * once its scene has started). */
+        extern double hle_scene_entered(int scene); /* hle_scene.c */
+        double best = -1e30;
+        for (i = 0; i < sScriptLens[chan]; i++) {
+            const struct ScriptEntry* e = &sScripts[chan][i];
+            double at = e->t;
+            if (e->scene >= 0) {
+                double s = hle_scene_entered(e->scene);
+                if (s <= 0) continue;
+                at = s + e->t;
+            }
+            if (at <= now && at >= best) best = at, held = e->held;
+        }
+    }
     return held;
 }
 

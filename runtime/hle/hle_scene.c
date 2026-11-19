@@ -27,13 +27,18 @@ enum {
 
 static int sScene = -1;
 static unsigned sChanges;
+/* When each scene was first entered (wall seconds; 0 not yet): test scripts
+ * can be timed from one (hle_wpad.c, "s<scene>+<seconds>"). */
+static double sSceneAt[16];
+double hle_scene_entered(int scene) { return scene >= 0 && scene < 16 ? sSceneAt[scene] : 0; }
 
 /* BOOL fn_80210660(s32 scene): picks the next scene. */
 WP_HOOK(0x80210660, NextScene) {
     if ((int)c->gpr[3] != sScene) {
         extern unsigned gxb_game_frames(void); /* gx_frames.c */
-        WP_LOG("scene", "next scene: %d (frame %u)", (int)c->gpr[3], gxb_game_frames());
+        WP_LOG("scene", "next scene: %d (frame %u, %.1f s)", (int)c->gpr[3], gxb_game_frames(), wp_wall_seconds());
         sScene = (int)c->gpr[3];
+        if (sScene >= 0 && sScene < 16 && !sSceneAt[sScene]) sSceneAt[sScene] = wp_wall_seconds();
         sChanges++;
     }
     return 0;
@@ -107,6 +112,7 @@ static void boot_speed(void) {
 WP_HOOK(0x80206A70, SceneManager_RunBegin) {
     static int state = -1; /* -1 not read, 0 nothing to do, else the attraction */
     static double at, parkSince = -1;
+    static int players; /* 2-4: as Multiplayer Attractions starts it */
     boot_speed();
     {
         extern void hle_size_frame(void); /* hle_size.c: Pokémon size */
@@ -118,6 +124,7 @@ WP_HOOK(0x80206A70, SceneManager_RunBegin) {
         state = e && *e ? atoi(e) : 0;
         if (state < 1 || state > 4) state = 0;
         at = comma ? atof(comma + 1) : 0;
+        if (comma && (comma = strchr(comma + 1, ',')) != NULL) players = atoi(comma + 1);
     }
     if (!state || sScene != SCENE_PARK) return 0;
     if (parkSince < 0) parkSince = wp_wall_seconds();
@@ -133,6 +140,12 @@ WP_HOOK(0x80206A70, SceneManager_RunBegin) {
             }
         mgr = wp_call_guest(c, 0x80074AE0u, 0, 0, 0, 0); /* SceneManager::Get */
         wp_call_guest(c, 0x80206DC0u, mgr + SCENE_NEXT_PARAMS, ATTRACTION_ID_NAME, (u32)(state - 1), 0);
+        if (players >= 2 && players <= 4) {
+            /* Multiplayer: the player count and "from Multiplayer Attractions", as
+             * the game's own menu passes them (names beside "AttractionId"). */
+            wp_call_guest(c, 0x80206DC0u, mgr + SCENE_NEXT_PARAMS, 0x804530D4u /* "PlayerNum" */, (u32)players, 0);
+            wp_call_guest(c, 0x80206DC0u, mgr + SCENE_NEXT_PARAMS, 0x804530ECu /* "FromMulti" */, 1, 0);
+        }
         mgr = wp_call_guest(c, 0x80074AE0u, 0, 0, 0, 0);
         wp_call_guest(c, 0x80206D30u, mgr, 0, 0, 0); /* EndScene */
         WP_LOG("scene", "entering attraction %d (WONDERPARK_ATTRACTION)", state);

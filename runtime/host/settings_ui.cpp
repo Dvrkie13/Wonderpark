@@ -336,6 +336,9 @@ void build_rows() {
         c.rows.push_back(xrow(CHOICE, X_BUTTON_ICONS, L"Button icons",
                               L"The buttons the game's prompts and this page show. Auto: your controller's own. Keys show while you use the keyboard.",
                               {L"Auto", L"Xbox", L"PlayStation", L"Nintendo", L"Keyboard only"}));
+        c.rows.push_back(xrow(CHOICE, X_KEYBOARD_PLAYER, L"Players",
+                              L"Who player 1 is. Shared: the keyboard and controller 1. Keyboard alone: controller 1 becomes player 2, for two players on one PC with one controller. Players add their remote in Multiplayer Attractions > Add Wii Remote Controllers.",
+                              {L"Shared", L"Keyboard alone"}));
         Row bh;
         bh.kind = BINDHEAD;
         c.rows.push_back(bh);
