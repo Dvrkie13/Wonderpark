@@ -145,6 +145,31 @@ static int flight_tilt(int chan, uint32_t held, int16_t acc[3]) {
     return 1;
 }
 
+/* Power Bash (attraction 3): swinging the remote like a bat. The game
+ * judges a swing by its size in any direction (MildRain479/PokePark-2-
+ * Wiicompiled's hle_motion.c, CC0: along the remote's length too), and a
+ * single short burst can fall between its readings and be missed. Here
+ * each press of a shake key (Q / E, LB / RB) swings it three times back and
+ * forth, a burst of acceleration on all three axes. */
+#define BASH_SWINGS 3
+static int bash_swing(int chan, uint32_t held, int16_t acc[3]) {
+    static uint32_t lastOf[WPAD_MAX_CHANS], left[WPAD_MAX_CHANS];
+    uint32_t pressed = held & ~lastOf[chan] & (HOST_PAD_SHAKE | HOST_PAD_SHAKE2);
+    int sign;
+    lastOf[chan] = held;
+    if (pressed) left[chan] = BASH_SWINGS * 2 * SWING_REPORTS;
+    acc[0] = 0;
+    acc[1] = 0;
+    acc[2] = ACC_ONE_G;
+    if (!left[chan]) return 1;
+    left[chan]--;
+    sign = (left[chan] / SWING_REPORTS) & 1 ? 1 : -1;
+    acc[0] = (int16_t)(sign * ACC_ONE_G * 5 / 2);
+    acc[1] = (int16_t)(sign * ACC_ONE_G * 5 / 2);
+    acc[2] = (int16_t)(ACC_ONE_G + sign * ACC_ONE_G * 5 / 2);
+    return 1;
+}
+
 /* Players 2-4 move their pointer with their right stick: this many units a
  * second at full push (across the screen in about 0.6 s), the push squared
  * for fine aiming, times Aim speed. (Player 1's: the mouse, and the right
@@ -158,6 +183,7 @@ static int hle_motion(int chan, uint32_t held, uint32_t reports, int16_t acc[3],
     {
         extern int hle_minigame(void); /* hle_scene.c */
         if (hle_minigame() == 4) return flight_tilt(chan, held, acc);
+        if (hle_minigame() == 3) return bash_swing(chan, held, acc);
     }
     if (!sChan[chan].dpdCommand) return 0;
     if (chan == 0) {

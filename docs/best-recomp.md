@@ -27,7 +27,7 @@ park's own skill games use: not found to need any yet).
 | 2 | English / Japanese voices | **Yes** (2026-11-18): from the player's own Japanese disc; the shared Pokémon voice bank stays English | No |
 | 3a | Cake Contraption without motion | **Yes**: pointer by mouse or right stick (Auto), A shoots | Same (`hle_motion.c`) |
 | 3b | Dance Inferno without motion | **Partial**: the shake keys dance whatever move is due; move icons show the shake button; timing offset setting | **Yes**: a key per move, drawn on its icon, held to the bar's end (`S2LE01/hle_dance.c`, `minigames.h`) |
-| 3c | Power Bash without motion | **Partial**: shake keys (alternating swings while held) | **Yes**: a swing burst per press, any direction (`hle_motion.c` `USE_ANY_WAY`). The "several bursts per press" finding is not in theirs |
+| 3c | Power Bash without motion | **Yes** (2026-11-18): each shake-key press swings three times on all axes (`hle_wpad.c` bash_swing); a scripted round scored 8,355 (33 hits) where the old swing scored 0 | **Yes**: a swing burst per press, any direction (`hle_motion.c` `USE_ANY_WAY`). The "several bursts per press" finding is not in theirs |
 | 3d | Flight of Fancy without motion | **Yes** (2026-11-18, adapted from theirs) + Steering sensitivity | Done (`hle_motion.c`) |
 | 3e | Late pose presses still GREAT (Dance) | No | No |
 | 4 | Optional gyro aiming | **No**: we read pads through XInput, which has no gyro | **No** (they use SDL3, which could read gyros, but don't) |
