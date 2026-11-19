@@ -29,6 +29,10 @@ REPO = Path(__file__).resolve().parent.parent
 # developers), .github/, CLAUDE.md.
 TOP_DIRS = {"runtime", "tools", "builder", "config", "assets"}
 TOP_FILES = {"CMakeLists.txt", "README.md", "LICENSE", "THIRD_PARTY_NOTICES.md", "CONTRIBUTING.md", ".gitmodules"}
+# SDL's parts a Windows build of its joystick code doesn't use (samples,
+# tests, other platforms' projects): left out.
+SKIP = ("tools/sdl3/VisualC/", "tools/sdl3/VisualC-GDK/", "tools/sdl3/Xcode/", "tools/sdl3/android-project/",
+        "tools/sdl3/test/", "tools/sdl3/examples/", "tools/sdl3/docs/", "tools/sdl3/.github/")
 
 
 def git(*args: str, cwd: Path = REPO) -> str:
@@ -71,6 +75,8 @@ def main() -> int:
     for f in files:
         top = f.split("/", 1)[0]
         if not (top in TOP_DIRS and "/" in f) and f not in TOP_FILES:
+            continue
+        if f.startswith(SKIP):
             continue
         src = REPO / f
         if not src.is_file():

@@ -51,8 +51,18 @@ MAGICS = [
 ]
 
 
+def recompiler_source(name):
+    """DolRecomp's own source and tests (the submodule, GPL-3.0): its code
+    generator writes the include line generated code starts with, and its
+    tests carry a sample linker map. They're the tool, not its output."""
+    p = name.replace("\\", "/").lower()
+    return p.startswith("tools/dolrecomp/") or "/tools/dolrecomp/" in p
+
+
 def check_bytes(name, head, text_sample):
     found = []
+    if recompiler_source(name):
+        return found
     for off, magic, what in MAGICS:
         if head[off:off + len(magic)] == magic:
             found.append(what)
@@ -67,6 +77,8 @@ def check_name(path):
     parts = [p.lower() for p in path.replace("\\", "/").split("/") if p]
     name = parts[-1] if parts else ""
     found = []
+    if recompiler_source(path):
+        return found
     if os.path.splitext(name)[1] in BAD_EXT:
         found.append("a game, save, dump or log file type (%s)" % os.path.splitext(name)[1])
     if name in BAD_NAMES:
