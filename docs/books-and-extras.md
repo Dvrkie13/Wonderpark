@@ -110,6 +110,13 @@ two files, GD0 and GD1, not three); backups in
   BRRES TEX0/PLT0 in the `.dac` archives), the GX format decoders (the
   runtime's `gx_decode_texture`), alpha upscaled separately, small and
   dithered textures and fonts skipped, mipmaps rebuilt.
-- Upscaler: Real-ESRGAN's `realesrgan-ncnn-vulkan`; its licenses (the
-  program and the model files) still have to be checked before it's
-  downloaded, so nothing was downloaded or tested yet. No 50-texture test.
+- Upscaler: Real-ESRGAN's `realesrgan-ncnn-vulkan` (checked 2026-11-19 on
+  GitHub, nothing downloaded): the program is MIT (Xintao Wang 2021, plus
+  nihui's realsr-ncnn-vulkan, MIT); Real-ESRGAN itself is BSD-3-Clause. The
+  model weights (`realesrgan-x4plus`, `-x4plus-anime`, `realesr-animevideov3`)
+  have **no license stated** anywhere read (README, model zoo). The release
+  builds in ncnn, libwebp, stb and dirent, whose licenses the pages don't
+  name (ncnn is BSD-3 by its own repository; not checked here). Windows
+  build: `realesrgan-ncnn-vulkan-20220424-windows.zip` (Real-ESRGAN release
+  v0.2.5.0), size not known. Waiting for the owner's OK on the weights
+  before downloading it; no 50-texture test yet.
