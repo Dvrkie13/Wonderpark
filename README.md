@@ -41,6 +41,9 @@ Wonderpark is a work in progress (a development preview): it has been played fro
 | **In-game settings** | Press **F1** any time for every setting (the game pauses), or use the **PC Settings** row in the game's own Options menu. |
 | **Friend Book** | In F1: who you've befriended, area by area, with each Pokémon's own hint from the game's Pad. |
 | **Mod manager** | Install texture and file mods from a .zip in the launcher, and turn each on or off with a switch. |
+| **HD Pack** | Upscale the game's textures 4x on your own PC, from your own disc, with one button in the launcher. |
+| **Saves** | Back up, restore, export and import your saves in the launcher (Dolphin's folder or a .zip), with a backup before every Play. |
+| **Journal, Jukebox, Gallery** | In F1: your play time, friends and milestones; the game's music, played from your disc; your friends on display. |
 | **Japanese voices** | Switch the Pokémon's voices to Japanese with your own Japanese disc. |
 | **Smooth play** | A shader setup that never stutters, fast loading (the game's files read into RAM), save backups. |
 
@@ -56,12 +59,13 @@ Wonderpark is a work in progress (a development preview): it has been played fro
 | Widescreen and ultrawide | Working |
 | F1 settings, the Options page's PC Settings, the Friend Book | Working |
 | Japanese voices (needs your own Japanese disc) | Working, from the next start |
-| Mod manager | Working |
+| Mod manager, HD Pack, save manager | Working (the online mod list isn't up yet) |
+| Journal, Jukebox, Gallery (F1) | Working; some Journal stats and the Gallery's 3D view are "Coming soon" |
 | Local multiplayer (2-4 players) | In progress: extra controllers join as Wii Remotes 2-4 in Multiplayer Attractions; a full multiplayer round hasn't been tested yet |
 | Skipping movies | In progress (not working yet) |
 | A full playthrough | Not done yet |
 | Vulkan renderer, HDR, aim assist, online play | Planned |
-| Release downloads | Not yet: build it from source for now |
+| Release downloads | First beta: v0.1.0-beta |
 | Linux / macOS / Steam Deck | Not planned yet |
 
 Found a bug? [Open an issue](../../issues/new/choose). The template asks for what we need.
