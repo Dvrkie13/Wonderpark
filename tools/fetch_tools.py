@@ -42,6 +42,8 @@ class Tool:
     def __init__(self, name: str, url: str, sha256: str, size: int, done: Path):
         self.name, self.url, self.sha256, self.size, self.done = name, url, sha256, size, done
         self.file = url.rsplit("/", 1)[1]
+        # For the build screen: "Compiler: 97 of 191 MB".
+        self.short = name.split("(")[0].replace("the ", "").strip().capitalize()
 
 
 LLVM_MINGW = "llvm-mingw-20261117-ucrt-x86_64"
@@ -103,7 +105,7 @@ def download(t: Tool, lo: int, hi: int) -> Path:
                         if time.monotonic() - last > 0.5:
                             last = time.monotonic()
                             progress(lo + (hi - lo) * got // max(total, 1),
-                                     f"Getting {t.name}: {got / 1e6:.0f} of {total / 1e6:.0f} MB")
+                                     f"{t.short}: {got / 1e6:.0f} of {total / 1e6:.0f} MB")
             break
         except (urllib.error.URLError, TimeoutError, ConnectionError, OSError) as e:
             tries += 1
@@ -178,7 +180,7 @@ def main() -> int:
         for i, t in enumerate(todo):
             lo, hi = 100 * i // len(todo), 100 * (i + 1) // len(todo)
             src = download(t, lo, lo + (hi - lo) * 4 // 5)
-            progress(lo + (hi - lo) * 4 // 5, f"Unpacking {t.name}")
+            progress(lo + (hi - lo) * 4 // 5, f"{t.short}: unpacking")
             install(t, src)
             (DOWNLOADS / t.file).unlink(missing_ok=True)
         progress(100, "Build tools ready")

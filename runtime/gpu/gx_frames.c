@@ -102,6 +102,29 @@ unsigned gxb_game_frames(void) { return sGameFrames; }
 /* ------------------------------------------------------------------------ */
 /* Showing a frame */
 
+/* The build's speed test (main.c --prepare-shaders, WONDERPARK_PERF_TEST=1):
+ * the game thread's busy time per game frame and the GPU's time per frame,
+ * summed from the third second on (after the boot's loading and the
+ * driver's first shader compiles), printed at exit as one "@perf" line that
+ * builder/pipeline.py turns into a suggested graphics preset. */
+double wp_wall_seconds(void); /* cpu_host.c */
+static double sPerfBusy, sPerfFrames, sPerfGpu, sPerfPresents;
+static void perf_test_add(double busyms, double frames, double gpums, unsigned presents) {
+    static int on = -1;
+    if (on < 0) on = getenv("WONDERPARK_PERF_TEST") != NULL;
+    if (!on || wp_wall_seconds() < 3) return;
+    sPerfBusy += busyms;
+    sPerfFrames += frames;
+    sPerfGpu += gpums;
+    sPerfPresents += presents;
+}
+void gxb_perf_summary(void) {
+    if (!getenv("WONDERPARK_PERF_TEST")) return;
+    fprintf(stderr, "@perf cpu_ms=%.2f gpu_ms=%.2f frames=%.0f presents=%.0f\n",
+            sPerfFrames > 0 ? sPerfBusy / sPerfFrames : -1, sPerfPresents > 0 ? sPerfGpu / sPerfPresents : -1,
+            sPerfFrames, sPerfPresents);
+}
+
 /* Frames per second and the longest frame of the last second, in the
  * window title and, with RECOMP_FPS=1, on stderr. */
 static double output_rate(void); /* below */
@@ -209,6 +232,7 @@ static void report(void) {
                 extern unsigned g_gl_gpu_n;
                 extern unsigned g_spec_draws, g_uber_draws, g_spec_compiled, g_spec_loaded, g_spec_waiting;
                 g_wp_stats.gpu_present_ms = g_gl_gpu_n ? g_gl_gpu_ms / g_gl_gpu_n : -1;
+                perf_test_add(busyms, frames, g_gl_gpu_ms, g_gl_gpu_n);
                 if (e && *e == '1' && g_gl_gpu_n && frames > 0) {
                     double per = g_gl_gpu_ms / g_gl_gpu_n;
                     unsigned draws = g_spec_draws + g_uber_draws;

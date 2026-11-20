@@ -150,6 +150,8 @@ void wp_run(CPUState* c, unsigned long long max_slices) {
             double s = wp_wall_seconds();
             fprintf(stderr, "wonderpark: exit after %.1f s: %u frames (%.1f fps average), %u retraces, pc %08X\n", s,
                     gxb_game_frames(), gxb_game_frames() / s, g_vi_retraces, c->pc);
+            extern void gxb_perf_summary(void); /* the build's speed test (gx_frames.c) */
+            gxb_perf_summary();
             fflush(stderr);
             exit(0);
         }

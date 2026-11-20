@@ -230,7 +230,12 @@ int main(int argc, char** argv) {
         WP_SETENV("WONDERPARK_GAME_SPEED", "10");
         WP_SETENV("WONDERPARK_NO_MODS", "1");
         WP_SETENV("WONDERPARK_FAST_LOADING", "0");
-        if (g_wp_exit_after <= 0) g_wp_exit_after = 8;
+        /* And the build's speed test: the time per frame from the third
+         * second on, printed at exit (gx_frames.c gxb_perf_summary), which
+         * the pipeline turns into a suggested graphics preset. */
+        WP_SETENV("WONDERPARK_PERF_TEST", "1");
+        WP_SETENV("WONDERPARK_SCALE", "2"); /* the same internal resolution on every PC */
+        if (g_wp_exit_after <= 0) g_wp_exit_after = 10;
     }
     if ((env = getenv("WONDERPARK_MAX_SLICES")) != NULL) max_slices = strtoull(env, NULL, 10);
     /* As --exit-after, for a game started by the launcher's Play (tests). */

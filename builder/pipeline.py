@@ -19,12 +19,14 @@ Stages (the build screen ticks each one off):
   3. Reading the game                tools/extract_disc.py (main.dol and the files)
   4. Recompiling                     tools/recomp.py
   5. Compiling                       tools/build_game.py --mingw (llvm-mingw: no Visual Studio),
-     ending with "Preparing shaders…" (Wonderpark.exe --prepare-shaders, a few seconds)
+     ending with "Testing this PC's speed…" (Wonderpark.exe --prepare-shaders, 10 s: the
+     driver caches its shaders, and the time per frame suggests a graphics preset: @suggest)
 Stages 1 and 3 are skipped (shown as done) when game/ already holds this disc.
 
 Machine-readable lines for the launcher, one each (everything else is log):
     @stage <1-5> <name>
     @size <bytes>                          (stage 2: what's left to download; 0 when nothing)
+    @detail <text>                         (stage 2: "Compiler: 97 of 191 MB", "Compiler: unpacking")
     @progress <overall 0-100> <stage name>
     @done <path to exe>
     @error <short plain-language message>
@@ -292,6 +294,8 @@ def run_stage(i: int, cmd: list[str], fail: str, phases: dict[str, int] | None =
             emit(line)
             continue
         m = re.match(r"@progress (\d+)", line)
+        if m and stage == TOOLS_STAGE:
+            emit("@detail " + line[m.end():].strip())  # "Compiler: 97 of 191 MB", for the build screen
         if m:
             pct = overall(stage, int(m.group(1)))
             if pct != last:
@@ -313,18 +317,61 @@ def done_stage(i: int) -> None:
     emit(f"@progress {overall(i, 100)} {STAGES[i]}")
 
 
+# The speed test (the same run as "Testing this PC's speed": Wonderpark.exe
+# prints "@perf cpu_ms=.. gpu_ms=.." for the boot and title screen, at 2x the
+# Wii's resolution on every PC). The park costs more per frame than the
+# title; these factors scale the title's figures to the park's. Measured
+# 2026-11-20 on the developer's PC (16 threads, a recent GPU): title 7.96 ms
+# CPU, 0.61 ms GPU at 2x; the park walk 10.57 ms CPU, 10.53 ms GPU at 3x
+# (4.68 at 2x). First figures: Part 6 (the potato PC) checks them on weak PCs.
+PARK_CPU_FACTOR = 1.33
+PARK_GPU_FACTOR = 7.7
+PERF = REPO / "build" / "perf-test.json"
+# The graphics presets (F1 > Graphics, Part 5 of the plan): the frame rate
+# each aims for and its internal resolution (times the Wii's).
+PRESETS = [("Ultra", 60, 4), ("High", 60, 3), ("Medium", 60, 2), ("Low", 30, 1)]
+
+
+def suggest_preset(cpu_ms: float, gpu_ms: float) -> tuple[str, dict]:
+    """The best preset this PC keeps up with, with a fifth spare: the game
+    thread's time per frame in the park within the frame time, and the GPU's
+    (scaled from 2x by the preset's pixel count) too. Potato when even Low
+    doesn't."""
+    est_cpu = cpu_ms * PARK_CPU_FACTOR
+    est_gpu = gpu_ms * PARK_GPU_FACTOR
+    for name, fps, res in PRESETS:
+        budget = 0.8 * 1000 / fps
+        if est_cpu <= budget and est_gpu * (res / 2) ** 2 <= budget:
+            return name, {"park_cpu_ms": round(est_cpu, 2), "park_gpu_ms_2x": round(est_gpu, 2)}
+    return "Potato", {"park_cpu_ms": round(est_cpu, 2), "park_gpu_ms_2x": round(est_gpu, 2)}
+
+
+def speed_test(output: str) -> None:
+    m = re.search(r"@perf cpu_ms=([\d.]+) gpu_ms=(-?[\d.]+) frames=(\d+)", output)
+    if not m or float(m.group(1)) <= 0 or int(m.group(3)) < 30:
+        emit("Speed test: not enough frames to judge; no preset suggested")
+        return
+    cpu_ms, gpu_ms = float(m.group(1)), max(0.0, float(m.group(2)))
+    name, est = suggest_preset(cpu_ms, gpu_ms)
+    PERF.write_text(json.dumps({"title_cpu_ms": cpu_ms, "title_gpu_ms": gpu_ms, **est, "suggested": name,
+                                "tested": time.strftime("%Y-%m-%d %H:%M:%S")}, indent=2))
+    emit(f"Speed test: {cpu_ms:.2f} ms CPU, {gpu_ms:.2f} ms GPU per frame at the title -> {name}")
+    emit(f"@suggest {name}")
+
+
 def prepare_shaders(exe: Path) -> None:
     """The end of stage 4, "Preparing shaders…": runs the new build's boot
     hidden for a few seconds (Wonderpark.exe --prepare-shaders), so the
     graphics driver compiles and caches its shaders now instead of pausing
     the player's first start. Not needed for the game to work: a failure is
     only noted in the log."""
-    emit(f"@progress {overall(COMPILE_STAGE, 100)} Preparing shaders…")
+    emit(f"@progress {overall(COMPILE_STAGE, 100)} Testing this PC's speed…")
     t = time.time()
     try:
         p = subprocess.run([str(exe), "--prepare-shaders"], cwd=REPO, capture_output=True, text=True,
                            encoding="utf-8", errors="replace", timeout=120)
         print(p.stdout + p.stderr, flush=True)  # the log
+        speed_test(p.stdout + p.stderr)
         if p.returncode:
             emit(f"Preparing shaders ended with code {p.returncode}; the first start may pause briefly")
         else:

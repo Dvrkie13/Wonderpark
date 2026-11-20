@@ -155,6 +155,8 @@ struct Shared {
     int stage = 0;              // 1-5 while building
     int lit = 0;                // star points relit
     long long tools_bytes = -1; // stage 2: what's left to download (-1: not known yet)
+    std::wstring detail;        // stage 2: "Compiler: 97 of 191 MB"
+    std::wstring suggest;       // the speed test's graphics preset ("High"), at the end of a build
     double build_t0 = 0;        // when the build started (or was found running), for the tips
     double eta_t0 = 0;          // time left: measured from here (the end of the download)...
     float eta_p0 = 0;           // ... and this much progress
@@ -569,26 +571,30 @@ static HANDLE spawn_build(const std::wstring& args, const std::wstring& log_path
 static void follow_build(HANDLE proc, const std::wstring& log_path) {
     std::wstring done, error;
     bool cancelled = false;
+    bool live = false;  // caught up with the log: lines now come as they happen
     auto on_line = [&](const std::string& l) {
         std::lock_guard<std::mutex> lk(g.m);
         if (l.rfind("@stage ", 0) == 0) {
             int s = atoi(l.c_str() + 7);
             if (s >= 1 && s <= NSTAGES) {
                 g.stage = s;
-                g.lit = s - 1 < 4 ? s - 1 : 4;
+                // The four star points: the disc checked, the game read,
+                // recompiled, compiled (getting the tools lights none).
+                static const int kLit[NSTAGES + 1] = {0, 0, 1, 1, 2, 3};
+                g.lit = kLit[s];
                 g.stage_name = STAGE_NAMES[s - 1];
-                if (s >= 3 && g.eta_t0 == 0) {  // after the download: time left from here
-                    g.eta_t0 = now_s();
-                    g.eta_p0 = g.progress;
-                }
             }
         } else if (l.rfind("@progress ", 0) == 0) {
             g.progress = (float)atof(l.c_str() + 10);
             size_t sp = l.find(' ', 10);
-            if (sp != std::string::npos && l.find("Preparing shaders", sp) != std::string::npos)
-                g.stage_name = L"Preparing shaders";
+            if (sp != std::string::npos && l.find("Testing this PC", sp) != std::string::npos)
+                g.stage_name = L"Testing speed";
         } else if (l.rfind("@size ", 0) == 0) {
             g.tools_bytes = _atoi64(l.c_str() + 6);
+        } else if (l.rfind("@suggest ", 0) == 0) {
+            g.suggest = widen(l.substr(9));
+        } else if (l.rfind("@detail ", 0) == 0) {
+            g.detail = widen(l.substr(8));
         } else if (l.rfind("@done ", 0) == 0) {
             done = widen(l.substr(6));
         } else if (l.rfind("@error ", 0) == 0) {
@@ -597,6 +603,12 @@ static void follow_build(HANDLE proc, const std::wstring& log_path) {
             cancelled = true;
         } else {
             return;
+        }
+        // Time left: measured from after the download, and only from lines
+        // read as they happen (a build found running replays its log at once).
+        if (live && g.stage >= 3 && g.eta_t0 == 0) {
+            g.eta_t0 = now_s();
+            g.eta_p0 = g.progress;
         }
         wake();
     };
@@ -622,7 +634,10 @@ static void follow_build(HANDLE proc, const std::wstring& log_path) {
             }
         }
         if (exited || g_unfollow) break;  // (read to the end after it exited)
-        if (!any) WaitForSingleObject(proc, 250);
+        if (!any) {
+            live = true;
+            WaitForSingleObject(proc, 250);
+        }
     }
     if (f != INVALID_HANDLE_VALUE) CloseHandle(f);
     DWORD code = (DWORD)-1;
@@ -671,6 +686,7 @@ static void start_build() {
         g.progress = 0;
         g.stage_name = STAGE_NAMES[0];
         g.tools_bytes = -1;
+        g.detail.clear();
         g.build_t0 = now_s();
         g.eta_t0 = 0;
         g.error.clear();
@@ -717,6 +733,7 @@ static void attach_build(DWORD pid, const std::wstring& log_path) {
         g.progress = 0;
         g.stage_name = STAGE_NAMES[0];
         g.tools_bytes = -1;
+        g.detail.clear();
         g.build_t0 = now_s();
         g.eta_t0 = 0;
         g.log_path = log_path;
@@ -2353,7 +2370,7 @@ static void render_build_panel(double t, const Shared& s, const Matrix3x2F& R) {
         r.st = n < s.stage ? 2 : n == s.stage ? 1 : 0;
         if (i == 1 && s.tools_bytes == 0 && s.stage > 2) r.detail = L"already here";
         if (i == 1 && s.tools_bytes > 0) r.detail = mb(s.tools_bytes) + L" · one time";
-        if (r.st == 1 && i == NSTAGES - 1 && s.stage_name == L"Preparing shaders") r.detail = L"preparing shaders";
+        if (r.st == 1 && i == NSTAGES - 1 && s.stage_name == L"Testing speed") r.detail = L"testing this PC's speed";
         rows.push_back(r);
     }
     // Time left: from the end of the download, by the progress since; settled
@@ -2369,7 +2386,8 @@ static void render_build_panel(double t, const Shared& s, const Matrix3x2F& R) {
         left = e < 60 ? L"less than a minute left" : L"about " + std::to_wstring((int)ceil(e / 60)) + L" min left";
     } else {
         V.eta_shown = -1;
-        left = s.stage == 2 && s.tools_bytes > 0 ? L"downloading, one time" : L"working out the time left…";
+        left = s.stage == 2 && s.tools_bytes > 0 ? (s.detail.empty() ? L"downloading, one time" : s.detail)
+                                                 : L"working out the time left…";
     }
     const std::wstring leave = L"You can leave this running: it carries on if you close the launcher.";
     int tipN = (int)(sizeof(BUILD_TIPS) / sizeof(BUILD_TIPS[0]));
@@ -2908,6 +2926,11 @@ static void render(double t, const Shared& s) {
                 if (!s.warn.empty()) lines.push_back({s.warn, 0xffe7a3, 0});
                 if (!s.image.empty() && !(s.state == S_READY && s.rebuild))
                     lines.push_back({file_name(s.image) + L" · disc verified (S2LE01)", 0xa8f0d0, 1});
+                // The build's speed test (pipeline.py @suggest). The presets
+                // themselves come with the next settings update.
+                if (s.state == S_DONE && s.built_now && !s.suggest.empty())
+                    lines.push_back({L"Speed test: " + s.suggest + L" graphics suit this PC. (Graphics presets: coming soon.)",
+                                     0xd6deef, 0});
                 if (s.state != S_READY) lines.push_back({L"", 0, 2});
                 break;
         }
@@ -3869,6 +3892,8 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show) {
             s.exe = g.exe;
             s.built_now = g.built_now;
             s.tools_bytes = g.tools_bytes;
+            s.detail = g.detail;
+            s.suggest = g.suggest;
             s.build_t0 = g.build_t0;
             s.eta_t0 = g.eta_t0;
             s.eta_p0 = g.eta_p0;
