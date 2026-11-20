@@ -70,7 +70,11 @@ def check_bytes(name, head, text_sample):
             found.append(what)
     # The generated code includes the CPU header by this macro (split here so
     # this file doesn't match itself), and its chunks are named by address.
-    if b"#include " + b"DOLRECOMP_CPU_HEADER" in text_sample or b"_text1_80" in name.encode("utf-8", "replace").lower():
+    # The ready-built recompiler (tools/make_tools.py) holds that line too, as
+    # the text it writes: the tool, a Windows program, not its output.
+    p = name.replace("\\", "/").lower()
+    tool = (p == "tools/bin/dolrecomp.exe" or p.endswith("/tools/bin/dolrecomp.exe")) and head[:2] == b"MZ"
+    if (not tool and b"#include " + b"DOLRECOMP_CPU_HEADER" in text_sample) or b"_text1_80" in p.encode("utf-8", "replace"):
         found.append("recompiled game code")
     return found
 
