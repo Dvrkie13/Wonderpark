@@ -75,6 +75,11 @@ using D2D1::RectF;
 
 namespace {
 
+// The overlay's scale for a window win_h tall: 1 at 1350 lines (1440p 1.07,
+// 1080p 0.8), at least 0.6. (The notebook's 720-line scale made it twice as
+// big at 1440p: too big for something always on screen.)
+double overlay_scale(int win_h) { return std::max(0.6, win_h / 1350.0); }
+
 double now_s() {
     static LARGE_INTEGER f;
     LARGE_INTEGER t;
@@ -259,7 +264,7 @@ public:
     void paint(Picture& p, int mode, float s, float opacity, const PcStats& pc, const std::vector<Frame>& frames,
                double target) {
         sc = s;
-        const float M = 9, SHX = 3, SHY = 4;  // room for the corners (they stick out 6-8) and the shadow
+        const float M = 3, SHX = 3, SHY = 4;  // room for the corners (they stick out 2) and the shadow
         float pw, ph;
         Detail d = compute(frames, target);
         if (mode == 1) {
@@ -279,7 +284,7 @@ public:
         rt->Clear(ColorF(0, 0, 0, 0));
         rt->SetTextAntialiasMode(D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE);
         rt->SetTransform(D2D1::Matrix3x2F::Scale(s, s) * D2D1::Matrix3x2F::Translation(M * s, M * s));
-        leather(pw, ph, mode == 2 ? 30.f : 22.f, mode == 2 ? 8.f : 6.f);
+        leather(pw, ph, mode == 2 ? 30.f : 22.f, 2.f);  // the corners lie over the dark edge
         D2D1_COLOR_F st = status(d.fps, target);
         if (mode == 1) compact(pw, ph, d, st);
         else detailed(pw, d, st, target, pc);
@@ -710,7 +715,8 @@ void worker() {
             int n = gFrameCount, at = gFrameAt;
             for (int i = n; i > 0; i--) frames.push_back(gFrames[(at - i + HIST) % HIST]);
         }
-        float s = std::max(0.75f, wh / 720.f) * g_x[X_OVERLAY_SIZE] / 100.f;
+        // Smaller than the notebook's scale: 1 at 1350 lines (1440p: 1.07), at least 0.6.
+        float s = overlay_scale(wh) * g_x[X_OVERLAY_SIZE] / 100.f;
         painter.paint(gBack, mode, s, g_x[X_OVERLAY_OPACITY] / 100.f, pc, frames, target_fps());
         {
             std::lock_guard<std::mutex> lk(gPic);
@@ -756,9 +762,9 @@ extern "C" const uint32_t* perf_overlay_lock(int win_w, int win_h, int* bw, int*
         gPic.unlock();
         return nullptr;
     }
-    // The plaque 14 units (at 720p) from the edges; its corners and shadow
+    // The plaque 14 units from the edges (at the overlay's scale); its corners and shadow
     // stick out into the margin.
-    int m = (int)std::lround(14 * std::max(0.75, win_h / 720.0)), c = g_x[X_OVERLAY_CORNER];
+    int m = (int)std::lround(14 * overlay_scale(win_h)), c = g_x[X_OVERLAY_CORNER];
     *x = c & 1 ? win_w - m - p.panelX - p.panelW : m - p.panelX;
     *y = c & 2 ? win_h - m - p.panelY - p.panelH : m - p.panelY;
     *x = std::max(0, std::min(*x, win_w - p.w));
