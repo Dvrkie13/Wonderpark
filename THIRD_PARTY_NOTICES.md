@@ -39,7 +39,8 @@ Wonderpark's runtime started from its `recomp/` runtime code (not its decompiled
 <https://github.com/ExpansionPak/DolRecomp> by ExpansionPak. A git submodule in `tools/dolrecomp` (its own `LICENSE`, GNU GPL 3.0), not copied into this repository.
 
 - Used as a tool: it translates the game's PowerPC code into C on the player's PC (`tools/recomp.py`, into git-ignored `generated/`).
-- Compiled into the game: its CPU helpers `src/cpu/cpu.c` and `src/cpu/cpu.h` (built as the `wp_dolrecomp_cpu` library, `CMakeLists.txt`), and the helper templates it writes into every generated file. This is why Wonderpark itself is GPL-3.0-or-later. Wonderpark doesn't distribute built programs.
+- Compiled into the game: its CPU helpers `src/cpu/cpu.c` and `src/cpu/cpu.h` (built as the `wp_dolrecomp_cpu` library, `CMakeLists.txt`), and the helper templates it writes into every generated file. This is why Wonderpark itself is GPL-3.0-or-later.
+- In a release: `tools/bin/dolrecomp.exe`, built from this submodule with llvm-mingw by `tools/make_tools.py`, so players need no compiler for this step. Its full source is in the same zip (`tools/dolrecomp`), and the release's tag names the exact commit.
 
 ### SDL3 (zlib license)
 
@@ -51,6 +52,21 @@ Wonderpark's runtime started from its `recomp/` runtime code (not its decompiled
 
 The launcher's `.zip` reader (`builder/launcher/mods.cpp`) inflates DEFLATE data with our own code written after Mark Adler's `puff.c` from zlib (by Mark Adler, zlib license), following RFC 1951. No zlib code is included as-is.
 
+## In a release, ready-built (`tools/make_tools.py`)
+
+So a player's PC needs nothing installed. None of these are in this repository (they're git-ignored); a release zip has them with their licenses (`tools/bin/licenses/`, Python's own `LICENSE.txt`).
+
+- **Python** 3.15.2, the official embeddable package from <https://www.python.org/> (Python Software Foundation License 2.0), in `tools/python`: runs the build scripts. Checked against the SHA-256 pinned in `tools/make_tools.py`.
+- **Ninja** 1.13.2, `ninja-win.zip` from <https://github.com/ninja-build/ninja> (Apache License 2.0), as `tools/bin/ninja.exe`. Checked the same way.
+- **DolRecomp** (above) as `tools/bin/dolrecomp.exe`, and **SDL3** (above) as `tools/prebuilt/sdl3-mingw/libSDL3.a`, both built with llvm-mingw. Built into `dolrecomp.exe` from the compiler's runtime: the **mingw-w64 runtime** and **winpthreads** (permissive licenses: ZPL 2.1, MIT and others, as in their `COPYING` files) and LLVM's **libc++** (Apache License 2.0 with LLVM Exceptions).
+
+## Downloaded on demand by the launcher (the build tools)
+
+Not in this repository and not in a release: on the first Build, `tools/fetch_tools.py` downloads them from their official release pages into the player's Wonderpark folder (`tools/`, git-ignored), checks each against a SHA-256 pinned in that script, and keeps them with their licenses.
+
+- **llvm-mingw** 20261117 (LLVM 23.1.6) by Martin Storsjö, <https://github.com/mstorsjo/llvm-mingw>: the C compiler (Clang, LLD) with the mingw-w64 headers and libraries, so no Visual Studio is needed. LLVM: Apache License 2.0 with LLVM Exceptions; mingw-w64: ZPL 2.1, MIT and other permissive licenses (its `LICENSE.TXT` and `x86_64-w64-mingw32/share/mingw32/COPYING*`). Only the 64-bit PC parts are kept.
+- **decomp-toolkit** 1.9.1 (`dtk.exe`) by encounter, <https://github.com/encounter/decomp-toolkit> (MIT or Apache-2.0): reads the player's disc image (`tools/extract_disc.py`). Downloaded rather than shipped: it carries the Wii's disc key, which Wonderpark's own releases never contain.
+
 ## Downloaded on demand by the launcher (HD Pack)
 
 Not in this repository and not in a release: the launcher downloads them only when the player builds the HD Pack, checks each against a SHA-256 pinned in `builder/launcher/hdpack.cpp`, and keeps them with their licenses in `hd\upscaler\` in the player's Wonderpark folder (git-ignored).
@@ -60,8 +76,7 @@ Not in this repository and not in a release: the launcher downloads them only wh
 
 ## Tools run but not included
 
-- **decomp-toolkit** (`dtk.exe`) by encounter, <https://github.com/encounter/decomp-toolkit> (MIT or Apache-2.0, per its repository): reads the player's disc image (`tools/extract_disc.py`). The player downloads it; it isn't in this repository.
-- **Python 3**, **CMake**, **Ninja**, **Clang / MSVC**: the build tools on the player's PC.
+- **CMake**, **Visual Studio / clang-cl**: only for developers building from a source checkout (players need neither).
 - **fontTools** (MIT) and **Brotli** (MIT), only to make `docs/banner.svg`'s embedded fonts (`tools/make_banner.py`).
 
 ## Fonts (SIL Open Font License 1.1)

@@ -40,6 +40,11 @@ def progress(pct: int, msg: str) -> None:
 
 
 def build_dolrecomp(build_dir: Path) -> Path:
+    # The release zip ships it ready-built (self-contained, llvm-mingw), so
+    # players need no CMake or compiler for this step.
+    shipped = REPO / "tools" / "bin" / f"dolrecomp{EXE}"
+    if shipped.is_file():
+        return shipped
     src = REPO / "tools" / "dolrecomp"
     if not (src / "CMakeLists.txt").is_file():
         raise RecompError("tools/dolrecomp is empty: run  git submodule update --init --recursive")

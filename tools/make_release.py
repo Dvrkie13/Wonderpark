@@ -86,10 +86,24 @@ def main() -> int:
         shutil.copy2(src, dst)
         taken += 1
     shutil.copy2(exe, folder / "WonderparkLauncher.exe")
+    # The ready-built tools (tools/make_tools.py), so a player's PC needs
+    # nothing installed. Never dtk.exe (it carries the Wii disc key: players
+    # fetch it from its author) and never the compiler (downloaded too).
+    if subprocess.run([sys.executable, str(REPO / "tools" / "make_tools.py")]).returncode:
+        sys.exit("error: the ready-built tools couldn't be made")
+    extra = [REPO / "tools/bin/ninja.exe", REPO / "tools/bin/dolrecomp.exe"]
+    extra += [p for d in ("tools/python", "tools/prebuilt", "tools/bin/licenses")
+              for p in (REPO / d).rglob("*") if p.is_file()]
+    for src in extra:
+        dst = folder / src.relative_to(REPO)
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, dst)
+    print(f"{len(extra)} ready-built tool files")
     commit = git("rev-parse", "HEAD").strip()
     (folder / "RELEASE.txt").write_text(
         f"Wonderpark {ver}\r\nMade from commit {commit} of https://github.com/Dvrkie13/Wonderpark\r\n"
-        "Start WonderparkLauncher.exe. README.md says what to install first.\r\n"
+        "Start WonderparkLauncher.exe: nothing else to install. The first Build downloads the\r\n"
+        "compiler (llvm-mingw) and the disc reader (dtk) from their official pages, once.\r\n"
         "Never share your built Wonderpark folder: once built, it contains the game.\r\n",
         encoding="utf-8")
     print(f"{taken} files + the launcher in {folder}")
