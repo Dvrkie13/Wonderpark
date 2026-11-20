@@ -1283,31 +1283,63 @@ static const char* kOverlayFragmentShader =
     "void main() { o_color = texture(u_image, v_uv); }\n";
 
 /* The picture's own look, from the F1 tab's settings, drawn from the kept
- * picture (sLastTex) back into the window's framebuffer: brightness (a
- * gamma curve, so whites stay white and nothing clips), Vivid colors (more
- * saturation, a little contrast) and Mirror world (flipped left to right).
- * Only when one of them isn't the default: otherwise no pass at all. */
+ * picture (sLastTex) back into the window's framebuffer: Vivid colors
+ * (more saturation, a little contrast), gamma (a curve on the midtones, so
+ * whites stay white and nothing clips), brightness (the black level: up
+ * lifts the shadows toward grey, down dims everything), the color-blind
+ * filter and Mirror world (flipped left to right). Only when one of them
+ * isn't the default: otherwise no pass at all.
+ *
+ * The color-blind filter shifts the colors a kind of color blindness
+ * can't tell apart into ones it can ("daltonizing"): the picture as that
+ * eye sees it (Machado, Oliveira and Fernandes 2009, full strength, in
+ * linear light), the difference from the real one, and that difference
+ * moved into the channels still seen (green and blue for red-green
+ * blindness, red and green for blue-yellow). u_cb: the simulation's rows,
+ * then the shift's. */
 static const char* kLookFragmentShader =
     "#version 330 core\n"
     "in vec2 v_uv;\n"
     "out vec4 o_color;\n"
     "uniform sampler2D u_image;\n"
     "uniform vec4 u_look; /* gamma, saturation, contrast, mirror */\n"
+    "uniform vec4 u_look2; /* brightness (-0.3 to 0.15), color-blind filter on */\n"
+    "uniform vec4 u_cb[6];\n"
     "void main() {\n"
     "    vec2 uv = vec2(u_look.w != 0.0 ? 1.0 - v_uv.x : v_uv.x, 1.0 - v_uv.y);\n"
     "    vec3 c = texture(u_image, uv).rgb;\n"
     "    float l = dot(c, vec3(0.2126, 0.7152, 0.0722));\n"
     "    c = clamp(mix(vec3(l), c, u_look.y), 0.0, 1.0);\n"
     "    c = clamp((c - 0.5) * u_look.z + 0.5, 0.0, 1.0);\n"
-    "    o_color = vec4(pow(c, vec3(u_look.x)), 1.0);\n"
+    "    c = pow(c, vec3(u_look.x));\n"
+    "    c = u_look2.x >= 0.0 ? 1.0 - (1.0 - c) * (1.0 - u_look2.x) : c * (1.0 + u_look2.x);\n"
+    "    if (u_look2.y != 0.0) {\n"
+    "        vec3 lin = pow(c, vec3(2.2));\n"
+    "        vec3 sim = vec3(dot(u_cb[0].xyz, lin), dot(u_cb[1].xyz, lin), dot(u_cb[2].xyz, lin));\n"
+    "        vec3 e = lin - sim;\n"
+    "        lin = clamp(lin + vec3(dot(u_cb[3].xyz, e), dot(u_cb[4].xyz, e), dot(u_cb[5].xyz, e)), 0.0, 1.0);\n"
+    "        c = pow(lin, vec3(1.0 / 2.2));\n"
+    "    }\n"
+    "    o_color = vec4(c, 1.0);\n"
     "}\n";
 
 static GLuint sLookProgram;
-static GLint uLook;
+static GLint uLook, uLook2, uCb;
 
 static int look_needed(void) {
-    return g_x[X_BRIGHTNESS] != 100 || g_x[X_COLORS] || g_x[X_MIRROR_WORLD];
+    return g_x[X_BRIGHTNESS] != 100 || g_x[X_GAMMA] != 100 || g_x[X_COLORBLIND] || g_x[X_COLORS] ||
+           g_x[X_MIRROR_WORLD];
 }
+
+/* The color-blind filter's matrices (rows), per kind: deuteranopia,
+ * protanopia, tritanopia (Machado et al. 2009, severity 1), then the shift. */
+static const float kCbSim[3][3][4] = {
+    {{0.367322f, 0.860646f, -0.227968f, 0}, {0.280085f, 0.672501f, 0.047413f, 0}, {-0.011820f, 0.042940f, 0.968881f, 0}},
+    {{0.152286f, 1.052583f, -0.204868f, 0}, {0.114503f, 0.786281f, 0.099216f, 0}, {-0.003882f, -0.048116f, 1.051998f, 0}},
+    {{1.255528f, -0.076749f, -0.178779f, 0}, {-0.078411f, 0.930809f, 0.147602f, 0}, {0.004733f, 0.691367f, 0.303900f, 0}},
+};
+static const float kCbShiftRG[3][4] = {{0, 0, 0, 0}, {0.7f, 1, 0, 0}, {0.7f, 0, 1, 0}};
+static const float kCbShiftBY[3][4] = {{1, 0, 0.7f, 0}, {0, 1, 0.7f, 0}, {0, 0, 0, 0}};
 
 static void build_look_program(void) {
     GLint ok;
@@ -1326,6 +1358,8 @@ static void build_look_program(void) {
     p_glUseProgram(sLookProgram);
     p_glUniform1i(p_glGetUniformLocation(sLookProgram, "u_image"), 0);
     uLook = p_glGetUniformLocation(sLookProgram, "u_look");
+    uLook2 = p_glGetUniformLocation(sLookProgram, "u_look2");
+    uCb = p_glGetUniformLocation(sLookProgram, "u_cb");
     p_glUseProgram(sProgram);
 }
 
@@ -2652,7 +2686,8 @@ static void keep_last(int w, int h) {
 /* The kept picture (sLastTex) drawn into the window's framebuffer, w x h,
  * with the look settings (kLookFragmentShader). */
 static void draw_look(int w, int h) {
-    float b = g_x[X_BRIGHTNESS] / 100.0f;
+    float b = g_x[X_BRIGHTNESS] / 100.0f - 1.0f, g = g_x[X_GAMMA] / 100.0f;
+    int cb = g_x[X_COLORBLIND];
     p_glBindFramebuffer(GL_FRAMEBUFFER, sWinFbo);
     glViewport(0, 0, w, h);
     glDisable(GL_SCISSOR_TEST);
@@ -2665,9 +2700,19 @@ static void draw_look(int w, int h) {
     p_glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, sLastTex);
     {
-        float look[4] = {1.0f / (b > 0.1f ? b : 0.1f), g_x[X_COLORS] ? 1.3f : 1.0f, g_x[X_COLORS] ? 1.06f : 1.0f,
+        /* Brightness 50-150%: down to 70% as dim, or the shadows up to 15%
+         * of the way to white. Gamma 50-150%: midtones darker to lighter. */
+        float look[4] = {1.0f / (g > 0.1f ? g : 0.1f), g_x[X_COLORS] ? 1.3f : 1.0f, g_x[X_COLORS] ? 1.06f : 1.0f,
                          g_x[X_MIRROR_WORLD] ? 1.0f : 0.0f};
+        float look2[4] = {b >= 0 ? b * 0.3f : b * 0.6f, cb >= 1 && cb <= 3 ? 1.0f : 0.0f, 0, 0};
         p_glUniform4fv(uLook, 1, look);
+        p_glUniform4fv(uLook2, 1, look2);
+        if (cb >= 1 && cb <= 3) {
+            float m[6][4];
+            memcpy(m, kCbSim[cb - 1], sizeof(kCbSim[0]));
+            memcpy(m[3], cb == 3 ? kCbShiftBY : kCbShiftRG, sizeof(kCbShiftRG));
+            p_glUniform4fv(uCb, 6, &m[0][0]);
+        }
     }
     glDrawArrays(GL_TRIANGLES, 0, 3);
     p_glUseProgram(sProgram);

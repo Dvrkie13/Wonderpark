@@ -42,9 +42,76 @@ static void restore_mode(void) {
     sModeDevice[0] = 0;
 }
 
-/* Switches the window's monitor to w x h, or back when w is 0; 1 if it's
- * at that size now. */
-static int set_mode(int w, int h) {
+/* ---- Screens (Display > Screen): the main one first, then the others in
+ * Windows' order. */
+#define MAX_SCREENS 16
+typedef struct {
+    HMONITOR h[MAX_SCREENS];
+    int n;
+} ScreenList;
+
+static BOOL CALLBACK add_screen(HMONITOR m, HDC dc, LPRECT r, LPARAM lp) {
+    ScreenList* l = (ScreenList*)lp;
+    MONITORINFO mi;
+    (void)dc, (void)r;
+    if (l->n >= MAX_SCREENS) return FALSE;
+    mi.cbSize = sizeof(mi);
+    if (GetMonitorInfoA(m, &mi) && (mi.dwFlags & MONITORINFOF_PRIMARY) && l->n > 0) {
+        memmove(l->h + 1, l->h, sizeof(HMONITOR) * (size_t)l->n);
+        l->h[0] = m;
+    } else {
+        l->h[l->n] = m;
+    }
+    l->n++;
+    return TRUE;
+}
+
+static ScreenList screens(void) {
+    ScreenList l;
+    l.n = 0;
+    EnumDisplayMonitors(NULL, NULL, add_screen, (LPARAM)&l);
+    return l;
+}
+
+int win_screen_count(void) { return screens().n; }
+
+/* The screen the game goes to: the one chosen, else the window's own. */
+static HMONITOR target_monitor(void) {
+    int want = g_x[X_MONITOR];
+    if (want > 0) {
+        ScreenList l = screens();
+        if (want <= l.n) return l.h[want - 1];
+    }
+    return MonitorFromWindow(sWnd, MONITOR_DEFAULTTOPRIMARY);
+}
+
+/* The refresh rates the chosen screen offers at the size fullscreen uses
+ * (w x h; 0: its desktop's), lowest first; how many. */
+int win_refresh_rates(int w, int h, int* out, int max) {
+    MONITORINFOEXA mi;
+    DEVMODEA dm;
+    DWORD i;
+    int n = 0, k;
+    mi.cbSize = sizeof(mi);
+    if (!GetMonitorInfoA(target_monitor(), (MONITORINFO*)&mi)) return 0;
+    memset(&dm, 0, sizeof(dm));
+    dm.dmSize = sizeof(dm);
+    if (!w && EnumDisplaySettingsA(mi.szDevice, ENUM_REGISTRY_SETTINGS, &dm)) w = (int)dm.dmPelsWidth, h = (int)dm.dmPelsHeight;
+    for (i = 0; EnumDisplaySettingsA(mi.szDevice, i, &dm); i++) {
+        int hz = (int)dm.dmDisplayFrequency;
+        if ((int)dm.dmPelsWidth != w || (int)dm.dmPelsHeight != h || dm.dmBitsPerPel < 24 || hz < 50) continue;
+        for (k = 0; k < n && out[k] != hz; k++) {}
+        if (k < n || n >= max) continue;
+        for (k = n; k > 0 && out[k - 1] > hz; k--) out[k] = out[k - 1];
+        out[k] = hz;
+        n++;
+    }
+    return n;
+}
+
+/* Switches the chosen screen to w x h (at hz, if not 0), or back when w is
+ * 0; 1 if it's at that mode now. */
+static int set_mode(int w, int h, int hz) {
     MONITORINFOEXA mi;
     DEVMODEA dm;
     if (!w) {
@@ -52,18 +119,24 @@ static int set_mode(int w, int h) {
         return 1;
     }
     mi.cbSize = sizeof(mi);
-    if (!GetMonitorInfoA(MonitorFromWindow(sWnd, MONITOR_DEFAULTTOPRIMARY), (MONITORINFO*)&mi)) return 0;
+    if (!GetMonitorInfoA(target_monitor(), (MONITORINFO*)&mi)) return 0;
+    if (sModeDevice[0] && strcmp(sModeDevice, mi.szDevice)) restore_mode(); /* another screen chosen */
     memset(&dm, 0, sizeof(dm));
     dm.dmSize = sizeof(dm);
     if (EnumDisplaySettingsA(mi.szDevice, ENUM_CURRENT_SETTINGS, &dm) && (int)dm.dmPelsWidth == w &&
-        (int)dm.dmPelsHeight == h)
+        (int)dm.dmPelsHeight == h && (!hz || (int)dm.dmDisplayFrequency == hz))
         return 1;
     dm.dmPelsWidth = (DWORD)w;
     dm.dmPelsHeight = (DWORD)h;
     dm.dmFields = DM_PELSWIDTH | DM_PELSHEIGHT;
+    if (hz) dm.dmDisplayFrequency = (DWORD)hz, dm.dmFields |= DM_DISPLAYFREQUENCY;
     if (ChangeDisplaySettingsExA(mi.szDevice, &dm, NULL, CDS_FULLSCREEN, NULL) != DISP_CHANGE_SUCCESSFUL) {
-        fprintf(stderr, "window: the screen can't be set to %dx%d; fullscreen stays at its own size\n", w, h);
-        return 0;
+        dm.dmFields &= ~(DWORD)DM_DISPLAYFREQUENCY;
+        if (!hz || ChangeDisplaySettingsExA(mi.szDevice, &dm, NULL, CDS_FULLSCREEN, NULL) != DISP_CHANGE_SUCCESSFUL) {
+            fprintf(stderr, "window: the screen can't be set to %dx%d; fullscreen stays at its own size\n", w, h);
+            return 0;
+        }
+        fprintf(stderr, "window: the screen can't run at %d Hz at %dx%d; it keeps its own rate\n", hz, w, h);
     }
     if (!sModeDevice[0]) {
         static int registered;
@@ -76,21 +149,37 @@ static int set_mode(int w, int h) {
 static void cover_monitor(void) {
     MONITORINFO mi;
     mi.cbSize = sizeof(mi);
-    GetMonitorInfoA(MonitorFromWindow(sWnd, MONITOR_DEFAULTTOPRIMARY), &mi);
+    GetMonitorInfoA(target_monitor(), &mi);
     SetWindowPos(sWnd, HWND_TOP, mi.rcMonitor.left, mi.rcMonitor.top, mi.rcMonitor.right - mi.rcMonitor.left,
                  mi.rcMonitor.bottom - mi.rcMonitor.top, SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
 }
 
 static const int kSizes[4][2] = {{1280, 720}, {1600, 900}, {1920, 1080}, {2560, 1440}};
 
-/* The display mode fullscreen wants: the resolution's, while in front. */
+/* The display mode fullscreen wants: the resolution's (Match screen: the
+ * desktop's size) at the refresh rate chosen, while in front. */
 static void apply_mode(int active) {
-    int r = g_x[X_RESOLUTION];
-    if (sFullscreen && g_x[X_WINDOW_MODE] == 2 && active && r >= 0 && r < 4) {
-        if (set_mode(kSizes[r][0], kSizes[r][1])) cover_monitor();
+    int r = g_x[X_RESOLUTION], hz = g_x[X_REFRESH_RATE];
+    if (sFullscreen && g_x[X_WINDOW_MODE] == 2 && active && ((r >= 0 && r < 4) || hz)) {
+        int w = 0, h = 0;
+        if (r >= 0 && r < 4) {
+            w = kSizes[r][0], h = kSizes[r][1];
+        } else {
+            MONITORINFOEXA mi;
+            DEVMODEA dm;
+            mi.cbSize = sizeof(mi);
+            memset(&dm, 0, sizeof(dm));
+            dm.dmSize = sizeof(dm);
+            if (GetMonitorInfoA(target_monitor(), (MONITORINFO*)&mi) &&
+                EnumDisplaySettingsA(mi.szDevice, ENUM_REGISTRY_SETTINGS, &dm))
+                w = (int)dm.dmPelsWidth, h = (int)dm.dmPelsHeight;
+        }
+        if (w && set_mode(w, h, hz)) cover_monitor();
     } else if (sModeDevice[0]) {
-        set_mode(0, 0);
+        set_mode(0, 0, 0);
         if (sFullscreen) cover_monitor();
+    } else if (sFullscreen) {
+        cover_monitor(); /* (another screen chosen) */
     }
 }
 
@@ -211,11 +300,20 @@ void settings_apply_window(void) {
         mi.cbSize = sizeof(mi);
         ShowWindow(sWnd, SW_RESTORE);
         AdjustWindowRect(&rc, WS_OVERLAPPEDWINDOW, FALSE);
-        GetMonitorInfoA(MonitorFromWindow(sWnd, MONITOR_DEFAULTTOPRIMARY), &mi);
+        GetMonitorInfoA(target_monitor(), &mi);
         SetWindowPos(sWnd, NULL, mi.rcWork.left + ((mi.rcWork.right - mi.rcWork.left) - (rc.right - rc.left)) / 2,
                      mi.rcWork.top + ((mi.rcWork.bottom - mi.rcWork.top) - (rc.bottom - rc.top)) / 2,
                      rc.right - rc.left, rc.bottom - rc.top, SWP_NOZORDER | SWP_NOOWNERZORDER);
     } else {
+        if (g_x[X_MONITOR] > 0) {
+            /* Onto the chosen screen first, so it's that one that's filled. */
+            MONITORINFO mi;
+            mi.cbSize = sizeof(mi);
+            ShowWindow(sWnd, SW_RESTORE);
+            GetMonitorInfoA(target_monitor(), &mi);
+            SetWindowPos(sWnd, NULL, mi.rcWork.left + 40, mi.rcWork.top + 40, 0, 0,
+                         SWP_NOSIZE | SWP_NOZORDER | SWP_NOOWNERZORDER);
+        }
         ShowWindow(sWnd, SW_MAXIMIZE);
     }
 }
