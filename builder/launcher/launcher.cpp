@@ -157,6 +157,7 @@ struct Shared {
     long long tools_bytes = -1; // stage 2: what's left to download (-1: not known yet)
     std::wstring detail;        // stage 2: "Compiler: 97 of 191 MB"
     std::wstring suggest;       // the speed test's graphics preset ("High"), at the end of a build
+    bool suggest_first = false; // and the game has no settings yet, so its first start uses it
     double build_t0 = 0;        // when the build started (or was found running), for the tips
     double eta_t0 = 0;          // time left: measured from here (the end of the download)...
     float eta_p0 = 0;           // ... and this much progress
@@ -594,6 +595,9 @@ static void follow_build(HANDLE proc, const std::wstring& log_path) {
             g.tools_bytes = _atoi64(l.c_str() + 6);
         } else if (l.rfind("@suggest ", 0) == 0) {
             g.suggest = widen(l.substr(9));
+            // The game takes the suggestion at its very first start, with no
+            // settings.ini yet (runtime/host/settings.c).
+            g.suggest_first = GetFileAttributesW((mods_data_dir() + L"\\settings.ini").c_str()) == INVALID_FILE_ATTRIBUTES;
         } else if (l.rfind("@detail ", 0) == 0) {
             g.detail = widen(l.substr(8));
         } else if (l.rfind("@done ", 0) == 0) {
@@ -2935,10 +2939,12 @@ static void render(double t, const Shared& s) {
                 if (!s.warn.empty()) lines.push_back({s.warn, 0xffe7a3, 0});
                 if (!s.image.empty() && !(s.state == S_READY && s.rebuild))
                     lines.push_back({file_name(s.image) + L" · disc verified (S2LE01)", 0xa8f0d0, 1});
-                // The build's speed test (pipeline.py @suggest). The presets
-                // themselves come with the next settings update.
+                // The build's speed test (pipeline.py @suggest): the game's
+                // first start uses that preset (F1 > Graphics > Preset).
                 if (s.state == S_DONE && s.built_now && !s.suggest.empty())
-                    lines.push_back({L"Speed test: " + s.suggest + L" graphics suit this PC. (Graphics presets: coming soon.)",
+                    lines.push_back({L"Speed test: " + s.suggest +
+                                         (s.suggest_first ? L" graphics suit this PC, so the game starts with them. Change them in F1 > Graphics."
+                                                          : L" graphics suit this PC. Pick them in F1 > Graphics > Preset."),
                                      0xd6deef, 0});
                 if (s.state != S_READY) lines.push_back({L"", 0, 2});
                 break;
@@ -3903,6 +3909,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show) {
             s.tools_bytes = g.tools_bytes;
             s.detail = g.detail;
             s.suggest = g.suggest;
+            s.suggest_first = g.suggest_first;
             s.build_t0 = g.build_t0;
             s.eta_t0 = g.eta_t0;
             s.eta_p0 = g.eta_p0;

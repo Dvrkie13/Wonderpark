@@ -78,6 +78,9 @@ int hle_game_text_speed(void);           /* hle_options.c: 0 Normal, 1 Fast, -1 
 void hle_set_game_text_speed(int fast);
 int dvd_voices_ready(void);              /* dvd.c: the Japanese voices are set up */
 void* win_handle(void);
+int win_screen_count(void);              /* window_win32.c: the screens */
+int win_refresh_rates(int w, int h, int* out, int max); /* and the chosen one's refresh rates */
+int audio_device_list(int* hashes, wchar_t (*names)[48], int max); /* audio_win32.c */
 }
 #include "gallery3d.h"  // the Gallery's 3D view (C++ and C both)
 
@@ -163,6 +166,9 @@ struct Row {
     // "Coming soon".
     std::function<bool()> off;
     std::wstring tag;
+    // Choices that depend on the PC (screens, refresh rates, sound devices):
+    // made again each time the tab opens.
+    std::function<void(Row&)> refresh;
 };
 
 struct Category {
@@ -265,6 +271,43 @@ void build_rows() {
                               {L"Windowed", L"Borderless", L"Fullscreen"}));
         c.rows.push_back(xrow(CHOICE, X_RESOLUTION, L"Resolution", L"The window's size, when in a window.",
                               {L"1280×720", L"1600×900", L"1920×1080", L"2560×1440", L"Match screen"}));
+        {
+            // Which screen (window_win32.c): Auto (the window's own), then
+            // each screen, the main one first.
+            Row sc = xrow(CHOICE, X_MONITOR, L"Screen",
+                          L"Which screen fullscreen and borderless use, and where the window opens. Auto: the one the window is on.");
+            sc.refresh = [](Row& r) {
+                int n = std::min(win_screen_count(), 8);
+                r.opts = {L"Auto"};
+                for (int i = 1; i <= n; i++) r.opts.push_back(L"Screen " + std::to_wstring(i) + (i == 1 ? L" (main)" : L""));
+            };
+            sc.get = [] { return std::min(g_x[X_MONITOR], std::max(0, std::min(win_screen_count(), 8))); };
+            c.rows.push_back(sc);
+        }
+        {
+            // Fullscreen's refresh rate: the rates the screen offers at the
+            // resolution fullscreen uses.
+            static std::vector<int> rates;
+            Row rr = xrow(CHOICE, X_REFRESH_RATE, L"Refresh rate",
+                          L"How many times a second the screen redraws, in Fullscreen. Screen's own leaves it as Windows has it.");
+            rr.refresh = [](Row& r) {
+                static const int kW[4] = {1280, 1600, 1920, 2560}, kH[4] = {720, 900, 1080, 1440};
+                int res = g_x[X_RESOLUTION], buf[24];
+                int n = res >= 0 && res < 4 ? win_refresh_rates(kW[res], kH[res], buf, 24) : win_refresh_rates(0, 0, buf, 24);
+                rates.assign(buf, buf + n);
+                r.opts = {L"Screen's own"};
+                for (int hz : rates) r.opts.push_back(std::to_wstring(hz) + L" Hz");
+            };
+            rr.get = [] {
+                for (size_t i = 0; i < rates.size(); i++)
+                    if (rates[i] == g_x[X_REFRESH_RATE]) return (int)i + 1;
+                return 0;
+            };
+            rr.set = [](int v) { settings_set_x(X_REFRESH_RATE, v > 0 && v <= (int)rates.size() ? rates[v - 1] : 0); };
+            rr.off = [] { return g_x[X_WINDOW_MODE] != 2; };
+            rr.tag = L"Fullscreen only";
+            c.rows.push_back(rr);
+        }
         Row fr = vchoice(L"Frame rate",
                          L"60 draws every step of the game. Above 60 the frames between are blended from the last two (smoother turning); never more than your screen shows. Movies stay at 30.",
                          {L"30 (original)", L"60", L"120", L"144", L"240"}, {30, 60, 120, 144, 240}, &g_settings.frame_rate, 30,
@@ -281,7 +324,15 @@ void build_rows() {
         rd.set = [](int) {};
         rd.reset = [] {};
         c.rows.push_back(rd);
-        c.rows.push_back(xslider(X_BRIGHTNESS, L"Brightness", nullptr, 50, 150, 5, L"%", false));
+        // The picture's look (gl_backend.c's look pass).
+        c.rows.push_back(head(L"Picture"));
+        c.rows.push_back(xslider(X_BRIGHTNESS, L"Brightness",
+                                 L"The black level: raise it if dark places are hard to see, lower it for deeper shadows.", 50, 150,
+                                 5, L"%", false));
+        c.rows.push_back(xslider(X_GAMMA, L"Gamma", L"Lighter or darker midtones. Whites stay white.", 50, 150, 5, L"%", false));
+        c.rows.push_back(xrow(CHOICE, X_COLORBLIND, L"Color-blind filter",
+                              L"Shifts colors you may not tell apart into ones you can. Deuteranopia and protanopia: red and green. Tritanopia: blue and yellow.",
+                              {L"Off", L"Deuteranopia", L"Protanopia", L"Tritanopia"}));
         // The performance overlay (perf_overlay.cpp).
         c.rows.push_back(head(L"Performance overlay"));
         c.rows.push_back(xrow(CHOICE, X_SHOW_FPS, L"Show FPS",
@@ -312,6 +363,19 @@ void build_rows() {
     // Graphics
     {
         Category c{L"graphics", L"Graphics", L"How sharp and shiny the park looks", 0x8b5bd2, 0xb596f0, 0xffffff, {}};
+        {
+            // The presets (settings.c): set the settings below together;
+            // changing one of them by hand makes it Custom.
+            std::wstring desc =
+                L"Sets internal resolution, frame rate, anti-aliasing, texture filtering, per-pixel lighting, bloom and effect copies together. Change any of them and it's Custom.";
+            const char* s = settings_suggested_preset();
+            if (s && *s) desc += L" The speed test after your build suggested " + std::wstring(s, s + strlen(s)) + L".";
+            Row pr = xrow(CHOICE, X_GRAPHICS_PRESET, L"Preset", desc.c_str(),
+                          {L"Potato", L"Low", L"Medium", L"High", L"Ultra", L"Custom"});
+            pr.set = [](int v) { settings_apply_preset(v); };
+            pr.reset = [] { settings_apply_preset(PRESET_CUSTOM); };
+            c.rows.push_back(pr);
+        }
         c.rows.push_back(head(L"View"));
         Row fov;
         fov.kind = SLIDER;
@@ -365,12 +429,23 @@ void build_rows() {
         }
         c.rows.push_back(xrow(TOGGLE, X_FAST_LOADING, L"Fast loading",
                               L"Reads the game's files into RAM at start (about 280 MB), so areas load without waiting for the drive. From the next start."));
+        c.rows.push_back(xrow(CHOICE, X_EFFECT_COPIES, L"Effect copies",
+                              L"The game copies the picture for some effects. Fast keeps the copies on the graphics card; Accurate also hands each to the game, as a Wii does, which waits for the card. If an effect looks wrong on Fast, try Accurate.",
+                              {L"Fast", L"Accurate"}));
+        c.rows.push_back(xrow(TOGGLE, X_DYNAMIC_RES, L"Dynamic resolution",
+                              L"Lowers the internal resolution for a moment when the frame rate drops, to keep it steady.", {}, true));
+        {
+            Row dt = xrow(CHOICE, X_DYNAMIC_RES_TARGET, L"Target frame rate", L"The frame rate dynamic resolution keeps.",
+                          {L"30", L"60"}, true);
+            dt.get = [] { return g_x[X_DYNAMIC_RES_TARGET] >= 60 ? 1 : 0; };
+            c.rows.push_back(dt);
+        }
         g_cats.push_back(c);
     }
     // Controls
     {
         Category c{L"controls", L"Controls", L"Keyboard, mouse and controller", 0xf6d44a, 0xfbe27a, 0x1b2440, {}};
-        c.rows.push_back(head(L"Camera and aiming"));
+        c.rows.push_back(head(L"Camera"));
         c.rows.push_back(xrow(TOGGLE, X_FREE_CAMERA, L"Free camera",
                               L"The mouse and right stick turn the camera in the park. B puts it back behind you."));
         Row cam;
@@ -404,12 +479,29 @@ void build_rows() {
             settings_save();
         };
         c.rows.push_back(iy);
+        c.rows.push_back(xslider(X_CAMERA_DISTANCE, L"Camera distance", L"How far behind you the camera sits in the park. 100% is the game's own.",
+                                 100, 200, 10, L"%", false));
+        c.rows.push_back(xslider(X_CAMERA_SMOOTHING, L"Camera smoothing", L"Softens the camera's turning. 0%: it follows the mouse and stick at once.",
+                                 0, 90, 10, L"%", false));
         c.rows.push_back(xslider(X_CAMERA_RECENTER, L"Recenter after", L"Seconds without turning before the camera eases back. Off: never.",
                                  0, 30, 1, L" s", false));
+        c.rows.push_back(xrow(CHOICE, X_RECENTER_SPEED, L"Recenter speed",
+                              L"How quickly the camera swings back behind you (B, or Recenter after).", {L"Slow", L"Normal", L"Fast"}));
+        c.rows.push_back(head(L"Aiming"));
         c.rows.push_back(xrow(CHOICE, X_RIGHT_STICK, L"Right stick", L"Auto moves the pointer when the game uses one (aiming, pointing at menus), else the camera.",
                               {L"Camera", L"Pointer", L"Auto"}));
         c.rows.push_back(xrow(TOGGLE, X_AIM_ASSIST, L"Aim assist", L"Controller aiming leans toward targets (Cake Contraption).", {}, true));
-        c.rows.push_back(vchoice(L"Rumble", nullptr, {L"Off", L"Light", L"Normal", L"Strong"}, {0, 1, 2, 3},
+        c.rows.push_back(head(L"Controller"));
+        c.rows.push_back(xslider(X_DEADZONE_LEFT, L"Left stick dead zone",
+                                 L"How far the stick moves before it counts. Raise it if you drift without touching it.", 0, 50, 2,
+                                 L"%", false));
+        c.rows.push_back(xslider(X_DEADZONE_RIGHT, L"Right stick dead zone", L"The same, for the camera's stick.", 0, 50, 2, L"%", false));
+        c.rows.push_back(xslider(X_TRIGGER_SENSITIVITY, L"Trigger sensitivity",
+                                 L"How light a press of a trigger counts. Higher: a touch is enough.", 10, 90, 5, L"%", false));
+        c.rows.push_back(xrow(CHOICE, X_CHARGE_TOGGLE, L"Charge (1)",
+                              L"Toggle: hold 1 a moment and let go, and the charged move keeps charging; press 1 again to let it fly. Quick taps still attack.",
+                              {L"Hold", L"Toggle"}));
+        c.rows.push_back(vchoice(L"Rumble strength", nullptr, {L"Off", L"Light", L"Normal", L"Strong"}, {0, 1, 2, 3},
                                  &g_settings.rumble, 2, [] { input_rumble_preview(); }));
         c.rows.push_back(head(L"Buttons"));
         c.rows.push_back(xrow(CHOICE, X_BUTTON_ICONS, L"Button icons",
@@ -437,6 +529,15 @@ void build_rows() {
             ok.label = L"FPS overlay";
             ok.reset = [] { settings_set_x(X_OVERLAY_KEY, settings_x_default(X_OVERLAY_KEY)); };
             c.rows.push_back(ok);
+        }
+        {
+            // Hide HUD (Gameplay > HUD): one key.
+            Row hk;
+            hk.kind = BIND;
+            hk.xkey = X_HUD_KEY;
+            hk.label = L"Hide HUD";
+            hk.reset = [] { settings_set_x(X_HUD_KEY, settings_x_default(X_HUD_KEY)); };
+            c.rows.push_back(hk);
         }
         c.rows.push_back(head(L"Feel"));
         c.rows.push_back(xslider(X_STEER_SENSITIVITY, L"Steering sensitivity",
@@ -466,6 +567,31 @@ void build_rows() {
         }
         c.rows.push_back(xrow(TOGGLE, X_MUTE_BACKGROUND, L"Mute in the background", L"Goes quiet when you switch to another window."));
         c.rows.push_back(xrow(CHOICE, X_AUDIO_LATENCY, L"Audio delay", L"Raise it if the sound crackles.", {L"Low", L"Normal", L"Safe"}));
+        c.rows.push_back(head(L"Output"));
+        {
+            // The sound devices (audio_win32.c), as listed when the tab opened.
+            static std::vector<int> devices;
+            Row od = xrow(CHOICE, X_AUDIO_DEVICE, L"Output device",
+                          L"Where the sound plays. Windows' default follows the device Windows plays on. Changes at once.");
+            od.refresh = [](Row& r) {
+                int hashes[16];
+                wchar_t names[16][48];
+                int n = audio_device_list(hashes, names, 16);
+                devices.assign(hashes, hashes + n);
+                r.opts = {L"Windows' default"};
+                for (int i = 0; i < n; i++) r.opts.push_back(names[i]);
+            };
+            od.get = [] {
+                for (size_t i = 0; i < devices.size(); i++)
+                    if (devices[i] == g_x[X_AUDIO_DEVICE]) return (int)i + 1;
+                return 0;
+            };
+            od.set = [](int v) { settings_set_x(X_AUDIO_DEVICE, v > 0 && v <= (int)devices.size() ? devices[v - 1] : 0); };
+            c.rows.push_back(od);
+        }
+        c.rows.push_back(xrow(TOGGLE, X_MONO, L"Mono audio", L"Both ears hear the same: for one earbud, or hearing on one side."));
+        c.rows.push_back(xrow(TOGGLE, X_NIGHT_MODE, L"Night mode",
+                              L"Evens out loud and quiet: quiet sounds louder, loud ones softer. For playing late without waking anyone."));
         g_cats.push_back(c);
     }
     // Gameplay
@@ -516,12 +642,29 @@ void build_rows() {
         c.rows.push_back(xrow(TOGGLE, X_PAUSE_BACKGROUND, L"Pause in the background", L"Pauses when the window loses focus."));
         c.rows.push_back(xrow(TOGGLE, X_SKIP_LOGOS, L"Skip startup logos",
                               L"Goes to the title as soon as the park has loaded, instead of waiting out the wrist strap screen."));
+        c.rows.push_back(soon_row(TOGGLE, L"Skip intro movies", L"Goes straight past the movies before the title."));
+        c.rows.push_back(xrow(TOGGLE, X_AUTO_ADVANCE, L"Auto-advance dialogue",
+                              L"Turns to the next page of a conversation by itself, once it's had time to be read.", {}, true));
         c.rows.push_back(xrow(CHOICE, X_SPEED_UP, L"Speed-up",
                               L"Tab or the left trigger runs the park faster. Not in attractions or story scenes; quiet meanwhile.",
                               {L"Off", L"2×", L"3×"}));
         c.rows.push_back(xrow(CHOICE, X_SPEED_TOGGLE, L"Speed-up key", nullptr, {L"Hold", L"Toggle"}));
         c.rows.push_back(xrow(TOGGLE, X_SAVE_BACKUPS, L"Save backups",
                               L"Keeps a copy of your slot before each save (the last 10), in the backups folder."));
+        c.rows.push_back(head(L"HUD"));
+        {
+            // Hidden by its key too (Controls > Buttons > Hide HUD; gx_fifo.c).
+            Row hh;
+            hh.kind = TOGGLE;
+            hh.label = L"Hide HUD";
+            hh.desc = L"Hides the HUD and conversation windows in the park, for photos. Its key (F6 at first) does it too. Back at the next start.";
+            hh.get = [] { return g_hud_hidden; };
+            hh.set = [](int v) { g_hud_hidden = v; };
+            hh.reset = [] { g_hud_hidden = 0; };
+            c.rows.push_back(hh);
+        }
+        c.rows.push_back(xslider(X_HUD_SIZE, L"HUD size", L"The HUD bigger or smaller, in its corners.", 50, 150, 10, L"%", true));
+        c.rows.push_back(xslider(X_HUD_OPACITY, L"HUD opacity", L"See through the HUD a little, or a lot.", 0, 100, 10, L"%", true));
         g_cats.push_back(c);
     }
     // Multiplayer: shelved (CLAUDE.md), so the tab is hidden. Kept for when
@@ -568,6 +711,9 @@ void build_rows() {
         c.rows.push_back(xrow(TOGGLE, X_VICTORY_CONFETTI, L"Victory confetti", L"A burst of confetti when you clear an attraction."));
         g_cats.push_back(c);
     }
+    for (auto& cat : g_cats)
+        for (auto& r : cat.rows)
+            if (r.refresh) r.refresh(r);
 }
 
 // ------------------------------------------------------------------------
@@ -2066,6 +2212,9 @@ void open_tab(bool on) {
         U.reduced = reduced_motion();
         U.view = 0;
         U.sheet = -1;
+        for (auto& c : g_cats)
+            for (auto& r : c.rows)
+                if (r.refresh) r.refresh(r);
         if (G.ok) place_rows();
         enter_line(FOCUS_TOP);
     }
