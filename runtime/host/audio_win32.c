@@ -264,6 +264,121 @@ static IAudioRenderClient* sRender;
 static UINT32 sBufferFrames;
 static HANDLE sWake;
 
+/* ---- Output devices (Audio > Output device). The setting keeps a number
+ * made from the device's id (Windows' own id string, hashed), so it finds
+ * the same device again whatever order they're listed in; 0 is Windows'
+ * default. The list is read on this thread (COM), when asked for by the F1
+ * tab (audio_device_list), and kept for it. */
+#define MAX_DEVICES 16
+static CRITICAL_SECTION sDevLock;
+static int sDevCount;
+static int sDevHash[MAX_DEVICES];
+static wchar_t sDevName[MAX_DEVICES][48];
+static volatile LONG sWantList = 1;
+static int sOpenedFor; /* the setting the open device was chosen by */
+
+static int device_hash(const wchar_t* id) {
+    uint32_t h = 2166136261u;
+    for (; *id; id++) h = (h ^ (uint32_t)*id) * 16777619u;
+    h &= 0x7FFFFFFF;
+    return h ? (int)h : 1;
+}
+
+static const PROPERTYKEY kFriendlyName = {{0xa45c254e, 0xdf1c, 0x4efd, {0x80, 0x20, 0x67, 0xd1, 0x46, 0xa8, 0x50, 0xe0}}, 14};
+
+/* The active output devices, into the list; and the one whose hash is
+ * want, if any (released by the caller). */
+static IMMDevice* list_devices(IMMDeviceEnumerator* en, int want) {
+    IMMDeviceCollection* all = NULL;
+    IMMDevice* found = NULL;
+    UINT n = 0, i;
+    int count = 0;
+    int hashes[MAX_DEVICES];
+    wchar_t names[MAX_DEVICES][48];
+    if (FAILED(IMMDeviceEnumerator_EnumAudioEndpoints(en, eRender, DEVICE_STATE_ACTIVE, &all))) return NULL;
+    IMMDeviceCollection_GetCount(all, &n);
+    for (i = 0; i < n; i++) {
+        IMMDevice* d = NULL;
+        LPWSTR id = NULL;
+        if (FAILED(IMMDeviceCollection_Item(all, i, &d))) continue;
+        if (SUCCEEDED(IMMDevice_GetId(d, &id)) && id) {
+            int h = device_hash(id);
+            IPropertyStore* ps = NULL;
+            CoTaskMemFree(id);
+            if (count < MAX_DEVICES) {
+                PROPVARIANT pv;
+                PropVariantInit(&pv);
+                hashes[count] = h;
+                swprintf(names[count], 48, L"Device %d", count + 1);
+                if (SUCCEEDED(IMMDevice_OpenPropertyStore(d, STGM_READ, &ps)) &&
+                    SUCCEEDED(IPropertyStore_GetValue(ps, &kFriendlyName, &pv)) && pv.vt == VT_LPWSTR && pv.pwszVal) {
+                    /* "Speakers (Realtek(R) Audio)": cut to fit a pill. */
+                    wcsncpy(names[count], pv.pwszVal, 47);
+                    names[count][47] = 0;
+                    if (wcslen(pv.pwszVal) > 40) wcscpy(names[count] + 38, L"…");
+                }
+                PropVariantClear(&pv);
+                if (ps) IPropertyStore_Release(ps);
+                count++;
+            }
+            if (want && h == want && !found) {
+                found = d;
+                continue;
+            }
+        }
+        IMMDevice_Release(d);
+    }
+    IMMDeviceCollection_Release(all);
+    EnterCriticalSection(&sDevLock);
+    sDevCount = count;
+    memcpy(sDevHash, hashes, sizeof(int) * (size_t)count);
+    memcpy(sDevName, names, sizeof(names[0]) * (size_t)count);
+    LeaveCriticalSection(&sDevLock);
+    return found;
+}
+
+/* For the F1 tab: the devices as last listed (asks for a fresh list for
+ * next time); how many. */
+int audio_device_list(int* hashes, wchar_t (*names)[48], int max) {
+    int n;
+    if (!sWake) return 0;
+    EnterCriticalSection(&sDevLock);
+    n = sDevCount < max ? sDevCount : max;
+    memcpy(hashes, sDevHash, sizeof(int) * (size_t)n);
+    memcpy(names, sDevName, sizeof(names[0]) * (size_t)n);
+    LeaveCriticalSection(&sDevLock);
+    InterlockedExchange(&sWantList, 1);
+    SetEvent(sWake);
+    return n;
+}
+
+/* ---- After mixing: Mono and Night mode, on the device's 48 kHz float. */
+static void post(float* buf, int frames) {
+    static float env; /* Night mode's level follower */
+    int i, mono = g_x[X_MONO], night = g_x[X_NIGHT_MODE];
+    if (!mono && !night) {
+        env = 0;
+        return;
+    }
+    for (i = 0; i < frames; i++) {
+        float l = buf[2 * i], r = buf[2 * i + 1];
+        if (mono) l = r = (l + r) * 0.5f;
+        if (night) {
+            /* A gentle compressor: above about -24 dB, 3:1, then everything
+             * raised 9 dB and held under full scale. The level rises in
+             * about 5 ms and falls over about 300 ms. */
+            const float thr = 0.063f, attack = 0.0042f, release = 0.00007f, makeup = 2.8f;
+            float peak = fabsf(l) > fabsf(r) ? fabsf(l) : fabsf(r), g = 1;
+            env += (peak - env) * (peak > env ? attack : release);
+            if (env > thr) g = powf(thr / env, 2.0f / 3.0f);
+            l *= g * makeup, r *= g * makeup;
+            l = l > 1 ? 1 : l < -1 ? -1 : l;
+            r = r > 1 ? 1 : r < -1 ? -1 : r;
+        }
+        buf[2 * i] = l, buf[2 * i + 1] = r;
+    }
+}
+
 static void device_close(void) {
     if (sClient) IAudioClient_Stop(sClient);
     if (sRender) IAudioRenderClient_Release(sRender);
@@ -272,8 +387,9 @@ static void device_close(void) {
     sClient = NULL;
 }
 
-/* Opens the default output device: 48 kHz stereo float, the system turning
- * it into the device's own format (its rate, 5.1 and so on). */
+/* Opens the output device chosen (else Windows' default): 48 kHz stereo
+ * float, the system turning it into the device's own format (its rate,
+ * 5.1 and so on). Lists the devices too. */
 static int device_open(void) {
     IMMDeviceEnumerator* en = NULL;
     IMMDevice* dev = NULL;
@@ -287,7 +403,12 @@ static int device_open(void) {
     fmt.nBlockAlign = 8;
     fmt.nAvgBytesPerSec = OUT_RATE * 8;
     hr = CoCreateInstance(&WP_CLSID_MMDeviceEnumerator, NULL, CLSCTX_ALL, &WP_IID_IMMDeviceEnumerator, (void**)&en);
-    if (SUCCEEDED(hr)) hr = IMMDeviceEnumerator_GetDefaultAudioEndpoint(en, eRender, eConsole, &dev);
+    sOpenedFor = g_x[X_AUDIO_DEVICE];
+    if (SUCCEEDED(hr)) {
+        InterlockedExchange(&sWantList, 0);
+        dev = list_devices(en, sOpenedFor); /* (gone: the default instead) */
+    }
+    if (SUCCEEDED(hr) && !dev) hr = IMMDeviceEnumerator_GetDefaultAudioEndpoint(en, eRender, eConsole, &dev);
     if (SUCCEEDED(hr)) hr = IMMDevice_Activate(dev, &WP_IID_IAudioClient, CLSCTX_ALL, NULL, (void**)&sClient);
     if (SUCCEEDED(hr))
         hr = IAudioClient_Initialize(sClient, AUDCLNT_SHAREMODE_SHARED,
@@ -330,6 +451,19 @@ static DWORD WINAPI sound_thread(LPVOID arg) {
         BYTE* buf;
         HRESULT hr;
         WaitForSingleObject(sWake, 20);
+        if (sClient && g_x[X_AUDIO_DEVICE] != sOpenedFor) {
+            /* Another device chosen in F1: over to it now. */
+            device_close();
+            retry = 0;
+        } else if (sWantList) {
+            IMMDeviceEnumerator* en = NULL;
+            InterlockedExchange(&sWantList, 0);
+            if (SUCCEEDED(CoCreateInstance(&WP_CLSID_MMDeviceEnumerator, NULL, CLSCTX_ALL, &WP_IID_IMMDeviceEnumerator,
+                                           (void**)&en))) {
+                list_devices(en, 0);
+                IMMDeviceEnumerator_Release(en);
+            }
+        }
         if (!sClient) {
             /* No device (unplugged, or none at all): try again every 2 s,
              * meanwhile the ring is let go (so the game never waits). */
@@ -355,6 +489,7 @@ static DWORD WINAPI sound_thread(LPVOID arg) {
             steer();
             if (SUCCEEDED(IAudioRenderClient_GetBuffer(sRender, room, &buf))) {
                 fill((float*)buf, (int)room);
+                post((float*)buf, (int)room);
                 {
                     /* Tests: WONDERPARK_AUDIO_OUT_DUMP=<file> keeps what the device
                      * gets, 48 kHz stereo 16-bit raw (this thread, never the game's). */
@@ -398,6 +533,7 @@ void audio_init(void) {
     if (e && *e == '0') return;
     kernel_init();
     InitializeCriticalSection(&sPushLock);
+    InitializeCriticalSection(&sDevLock);
     sWake = CreateEventA(NULL, FALSE, FALSE, NULL);
     g_host_audio_push = push;
     if (!CreateThread(NULL, 0, sound_thread, NULL, 0, NULL)) {
