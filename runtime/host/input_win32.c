@@ -27,6 +27,7 @@
 #include <windows.h>
 
 #include <math.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -300,6 +301,16 @@ static uint32_t charge_toggle(uint32_t held) {
         else if (now - downAt >= CHARGE_LATCH_MS) latched = 1;
     }
     wasDown = down;
+    {
+        /* WONDERPARK_LOG=charge: what the game gets of 1, when it changes. */
+        extern int wp_log_on(const char* cat);
+        static int sent = -1;
+        int now1 = (held & HOST_PAD_1) != 0;
+        if (now1 != sent && wp_log_on("charge"))
+            fprintf(stderr, "[charge] %.2f s: 1 %s (key %s%s)\n", GetTickCount64() / 1000.0, now1 ? "held" : "let go",
+                    down ? "down" : "up", latched ? ", latched" : "");
+        sent = now1;
+    }
     return held;
 }
 
