@@ -293,7 +293,7 @@ also `WONDERPARK_<KEY>`, key in capitals, for example `WONDERPARK_WINDOW_MODE=1`
 | `[controls] invert_x` | 0, 1 | works: the camera's left and right, mouse and stick (Mirror world flips it too) |
 | `[controls] camera_recenter` | 0-30 s (0 never) | works: that long without turning, the camera eases back behind |
 | `[controls] recenter_speed` | 0 slow, 1 normal (default), 2 fast | works: the camera eases back behind (B, or `camera_recenter`) over 60, 30 (the game's own) or 12 updates |
-| `[controls] camera_distance` | 100-200 % | works, in the park: the follow camera's eye is placed that much further back along its line, for drawing only (the game goes on from its own); walls and the ground bring it in as for a turn (`runtime/hle/hle_camera.c`) |
+| `[controls] camera_distance` | 100-200 % | works, in the park: the follow camera's eye is placed that much further back along its line, for drawing only (the game goes on from its own; checked in Wish Park: the camera drawn is the follow camera with the eye at 48.8 units at 200%, the game's 24.4); walls and the ground bring it in as for a turn, but while the camera isn't turned never nearer than the game's own (at the Wish Park spawn a wall behind pulled 200% in to 0.4 of it, nearer than the game's) (`runtime/hle/hle_camera.c`) |
 | `[controls] camera_smoothing` | 0-90 % | works: the mouse's and right stick's turn eases in: each update takes (100 - smoothing)% of what's still to come |
 | `[controls] deadzone_left`, `deadzone_right` | 0-50 % (default 24, XInput's suggestion) | works: that much of each stick's travel does nothing, per axis; the left stick's d-pad directions need half its travel or the dead zone, whichever is more (`runtime/host/input_win32.c`) |
 | `[controls] trigger_sensitivity` | 10-90 % (default 50) | works: a trigger counts as pressed past (100 - this)% of its travel |
@@ -476,7 +476,7 @@ animation reaches that frame (`runtime/host/gallery3d.cpp`).
 
 ### `WONDERPARK_LOG` categories
 
-`adxcheck aidma audiostats axramp overlay balance bloom camera dance framerate wpadflags axvoice axvoices dec dsp efbcopy exc gxhw gxirq hook gxpe hostprof hwmisc idle ios ipc irq kpad memcpywatch mmio mmiostat modifiers mods movie mqwatch nandio pi pointer prof prompts scene stalls steps threads voicepitch volume waits wpad wpadbtn`
+`adxcheck aidma audiostats axramp overlay balance bloom camera charge dance framerate wpadflags axvoice axvoices dec dsp efbcopy exc gxhw gxirq hook gxpe hostprof hwmisc idle ios ipc irq kpad memcpywatch mmio mmiostat modifiers mods movie mqwatch nandio pi pointer prof prompts scene stalls steps threads voicepitch volume waits wpad wpadbtn`
 
 The most useful: `waits` (where threads block), `steps` (the game's logic
 steps per tick), `idle`, `efbcopy`, `gxirq`, `mmiostat` (slow memory
@@ -484,7 +484,11 @@ accesses), `axvoices`, `pointer`, `hostprof` (host profiler; see
 `tools/analysis/hostprof.py`), `audiostats` (every 5 s: underruns, device gaps, input dropped, the ring's level, the resampler's rate, the sample rates in and out), `framerate` (Frame rate 60 falling back to 30), `stalls` (the game thread during any frame over 250 ms: its most common
 host stacks, the host functions and source lines the time went to, and
 the guest link registers, which name the game functions since the
-generated chunks have no line info), `prof` (where slices end).
+generated chunks have no line info), `prof` (where slices end),
+`camera` (the camera on screen; every 120 updates where the free camera
+placed the eye: Camera distance, the wall limit, how far in it's pulled),
+`charge` (what the game gets of the Wii Remote's 1, as Charge (1): Toggle
+changes it).
 
 ## Developer tools
 
