@@ -426,6 +426,19 @@ static int device_open(void) {
         device_close();
         return 0;
     }
+    {
+        int i, named = 0;
+        EnterCriticalSection(&sDevLock);
+        for (i = 0; i < sDevCount; i++)
+            if (sOpenedFor && sDevHash[i] == sOpenedFor) {
+                char name[160];
+                WideCharToMultiByte(CP_UTF8, 0, sDevName[i], -1, name, sizeof(name), NULL, NULL);
+                fprintf(stderr, "audio: playing on %s\n", name);
+                named = 1;
+            }
+        LeaveCriticalSection(&sDevLock);
+        if (!named) fprintf(stderr, "audio: playing on Windows' default device\n");
+    }
     return 1;
 }
 
