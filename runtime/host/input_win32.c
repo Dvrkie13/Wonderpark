@@ -166,8 +166,14 @@ static float stick_axis(SHORT v) {
 /* Players: player 1 is the keyboard and mouse, and controller 1 too unless
  * Keyboard player says the keyboard is alone; the controllers (in the
  * order they connected) are the next players. The controller of player
- * chan (0-3), or -1 for none. */
-static int pad_of(int chan) { return g_x[X_KEYBOARD_PLAYER] ? chan - 1 : chan; }
+ * chan (0-3), or -1 for none.
+ * Multiplayer is shelved: unless [input] extra_remotes is on (off by
+ * default, not in F1), player 1 is the keyboard with controller 1 and
+ * there are no other players. */
+static int pad_of(int chan) {
+    if (!g_x[X_EXTRA_REMOTES]) return chan == 0 ? 0 : -1;
+    return g_x[X_KEYBOARD_PLAYER] ? chan - 1 : chan;
+}
 
 /* Player chan's sticks (-1 to 1, dead zone off, y up). */
 static void pad_sticks(int chan, float* lx, float* ly, float* rx, float* ry) {

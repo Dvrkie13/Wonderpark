@@ -252,6 +252,9 @@ const wchar_t* const kBindNames[ACT_COUNT] = {
     L"Shake, second key",
 };
 
+// Multiplayer is shelved (CLAUDE.md): its tab is kept in the code but not shown.
+static constexpr bool kMultiplayerTab = false;
+
 void build_rows() {
     g_cats.clear();
     // Display
@@ -521,8 +524,9 @@ void build_rows() {
                               L"Keeps a copy of your slot before each save (the last 10), in the backups folder."));
         g_cats.push_back(c);
     }
-    // Multiplayer
-    {
+    // Multiplayer: shelved (CLAUDE.md), so the tab is hidden. Kept for when
+    // it comes back; [input] extra_remotes stays off meanwhile.
+    if (kMultiplayerTab) {
         Category c{L"multi", L"Multiplayer", L"Play together, on one PC or online", 0x3fb6c8, 0x7fd3e0, 0x1b2440, {}};
         c.rows.push_back(head(L"Local"));
         // The four players (input_win32.c pad_of): player 1 is the keyboard
@@ -1638,7 +1642,10 @@ struct TabInfo {
     std::wstring name, icon;
     uint32_t gem, ink;
 };
-int ntabs() { return U.view == BK_JOURNAL ? 3 : U.view == BK_JUKEBOX ? 5 : NTABS; }
+// (NTABS is the Friend Book's zones; the settings book has as many as g_cats.)
+int ntabs() {
+    return U.view == BK_JOURNAL ? 3 : U.view == BK_JUKEBOX ? 5 : U.view == BK_SETTINGS ? (int)g_cats.size() : NTABS;
+}
 int& cur_tab() {
     return U.view == BK_FRIENDS ? U.zone : U.view == BK_JOURNAL ? U.jtab : U.view == BK_JUKEBOX ? U.ktab : U.view == BK_GALLERY ? U.gzone : U.tab;
 }
@@ -4276,10 +4283,14 @@ extern "C" const uint32_t* settings_ui_draw(int w, int h) {
             g_shotAt = now_s() + .3;
         } else {
             int s = g_shotStep++ - 1;
+            // (The numbering keeps 7 settings tabs, so the books' shot names
+            // stay the same; the hidden Multiplayer tab's are left out.)
             if (s < 2 * NTABS) {
                 int cat = s / 2;
-                std::string id(g_cats[cat].id.begin(), g_cats[cat].id.end());
-                if (s % 2 == 0) {
+                std::string id;
+                if (cat < (int)g_cats.size()) id.assign(g_cats[cat].id.begin(), g_cats[cat].id.end());
+                if (id.empty()) {
+                } else if (s % 2 == 0) {
                     if (U.view) set_view(0);
                     set_tab(cat);
                     pending = std::to_string(cat + 1) + "-" + id;

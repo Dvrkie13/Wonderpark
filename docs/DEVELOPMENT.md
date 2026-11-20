@@ -275,7 +275,8 @@ also `WONDERPARK_<KEY>`, key in capitals, for example `WONDERPARK_WINDOW_MODE=1`
 | `[controls] steer_sensitivity` | 25-200 % | works: Flight of Fancy (attraction 4, `hle_minigame`, from the game's "AttractionId" scene parameter) is flown by the remote's tilt: the left stick tilts it in proportion and the d-pad keys ease it over (left/right steer all the way over, up/down climb and dive to 50 degrees); the setting scales how far a push tilts it and how quickly. Adapted from MildRain479/PokePark-2-Wiicompiled's `hle_motion.c` (CC0) into `hle_wpad.c` flight_tilt. Checked: holding right swung Pikachu right, up climbed |
 | `[controls] aim_assist` | | not yet: needs the targets' places on screen |
 | `[input] button_icons` (`WONDERPARK_BUTTON_ICONS`) | 0 auto, 1 Xbox, 2 PlayStation, 3 Nintendo, 4 keyboard only | works: the button icons in F1's Controls (pad columns), the game's prompts and the launcher. Auto: the pad's own type from SDL3 (`pad_sdl_type`), or without one, from the game controllers Windows lists (HID) by maker (Sony: PlayStation; Nintendo, and Hori/PowerA/PDP Switch pads: Nintendo; else Xbox); a PlayStation or Switch pad behind a mapper (Steam Input, DS4Windows) still lists itself. Looked at again when a pad connects or goes away. Face buttons go by position (the bottom one is A: a cross, or a Nintendo pad's B). The game's prompts show the device used last (any pad button or the stick past half; a bound key or mouse button), key caps for the keyboard; 4 never shows a pad's (`runtime/host/pad_icons.cpp`, `pad_icons_core.cpp`, `runtime/hle/hle_prompts.c`). The log says what was found ("pad icons: ...") |
-| `[input] keyboard_player` | 0 shared, 1 keyboard alone | works: local multiplayer. Wii Remotes 2-4 connect while players 2-4 have a controller (SDL3, in the order they connected) and go away with it, told to the game through its connect callback (`hle_wpad.c` report()); each gets its own buttons (player 1's bindings), rumble, pointer (its right stick, at Aim speed) and Flight of Fancy tilt. 0: the keyboard and controller 1 are player 1, controller 2 player 2; 1: the keyboard alone is player 1, controller 1 player 2. In the game: Multiplayer Attractions > Add Wii Remote Controllers (its Add Wii Remotes screen lights each connected remote) > Done (+), then Two to Four Players opens. Checked to Pick an Attraction with a scripted player 2; a whole two-player attraction not yet |
+| `[input] extra_remotes` (`WONDERPARK_EXTRA_REMOTES`) | 0 (default), 1 | multiplayer is shelved: off, player 1 only (the keyboard and controller 1), and `keyboard_player` does nothing. Not in F1 (its Multiplayer tab is hidden, `kMultiplayerTab` in `settings_ui.cpp`). 1 turns the code below back on, untested. Test scripts `WONDERPARK_PAD2_SCRIPT`-`_PAD4_SCRIPT` still connect their remotes |
+| `[input] keyboard_player` | 0 shared, 1 keyboard alone | shelved, only with `extra_remotes` 1: local multiplayer. Wii Remotes 2-4 connect while players 2-4 have a controller (SDL3, in the order they connected) and go away with it, told to the game through its connect callback (`hle_wpad.c` report()); each gets its own buttons (player 1's bindings), rumble, pointer (its right stick, at Aim speed) and Flight of Fancy tilt. 0: the keyboard and controller 1 are player 1, controller 2 player 2; 1: the keyboard alone is player 1, controller 1 player 2. In the game: Multiplayer Attractions > Add Wii Remote Controllers (its Add Wii Remotes screen lights each connected remote) > Done (+), then Two to Four Players opens. Checked to Pick an Attraction with a scripted player 2; a whole two-player attraction not yet |
 | `[audio] volume_master` | 0-100 % | works |
 | `[audio] audio_latency` | 0 low, 1 normal, 2 safe | works: about 40, 75 or 140 ms from the game to the speakers (the sound thread's ring kept at 20 / 45 / 80 ms, the device's buffer 20 / 30 / 60 ms ahead), at once (`runtime/host/audio_win32.c`). Sound plays on a thread of its own through WASAPI, by the device's clock; the game only copies its 32 kHz mix into a ring, and the ring's level steers a windowed-sinc resampler (±0.5%, 3% after a loading burst) so nothing is dropped or repeated. 45 s at 60 fps in Cove Town, each setting: 0 underruns and 0 device gaps after start-up, 48,000 Hz out, 32,000 in |
 | `[audio] volume_music`, `volume_sfx`, `volume_voices` | 0-100 % | work, at once, through the game's own CRI categories (`runtime/hle/hle_volume.c`): music is BGM and JGL (jingles), voices PK_VOICE and PC_VOICE, effects the other five. The game's own category changes are kept and multiplied. Movies (the title's too) play their sound outside CRI and aren't affected |
@@ -296,11 +297,11 @@ also `WONDERPARK_<KEY>`, key in capitals, for example `WONDERPARK_WINDOW_MODE=1`
 (the "Explorer's Notebook" look: a green cover with gold corners, a brown
 leather page with paw prints, colored index tabs, washi-tape section titles,
 sticker buttons with navy outlines and hard shadows, small tilts done with
-one rotation matrix per element; all drawn in code). Seven tabs: Display,
+one rotation matrix per element; all drawn in code). Six tabs: Display,
 Graphics (View: field of view, draw distance), Controls, Audio, Gameplay,
-Multiplayer (the four player slots from the connected controllers, the
-keyboard as its own player; the rest local and every Online row "Coming
-soon"), Silly. Every tab has its Reset button.
+Silly. Every tab has its Reset button. (A Multiplayer tab, the four player
+slots and "Coming soon" Online rows, is kept in the code but hidden while
+multiplayer is shelved.)
 
 The notebook has five books, bookmarks on its right edge: Settings (F1),
 Friend Book (F2), Journal (F3), Jukebox (F4) and Gallery (F5); LT / RT go
@@ -374,7 +375,7 @@ addresses in `docs/research.md, Settings`). Values the game can't show yet
 Test hooks: `WONDERPARK_F1_SHOT=<prefix>` opens the tab
 `WONDERPARK_F1_SHOT_AT` seconds after the first frame (default 1) and saves
 `<prefix>-<n>[b]-<category>.bmp` (the frame as shown; `b`: scrolled to the
-end) for the seven tabs, then the Friend Book (`8-friendbook`, `9-cove`,
+end) for the six tabs, then the Friend Book (`8-friendbook`, `9-cove`,
 `10-hint` with a hint card open, `10b-hint` after its "show more" when it
 has one), the Journal (`11-journal`, `11b-journal-attractions`,
 `11c-journal-milestones`), `12-jukebox`, the Gallery (`13-gallery`,

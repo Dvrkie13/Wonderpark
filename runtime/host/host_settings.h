@@ -94,6 +94,7 @@ enum {
     /* [input] */
     X_BUTTON_ICONS,     /* 0 auto, 1 Xbox, 2 PlayStation, 3 Nintendo, 4 keyboard only (pad_icons.cpp) */
     X_KEYBOARD_PLAYER,  /* 0: the keyboard and controller 1 are player 1; 1: the keyboard alone is, controller 1 is player 2 */
+    X_EXTRA_REMOTES,    /* 1: controllers 2-4 connect as Wii Remotes 2-4 (multiplayer: shelved, off, not in F1) */
     /* [audio] */
     X_VOLUME_MASTER, X_VOLUME_MUSIC, X_VOLUME_SFX, X_VOLUME_VOICES, /* 0-100 % */
     X_VOICE_LANGUAGE,   /* 0 English, 1 Japanese */
