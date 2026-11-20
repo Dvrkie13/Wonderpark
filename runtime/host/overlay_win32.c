@@ -73,6 +73,11 @@ int menu_window_message(void* hwnd, unsigned msg, uintptr_t wp, intptr_t lp) {
         perf_overlay_cycle();
         return 1;
     }
+    if (g_x[X_HUD_KEY] && (int)wp == g_x[X_HUD_KEY]) {
+        /* Gameplay > Hide HUD key (F6): hides and shows the HUD (gx_fifo.c). */
+        g_hud_hidden = !g_hud_hidden;
+        return 1;
+    }
     return 0;
 }
 

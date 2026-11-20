@@ -1157,24 +1157,33 @@ static int is_layout_camera(void) {
     return fabsf(p2 - 2.414214f) < 0.001f && p0 > 0 && fabsf(p2 / p0 - 1.8292f) < 0.01f;
 }
 
-/* The transform for this draw (count vertices of format f at p). */
-static void wide_for_draw(const uint8_t* p, const VtxFormat* f, int count, float* sx, float* ox, float* sy) {
+/* Gameplay > Hide HUD key (input: overlay_win32.c): in game, the layout
+ * items narrower than the screen (the HUD, dialogue windows) aren't drawn;
+ * menus, fades and backgrounds are. */
+int g_hud_hidden;
+
+/* The transform for this draw (count vertices of format f at p); returns 1
+ * if it's the HUD and that's hidden (it isn't drawn). */
+static int wide_for_draw(const uint8_t* p, const VtxFormat* f, int count, float* sx, float* ox, float* sy) {
     static GXVertex* scratch;
     static int cap;
     GXVertex tpl;
     float vp[6], box[4], wd = xf_float(0x101A), ht = xf_float(0x101B);
     /* (Field of view is the game's cameras widened, hle_camera.c, so that
      * culling matches; *sy stays 1, here for scaling the world's y.) */
-    int i, layout;
+    int i, layout, hide = g_hud_hidden, wide = hle_widescreen();
     *sx = 1;
     *ox = 0;
     *sy = 1;
-    if (!hle_widescreen() || (g_wide_r == 1 && g_wide_shown == 1 && !g_x[X_HUD_EDGES])) return;
-    if (fabsf(2.0f * wd - 640.0f) > 1.0f) return; /* into part of the EFB */
+    if (!hide && (!wide || (g_wide_r == 1 && g_wide_shown == 1 && !g_x[X_HUD_EDGES]))) return 0;
+    if (fabsf(2.0f * wd - 640.0f) > 1.0f) return 0; /* into part of the EFB */
     layout = is_layout_camera();
     if (!layout) {
-        if (!xf[0x1026]) *sx = 1.0f / g_wide_r, sWorldFrame = sFrame; /* the world */
-        return;                                                       /* effects, copies */
+        if (!xf[0x1026]) { /* the world */
+            if (wide) *sx = 1.0f / g_wide_r;
+            sWorldFrame = sFrame;
+        }
+        return 0; /* effects, copies */
     }
     if (count > cap) {
         cap = count * 2;
@@ -1189,7 +1198,9 @@ static void wide_for_draw(const uint8_t* p, const VtxFormat* f, int count, float
     vp[3] = -2.0f * ht;
     vp[4] = vp[5] = 0;
     draw_box(scratch, count, vp, box);
-    if (box[2] - box[0] >= 0.9f * 640.0f) return; /* as wide as the screen: stretched */
+    if (box[2] - box[0] >= 0.9f * 640.0f) return 0; /* as wide as the screen: stretched */
+    if (hide && sWorldFrame == sFrame) return 1;
+    if (!wide) return 0;
     *sx = 1.0f / g_wide_r;
     if (g_x[X_HUD_EDGES] && count > 0 && sWorldFrame == sFrame) {
         /* A layout moves as a whole: the draws since a projection write
@@ -1224,6 +1235,7 @@ static void wide_for_draw(const uint8_t* p, const VtxFormat* f, int count, float
             inBlock++;
         }
     }
+    return 0;
 }
 
 /* RECOMP_GX_DEBUG_FRAME=n prints every draw of frame n. */
@@ -1723,7 +1735,10 @@ static void draw(int prim, const uint8_t* p, const VtxFormat* f, int count, int 
     }
     {
         float wsx, wox, wsy;
-        wide_for_draw(p, f, count, &wsx, &wox, &wsy);
+        if (wide_for_draw(p, f, count, &wsx, &wox, &wsy) && !sDisplayList) {
+            sDrawCount++; /* the HUD, hidden */
+            return;
+        }
         use_current_state(f->pnmtx | (f->texmtx_mask ? 2 : 0), wsx, wox, wsy);
     }
     if ((sArena ? 0 : sBatchVerts) + count > sBatchCap) {

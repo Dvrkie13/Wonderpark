@@ -1060,6 +1060,11 @@ void gxb_copy_to_texture(uint32_t addr, int x, int y, int w, int h, int fmt, int
     }
     sCopiesMade[i] = made;
     if (!gx_register_copy(addr, sDev->copy_texture(t), w, h, fmt)) return;
+    /* Effect copies: Fast keeps it on the graphics card (draws use it from
+     * there); only a copy the game asks for (gxb_copy_sync: its photos) is
+     * read back. Accurate also puts every copy not remade each frame into
+     * the game's memory, as a Wii does, which waits for the GPU. */
+    if (!g_x[X_EFFECT_COPIES]) return;
     for (i = 0; i < sWriteBackCount && sWriteBacks[i].addr != addr; i++) {}
     if (i == sWriteBackCount) {
         if (sWriteBackCount == 8) return;
