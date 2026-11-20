@@ -128,6 +128,29 @@ static const struct {
     {"silly", "voice_pitch", 0, -50, 50, "percent of the frequency: Pokemon voices higher or deeper"},
     {"silly", "mirror_world", 0, 0, 1, "the picture flipped left to right (and left and right swapped)"},
     {"silly", "victory_confetti", 0, 0, 1, "1: a burst of confetti when an attraction is cleared"},
+    {"graphics", "preset", PRESET_CUSTOM, 0, PRESET_CUSTOM,
+     "0 potato, 1 low, 2 medium, 3 high, 4 ultra, 5 custom: sets scale, frame_rate, msaa, aniso, per_pixel_lighting, bloom, effect_copies"},
+    {"graphics", "effect_copies", 1, 0, 1, "0 fast (copies of the picture stay on the graphics card unless the game asks), 1 accurate"},
+    {"graphics", "dynamic_resolution", 0, 0, 1, "not yet"},
+    {"graphics", "dynamic_resolution_target", 60, 30, 60, "not yet: the frame rate it keeps, 30 or 60"},
+    {"display", "monitor", 0, 0, 16, "0 the screen the window is on, else that screen (1 the main one)"},
+    {"display", "refresh_rate", 0, 0, 500, "fullscreen's refresh rate in Hz; 0 the screen's own"},
+    {"display", "gamma", 100, 50, 150, "percent: lighter or darker midtones"},
+    {"display", "colorblind_filter", 0, 0, 3, "0 off, 1 deuteranopia, 2 protanopia, 3 tritanopia"},
+    {"controls", "deadzone_left", 24, 0, 50, "percent of the left stick's travel that does nothing"},
+    {"controls", "deadzone_right", 24, 0, 50, "percent of the right stick's travel that does nothing"},
+    {"controls", "trigger_sensitivity", 50, 10, 90, "percent: higher counts a lighter press of a trigger"},
+    {"controls", "charge_toggle", 0, 0, 1, "0 hold 1 to charge, 1 a long press keeps charging until the next press"},
+    {"controls", "camera_distance", 100, 100, 200, "percent of the game's distance behind you (in the park)"},
+    {"controls", "camera_smoothing", 0, 0, 90, "percent: softens the camera's turning"},
+    {"controls", "recenter_speed", 1, 0, 2, "how fast the camera eases back behind: 0 slow, 1 normal, 2 fast"},
+    {"audio", "output_device", 0, 0, 0x7FFFFFFF, "0 Windows' default, else the device chosen in F1 (a number made from its id)"},
+    {"audio", "mono", 0, 0, 1, "1: both ears hear the same"},
+    {"audio", "night_mode", 0, 0, 1, "1: loud sounds quieter and quiet ones louder"},
+    {"gameplay", "auto_advance", 0, 0, 1, "not yet"},
+    {"gameplay", "hud_size", 100, 50, 150, "not yet"},
+    {"gameplay", "hud_opacity", 100, 0, 100, "not yet"},
+    {"gameplay", "hud_key", 0x75, 0, 255, "the key that hides and shows the HUD (a Windows virtual-key code; 0x75 is F6)"},
 };
 int g_x[X_COUNT];
 static int sXOverridden[X_COUNT];
@@ -143,10 +166,15 @@ static int x_clamp(int i, int v) { return v < kX[i].min ? kX[i].min : v > kX[i].
 int settings_x_default(int which) { return which >= 0 && which < X_COUNT ? kX[which].def : 0; }
 int settings_x_overridden(int which) { return which >= 0 && which < X_COUNT && sXOverridden[which]; }
 
+static void preset_fields(int p); /* below */
+
 /* What a PC setting changes outside this file, done when it changes. */
 static void apply_x(int which) {
     switch (which) {
+    case X_GRAPHICS_PRESET: preset_fields(g_x[X_GRAPHICS_PRESET]); break;
     case X_WINDOW_MODE: g_settings.fullscreen = g_x[X_WINDOW_MODE] != 0; /* fall through */
+    case X_MONITOR:
+    case X_REFRESH_RATE:
     case X_RESOLUTION: settings_apply_window(); break;
     default: break;
     }
@@ -323,6 +351,85 @@ static int option_index(const char* section, const char* key) {
     return -1;
 }
 
+/* ------------------------------------------------------------------------ */
+/* Graphics presets (F1 > Graphics > Preset). Each sets: internal resolution,
+ * frame rate, anti-aliasing, texture filtering, per-pixel lighting, bloom,
+ * effect copies. The build's speed test (builder/pipeline.py) suggests one,
+ * which the very first start uses. */
+
+static const struct {
+    const char* name;
+    int scale, frame_rate, msaa, aniso, ppl, bloom, copies;
+} kPresets[PRESET_CUSTOM] = {
+    {"Potato", 1, 30, 1, 1, 0, 0, 0},
+    {"Low", 1, 30, 1, 1, 0, 1, 1},
+    {"Medium", 2, 60, 1, 4, 0, 1, 1},
+    {"High", 3, 60, 2, 16, 1, 1, 1},
+    {"Ultra", 4, 60, 4, 16, 1, 1, 1},
+};
+
+static void preset_fields(int p) {
+    if (p < 0 || p >= PRESET_CUSTOM) return;
+    g_settings.scale = kPresets[p].scale;
+    g_settings.frame_rate = kPresets[p].frame_rate;
+    g_settings.msaa = kPresets[p].msaa;
+    g_settings.aniso = kPresets[p].aniso;
+    g_x[X_PER_PIXEL_LIGHTING] = kPresets[p].ppl;
+    g_x[X_BLOOM] = kPresets[p].bloom;
+    g_x[X_EFFECT_COPIES] = kPresets[p].copies;
+    apply_frame_rate();
+}
+
+static int preset_matches(int p) {
+    return p >= 0 && p < PRESET_CUSTOM && g_settings.scale == kPresets[p].scale &&
+           g_settings.frame_rate == kPresets[p].frame_rate && g_settings.msaa == kPresets[p].msaa &&
+           g_settings.aniso == kPresets[p].aniso && g_x[X_PER_PIXEL_LIGHTING] == kPresets[p].ppl &&
+           g_x[X_BLOOM] == kPresets[p].bloom && g_x[X_EFFECT_COPIES] == kPresets[p].copies;
+}
+
+/* Whether the environment sets any of them (a test run): then the preset
+ * isn't judged by them. */
+static int preset_overridden(void) {
+    static const char* const kKeys[] = {"scale", "frame_rate", "msaa", "aniso"};
+    size_t k;
+    for (k = 0; k < sizeof(kKeys) / sizeof(kKeys[0]); k++) {
+        int i = option_index("display", kKeys[k]);
+        if (i >= 0 && sOverridden[i]) return 1;
+    }
+    return sXOverridden[X_PER_PIXEL_LIGHTING] || sXOverridden[X_BLOOM] || sXOverridden[X_EFFECT_COPIES];
+}
+
+void settings_apply_preset(int preset) { settings_set_x(X_GRAPHICS_PRESET, preset); }
+
+static char sSuggested[16];
+const char* settings_suggested_preset(void) { return sSuggested; }
+
+/* The speed test's suggestion: "suggested": "<name>" in build/perf-test.json,
+ * beside the folder the game's program is in (build/game/). Read once, at
+ * start, with the settings. */
+static void read_suggestion(void) {
+#ifdef _WIN32
+    char path[1100], buf[1024], *slash, *s;
+    FILE* f;
+    size_t n;
+    sSuggested[0] = 0;
+    GetModuleFileNameA(NULL, path, sizeof(path) - 32);
+    if (!(slash = strrchr(path, '\\'))) return;
+    strcpy(slash + 1, "..\\perf-test.json");
+    if (!(f = fopen(path, "rb"))) return;
+    n = fread(buf, 1, sizeof(buf) - 1, f);
+    fclose(f);
+    buf[n] = 0;
+    if ((s = strstr(buf, "\"suggested\"")) && (s = strchr(s + 11, '"'))) {
+        int i;
+        for (i = 0; i < PRESET_CUSTOM; i++) {
+            size_t l = strlen(kPresets[i].name);
+            if (!strncmp(s + 1, kPresets[i].name, l) && s[1 + l] == '"') snprintf(sSuggested, sizeof(sSuggested), "%s", kPresets[i].name);
+        }
+    }
+#endif
+}
+
 static uint32_t sSaves;
 
 uint32_t settings_generation(void) { return sSaves; }
@@ -480,6 +587,9 @@ void settings_save(void) {
     Text s = {0}, b = {0};
     int i;
     sSaves++;
+    /* A graphics setting the preset covers changed by hand: Custom now. */
+    if (g_x[X_GRAPHICS_PRESET] < PRESET_CUSTOM && !preset_overridden() && !preset_matches(g_x[X_GRAPHICS_PRESET]))
+        g_x[X_GRAPHICS_PRESET] = PRESET_CUSTOM;
     tprintf(&s, "; Wonderpark settings. Each can be overridden by the environment variable\n");
     tprintf(&s, "; WONDERPARK_<KEY> (for example WONDERPARK_FRAME_RATE=60); see docs/DEVELOPMENT.md.\n\n");
     tprintf(&s, "[display]\n");
@@ -680,6 +790,12 @@ void settings_load(void) {
     found = read_file(settings_path(), &sawShake2);
     /* Files from before window_mode: the old fullscreen switch says it. */
     if (!sXFileValue[X_WINDOW_MODE][0]) g_x[X_WINDOW_MODE] = g_settings.fullscreen ? 1 : 0;
+    /* Files from before Gamma: Brightness was the gamma curve, so its
+     * value moves there (brightness is now the black level). */
+    if (sXFileValue[X_BRIGHTNESS][0] && !sXFileValue[X_GAMMA][0]) {
+        g_x[X_GAMMA] = g_x[X_BRIGHTNESS];
+        g_x[X_BRIGHTNESS] = 100;
+    }
 #ifdef _WIN32
     if (!found) {
         /* Before Wonderpark kept its files in %APPDATA%, settings.ini (with
@@ -722,6 +838,19 @@ void settings_load(void) {
         }
     }
     g_settings.fullscreen = g_x[X_WINDOW_MODE] != 0;
+
+    /* The very first start (no settings yet): the graphics preset the
+     * build's speed test suggested. */
+    read_suggestion();
+    if (!found && sSuggested[0] && !sXOverridden[X_GRAPHICS_PRESET] && !preset_overridden()) {
+        for (i = 0; i < PRESET_CUSTOM; i++) {
+            if (!strcmp(sSuggested, kPresets[i].name)) {
+                g_x[X_GRAPHICS_PRESET] = i;
+                preset_fields(i);
+                fprintf(stderr, "settings: graphics preset %s (the build's speed test suggested it)\n", sSuggested);
+            }
+        }
+    }
 
     /* Files from before the second shake key gave its default (RB) to
      * shake: it moves over. */

@@ -109,8 +109,43 @@ enum {
     X_POKEMON_SIZE,     /* 0 mini, 1 normal, 2 giant */
     X_VOICE_PITCH,      /* -50..50 % */
     X_MIRROR_WORLD, X_VICTORY_CONFETTI,
+    /* Part 5's settings (kept after the others so the table's order holds). */
+    /* [graphics] */
+    X_GRAPHICS_PRESET,  /* PRESET_*: Potato to Ultra, or Custom (settings_apply_preset) */
+    X_EFFECT_COPIES,    /* 0 fast (kept on the graphics card unless the game asks for one), 1 accurate (gx_frames.c) */
+    X_DYNAMIC_RES,      /* not yet */
+    X_DYNAMIC_RES_TARGET, /* not yet: the frame rate it keeps, 30 or 60 */
+    /* [display] */
+    X_MONITOR,          /* 0 the window's own screen, else that screen (1 the main one; window_win32.c) */
+    X_REFRESH_RATE,     /* fullscreen's refresh rate in Hz; 0 the screen's own */
+    X_GAMMA,            /* 50-150 % (gl_backend.c's look pass) */
+    X_COLORBLIND,       /* 0 off, 1 deuteranopia, 2 protanopia, 3 tritanopia */
+    /* [controls] */
+    X_DEADZONE_LEFT, X_DEADZONE_RIGHT, /* 0-50 % of the stick's travel (input_win32.c) */
+    X_TRIGGER_SENSITIVITY, /* 10-90 %: how light a press of a trigger counts */
+    X_CHARGE_TOGGLE,    /* 0 hold 1 to charge; 1 a long press keeps charging until the next press */
+    X_CAMERA_DISTANCE,  /* 100-200 % of the game's (hle_camera.c) */
+    X_CAMERA_SMOOTHING, /* 0-90 % */
+    X_RECENTER_SPEED,   /* 0 slow, 1 normal, 2 fast */
+    /* [audio] */
+    X_AUDIO_DEVICE,     /* 0 Windows' default, else the device whose id hashes to it (audio_win32.c) */
+    X_MONO, X_NIGHT_MODE,
+    /* [gameplay] */
+    X_AUTO_ADVANCE,     /* not yet */
+    X_HUD_SIZE, X_HUD_OPACITY, /* not yet */
+    X_HUD_KEY,          /* the key that hides and shows the HUD (VK code; F6; gx_fifo.c) */
     X_COUNT
 };
+enum { PRESET_POTATO, PRESET_LOW, PRESET_MEDIUM, PRESET_HIGH, PRESET_ULTRA, PRESET_CUSTOM };
+/* Sets the graphics settings a preset covers (internal resolution, frame
+ * rate, anti-aliasing, texture filtering, per-pixel lighting, bloom,
+ * effect copies) and saves; PRESET_CUSTOM leaves them. Changing any of
+ * them by hand makes the preset Custom (at the next save). */
+void settings_apply_preset(int preset);
+/* What the build's speed test suggested ("High"), or "" (read at start). */
+const char* settings_suggested_preset(void);
+/* The HUD hidden by its key (gx_fifo.c; not saved). */
+extern int g_hud_hidden;
 extern int g_x[X_COUNT];
 /* Sets one (clamped to its range), applies it and saves. */
 void settings_set_x(int which, int value);
