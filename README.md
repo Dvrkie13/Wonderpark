@@ -62,10 +62,9 @@ Wonderpark is a work in progress (a development preview): it has been played fro
 | Japanese voices (needs your own Japanese disc) | Working, from the next start |
 | Mod manager, HD Pack, save manager | Working (the online mod list isn't up yet) |
 | Journal, Jukebox, Gallery (F1) | Working (the Gallery shows each friend's own 3D model, animated); some Journal stats are "Coming soon" |
-| Local multiplayer (2-4 players) | In progress: extra controllers join as Wii Remotes 2-4 in Multiplayer Attractions; a full multiplayer round hasn't been tested yet |
 | Skipping movies | In progress (not working yet) |
 | A full playthrough | Not done yet |
-| Vulkan renderer, HDR, aim assist, online play | Planned |
+| Vulkan renderer, HDR, aim assist | Planned |
 | Release downloads | Beta: v0.1.1-beta |
 | Linux / macOS / Steam Deck | Not planned yet |
 
@@ -73,7 +72,7 @@ Found a bug? [Open an issue](../../issues/new/choose). The template asks for wha
 
 ## Getting started
 
-There's no download yet. For now you build the launcher from this repository once, and the launcher does the rest.
+Download the launcher from [Releases](../../releases) (beta versions for now), or build it from this repository. Either way the launcher does the rest, but for now your PC needs the tools below first.
 
 ### What you need
 
@@ -126,7 +125,7 @@ The game was played with a sideways Wii Remote. Wonderpark maps every move to ke
 ## Settings
 
 - **In the game's Options menu:** a **PC Settings** row for display mode, resolution, frame rate, anti-aliasing, graphics quality, widescreen, V-Sync and button icons.
-- **Anywhere in game, press F1:** the full settings notebook (Display, Graphics, Controls, Audio, Gameplay, Multiplayer, Silly) and the Friend Book. The game pauses while it's open and changes apply right away. Unfinished settings are shown with a "Coming soon" stamp.
+- **Anywhere in game, press F1:** the full settings notebook (Display, Graphics, Controls, Audio, Gameplay, Silly) and the Friend Book. The game pauses while it's open and changes apply right away. Unfinished settings are shown with a "Coming soon" stamp.
 
 - **F7 in game:** the performance overlay, in a corner: Compact (the frame rate) or Detailed (lows, frame times, what the game and your PC are doing). Its corner, size and opacity are in F1 > Display.
 
@@ -232,3 +231,5 @@ python tools/build_game.py                            # into build/game/ (clang-
 ## License
 
 Wonderpark is released under the GNU General Public License, version 3 or (at your option) any later version, the same terms as DolRecomp, whose CPU code is compiled into every `Wonderpark.exe` (see [LICENSE](LICENSE)). Third-party components keep their own licenses ([THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)). The license covers Wonderpark's own code only: it gives no rights to the game, which each player builds from their own disc.
+
+**Source of each release:** every release is made from the commit its tag names (`v0.1.1-beta` is tag [v0.1.1-beta](../../tree/v0.1.1-beta)), and its `RELEASE.txt` names that commit too. The release zip itself also holds the source of everything in it (`runtime/`, `builder/`, `tools/`, with DolRecomp and SDL3 as pinned). If you pass a release zip on, pass that source with it.

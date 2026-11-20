@@ -9,6 +9,12 @@ A release zip holds only what we're allowed to give away, and never anything fro
 3. Test it: unzip it into a new folder, run the launcher, place the disc, Build, Play.
 4. On GitHub, draft a release with tag `v<version>`, the zip, its SHA-256 and the release notes (`docs/release-notes/`). The owner reviews and publishes it.
 
+## Release notes
+
+- End with the source line: "Source: tag `v<version>` (commit `<hash>`) in this repository; the zip also holds the source of everything in it." The GPL asks that whoever gets the launcher can get its exact source.
+- Multiplayer (local and online) is shelved: don't mention it, not even as "in progress".
+- While the repository is private, a zip passed to anyone must go with its source (the zip already holds it; the tag is the record).
+
 ## What a release zip contains
 
 - **The launcher**: `WonderparkLauncher.exe` (our code, with SDL3 compiled in, zlib license) and its fonts' licenses.
