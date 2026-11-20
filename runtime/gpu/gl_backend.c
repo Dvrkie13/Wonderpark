@@ -1376,10 +1376,6 @@ static double sPixelAspect = 1; /* win_pixel_aspect() */
 static GLuint sEfbFbo, sEfbColor, sEfbDepth;
 static GLuint sDrawFbo, sMsFbo, sMsColor, sMsDepth;
 static int sMsDirty;
-/* 3D glasses: the eye drawn now (gl_eye_mask): 0 both, 1 red alone, 2 green and blue. */
-static int sEye;
-/* 3D glasses, side by side: 1 the left eye's picture is being presented, 2 the right's, 0 neither. */
-static int sSideBySide;
 static GLuint sWhite;
 static const char* sDumpDir;
 static int sDumpEvery = 30;
@@ -2120,7 +2116,7 @@ static void apply_draw_state(const GXDrawState* st) {
     }
     {
         GLboolean c = (GLboolean)st->color_update, a = (GLboolean)(st->alpha_update && st->efb_alpha);
-        GLboolean r = (GLboolean)(c && sEye != 2), gb = (GLboolean)(c && sEye != 1); /* 3D glasses: one eye's colours */
+        GLboolean r = c, gb = c;
         if (all || sGl.color_mask[0] != r || sGl.color_mask[1] != gb || sGl.color_mask[3] != a) {
             glColorMask(r, gb, gb, a);
             sGl.color_mask[0] = r;
@@ -2449,7 +2445,7 @@ static void gl_clear(int color, int alpha, int depth, uint32_t rgba, uint32_t z)
     p_glBindFramebuffer(GL_FRAMEBUFFER, sDrawFbo);
     sMsDirty = 1;
     glDisable(GL_SCISSOR_TEST);
-    glColorMask(color && sEye != 2, color && sEye != 1, color && sEye != 1, alpha);
+    glColorMask(color, color, color, alpha);
     glDepthMask(depth ? GL_TRUE : GL_FALSE);
     glClearColor(((rgba >> 24) & 0xFF) / 255.0f, ((rgba >> 16) & 0xFF) / 255.0f, ((rgba >> 8) & 0xFF) / 255.0f,
                  (rgba & 0xFF) / 255.0f);
@@ -2779,21 +2775,10 @@ static int gl_present(int x, int y, int cw, int ch, int may_drop) {
     glViewport(0, 0, w, h);
     glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
     glClearColor(0, 0, 0, 1);
-    if (sSideBySide) {
-        /* 3D glasses, side by side (3D TVs): each eye's picture squeezed
-         * into its half of the window, the full height; shown after the
-         * right one. */
-        int half = w / 2, x0 = sSideBySide == 1 ? 0 : half;
-        if (sSideBySide == 1) glClear(GL_COLOR_BUFFER_BIT);
-        p_glBlitFramebuffer(GLX(x), GLY(EFB_H - y - ch), GLX(x + cw), GLY(EFB_H - y), x0, (h - dh) / 2, x0 + half,
-                            (h - dh) / 2 + dh, GL_COLOR_BUFFER_BIT, GL_LINEAR);
-        if (sSideBySide == 1) return 0;
-    } else {
-        glClear(GL_COLOR_BUFFER_BIT);
-        p_glBlitFramebuffer(GLX(x), GLY(EFB_H - y - ch), GLX(x + cw), GLY(EFB_H - y), (w - dw) / 2, (h - dh) / 2,
-                            (w - dw) / 2 + dw, (h - dh) / 2 + dh, GL_COLOR_BUFFER_BIT,
-                            g_x[X_SCALING_FILTER] ? GL_NEAREST : GL_LINEAR);
-    }
+    glClear(GL_COLOR_BUFFER_BIT);
+    p_glBlitFramebuffer(GLX(x), GLY(EFB_H - y - ch), GLX(x + cw), GLY(EFB_H - y), (w - dw) / 2, (h - dh) / 2,
+                        (w - dw) / 2 + dw, (h - dh) / 2 + dh, GL_COLOR_BUFFER_BIT,
+                        g_x[X_SCALING_FILTER] ? GL_NEAREST : GL_LINEAR);
     keep_last(w, h);
     if (sLookProgram && look_needed()) draw_look(w, h);
     return finish_present(w, h, may_drop);
@@ -3153,21 +3138,9 @@ static int finish_present(int w, int h, int may_drop) {
     return dropped;
 }
 
-/* 3D glasses: the colours the next draws and clears write (gx_frames.c
- * draws the frame once per eye). */
-static void gl_eye_mask(int eye) {
-    /* 3 and 4: side by side, all colours; the picture presented into the
-     * left half (not shown yet), then the right half (shown). */
-    int colours = eye == 1 || eye == 2 ? eye : 0;
-    sSideBySide = eye == 3 ? 1 : eye == 4 ? 2 : 0;
-    if (colours == sEye) return;
-    sEye = colours;
-    gl_forget(); /* the colour mask set again at the next draw */
-}
-
 const GXDevice g_gl_device = {
     "OpenGL",       gl_init,       gl_texture,     gl_texture_update, gl_texture_delete, gl_draw,
     gl_frame_data,  gl_draw_recorded, gl_clear,    gl_copy_target,    gl_copy_texture,   gl_copy,
     gl_present,     gl_apply_settings, gl_scale,   gl_msaa,          gl_arena_alloc,    gl_arena_write,
-    gl_arena_free,  NULL,          gl_copy_read,      gl_present_last,   gl_eye_mask,       gl_gpu_busy,
+    gl_arena_free,  NULL,          gl_copy_read,      gl_present_last,   gl_gpu_busy,
 };

@@ -108,7 +108,6 @@ enum {
     X_POKEMON_SIZE,     /* 0 mini, 1 normal, 2 giant */
     X_VOICE_PITCH,      /* -50..50 % */
     X_MIRROR_WORLD, X_VICTORY_CONFETTI,
-    X_STEREO_3D,        /* 0 off, 1 red-cyan, 2 side by side */
     X_COUNT
 };
 extern int g_x[X_COUNT];

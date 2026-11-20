@@ -88,9 +88,9 @@ WP_HOOK(0x80296090, SelectThread_idle) {
     wp_clock_tick();
     start = wp_host_time();
     {
-        /* Frames shown between the game's (above 60 fps, and the 3D
-         * glasses' two eyes: gx_frames.c records the game's frames and
-         * draws them here) are drawn while it waits, but only when one is
+        /* Frames shown between the game's (above 60 fps: gx_frames.c
+         * records the game's frames and draws them here) are drawn while
+         * it waits, but only when one is
          * due before the wait is over: a late wake-up slows the game
          * itself. Otherwise it waits for the next one (or is left out).
          * From MildRain479/PokePark-2-Wiicompiled's hle_irq.c (CC0). Their

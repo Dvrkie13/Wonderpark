@@ -562,8 +562,6 @@ void build_rows() {
         c.rows.push_back(xslider(X_VOICE_PITCH, L"Voice pitch", L"From deep and grumbly to tiny and squeaky. Changes the next thing a Pokémon says.", -50, 50, 5, L"%", false, true));
         c.rows.push_back(xrow(TOGGLE, X_MIRROR_WORLD, L"Mirror world", L"Flips the whole park left to right. Left and right swap too."));
         c.rows.push_back(xrow(TOGGLE, X_VICTORY_CONFETTI, L"Victory confetti", L"A burst of confetti when you clear an attraction."));
-        c.rows.push_back(xrow(CHOICE, X_STEREO_3D, L"3D glasses", L"Red-cyan for paper 3D glasses; side by side for 3D TVs and VR viewers.",
-                              {L"Off", L"Red-cyan", L"Side by side"}));
         g_cats.push_back(c);
     }
 }

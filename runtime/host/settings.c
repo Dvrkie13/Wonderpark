@@ -127,7 +127,6 @@ static const struct {
     {"silly", "voice_pitch", 0, -50, 50, "percent of the frequency: Pokemon voices higher or deeper"},
     {"silly", "mirror_world", 0, 0, 1, "the picture flipped left to right (and left and right swapped)"},
     {"silly", "victory_confetti", 0, 0, 1, "1: a burst of confetti when an attraction is cleared"},
-    {"silly", "stereo_3d", 0, 0, 2, "0 off, 1 red-cyan, 2 side by side"},
 };
 int g_x[X_COUNT];
 static int sXOverridden[X_COUNT];

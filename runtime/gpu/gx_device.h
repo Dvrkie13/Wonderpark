@@ -72,10 +72,6 @@ typedef struct GXDevice {
     /* Shows the last presented picture again, with the overlay as it is now
      * (the game paused behind the F1 tab); 0 if it can't. NULL: none. */
     int (*present_last)(void);
-    /* 3D glasses (Silly; gx_frames.c): which colours draws and clears write,
-     * 0 all, 1 red alone (left eye), 2 green and blue (right eye). NULL:
-     * none. */
-    void (*eye_mask)(int eye);
     /* Whether the GPU is still on the last frame shown (frames between are
      * then left out). NULL: never. */
     int (*gpu_busy)(void);

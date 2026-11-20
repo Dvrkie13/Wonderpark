@@ -664,89 +664,26 @@ static void blend_xf(uint32_t* out, const uint32_t* prev, const uint32_t* cur, f
 }
 
 /* Draws sCur, its matrices t of the way from sPrev's. */
-/* 3D glasses (Silly: 3D glasses, red-cyan; g_x[X_STEREO_3D] 1): the
- * recorded frame is drawn twice, the left eye's picture into the red
- * channel alone and the right eye's into green and blue (the device's
- * eye_mask; clears too, so the second eye's clear leaves the first's red).
- * An eye is the camera moved sideways by half the separation: every
- * position matrix of a perspective draw moved along view x (which also
- * moves skinned models' matrices, all in view space), and the projection
- * turned so things at the convergence distance land where they were (no
- * parallax there, nearer things pop out). The HUD (orthographic) is the
- * same for both eyes. Shown once, after the second eye.
- * WONDERPARK_3D_SEPARATION and WONDERPARK_3D_DEPTH (world units) tune it. */
-static float sEyeSeparation = -1, sConvergence;
-
-static void eye_xf(uint32_t* out, const uint32_t* in, float shift) {
-    int m;
-    float p0, p1;
-    if (out != in) memcpy(out, in, GX_XF_WORDS * 4);
-    if (!perspective(in)) return;
-    {
-        /* The 2D layouts' camera (as gx_fifo.c tells it apart: 45 degrees,
-         * the layout's aspect 1.829): the same for both eyes. */
-        float q0 = wordf(in[GX_XF_MEM_WORDS + 0x20]), q2 = wordf(in[GX_XF_MEM_WORDS + 0x22]);
-        if (fabsf(q2 - 2.414214f) < 0.001f && q0 > 0 && fabsf(q2 / q0 - 1.8292f) < 0.01f) return;
-    }
-    {
-        /* The draw's position matrix (MATINDEX_A's, anywhere in XF memory),
-         * and for skinned models the first 10 (their per-vertex ones). */
-        int at = (int)(pos_matrix(in) - in);
-        for (m = 0; m + 12 <= 120; m += 12) {
-            float x = wordf(out[m + 3]);
-            if (m != at && x == x) out[m + 3] = fword(x + shift);
-        }
-        if (at + 12 <= 0x100) {
-            float x = wordf(out[at + 3]);
-            if (x == x) out[at + 3] = fword(x + shift);
-        }
-    }
-    p0 = wordf(out[GX_XF_MEM_WORDS + 0x20]);
-    p1 = wordf(out[GX_XF_MEM_WORDS + 0x21]);
-    out[GX_XF_MEM_WORDS + 0x21] = fword(p1 + p0 * shift / sConvergence);
-}
-
 static void render_frame(float t) {
     static uint32_t xf[GX_XF_WORDS];
-    int i, pass, mode = sDev->eye_mask ? g_x[X_STEREO_3D] : 0, stereo = mode != 0;
-    if (stereo && sEyeSeparation < 0) {
-        const char* s = getenv("WONDERPARK_3D_SEPARATION");
-        const char* d = getenv("WONDERPARK_3D_DEPTH");
-        sEyeSeparation = s && atof(s) > 0 ? (float)atof(s) : 0.8f; /* (measured in the park, Cove Town) */
-        sConvergence = d && atof(d) > 0 ? (float)atof(d) : 60.0f;
-    }
-    for (pass = stereo ? 1 : 0; pass <= (stereo ? 2 : 0); pass++) {
-        /* The left eye's camera is to the left: the world to its right. */
-        float shift = pass == 1 ? sEyeSeparation / 2 : -sEyeSeparation / 2;
-        if (stereo) sDev->eye_mask(mode == 2 ? pass + 2 : pass); /* red, cyan; or the left half, the right */
-        for (i = 0; i < sCur->count; i++) {
-            const RecOp* r = &sCur->ops[i];
-            switch (r->op) {
-            case OP_DRAW: {
-                const uint32_t* cur = sCur->xf + r->xf;
-                if (r->match >= 0 && t < 1.0f) {
-                    blend_xf(xf, sPrev->xf + sPrev->ops[r->match].xf, cur, t);
-                    cur = xf;
-                }
-                if (stereo) {
-                    eye_xf(xf, cur, shift);
-                    cur = xf;
-                }
-                sDev->draw_recorded(&r->st, cur, r->a[0], r->a[2], r->a[3]);
-                break;
+    int i;
+    for (i = 0; i < sCur->count; i++) {
+        const RecOp* r = &sCur->ops[i];
+        switch (r->op) {
+        case OP_DRAW: {
+            const uint32_t* cur = sCur->xf + r->xf;
+            if (r->match >= 0 && t < 1.0f) {
+                blend_xf(xf, sPrev->xf + sPrev->ops[r->match].xf, cur, t);
+                cur = xf;
             }
-            case OP_CLEAR: sDev->clear(r->a[0], r->a[1], r->a[2], (uint32_t)r->a[3], (uint32_t)r->a[4]); break;
-            case OP_COPY: sDev->copy(r->a[0], r->a[1], r->a[2], r->a[3], r->a[4], r->a[5], r->a[6], r->a[7]); break;
-            default:
-                if (mode == 1 && pass == 1) break; /* red-cyan: shown after the second eye */
-                if (mode == 1) sDev->eye_mask(0);
-                show(r->a[0], r->a[1], r->a[2], r->a[3]);
-                if (mode == 1) sDev->eye_mask(pass);
-                break;
-            }
+            sDev->draw_recorded(&r->st, cur, r->a[0], r->a[2], r->a[3]);
+            break;
+        }
+        case OP_CLEAR: sDev->clear(r->a[0], r->a[1], r->a[2], (uint32_t)r->a[3], (uint32_t)r->a[4]); break;
+        case OP_COPY: sDev->copy(r->a[0], r->a[1], r->a[2], r->a[3], r->a[4], r->a[5], r->a[6], r->a[7]); break;
+        default: show(r->a[0], r->a[1], r->a[2], r->a[3]); break;
         }
     }
-    if (stereo) sDev->eye_mask(0);
 }
 
 /* The game finished a frame: it becomes the one shown. */
@@ -871,7 +808,7 @@ int display_msaa(void) { return sDev->msaa(); }
 int display_renderer(void) { return sDev == &g_vk_device ? RENDERER_VULKAN : RENDERER_OPENGL; }
 
 int gxb_recording(void) {
-    int want = sOutputRate > 60 || (g_x[X_STEREO_3D] && sDev->eye_mask); /* 3D glasses: drawn twice from the recording */
+    int want = sOutputRate > 60;
     if (sRecording && !want && sHaveFrame) {
         /* Stopping: show the newest frame as it is. */
         GL_ENTER();
