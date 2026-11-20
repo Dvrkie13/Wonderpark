@@ -214,6 +214,23 @@ WP_HOOK(0x8001EFD0, CameraManager_Update) {
     }
     read_turn(&dx, &dy);
     if (!g_x[X_FREE_CAMERA]) dx = dy = 0;
+    {
+        /* Camera smoothing: the turn eases toward the input instead of
+         * following it at once (0%: at once; 90%: a tenth of the way each
+         * 60th of a second). */
+        static float sx, sy;
+        float keep = g_x[X_CAMERA_SMOOTHING] / 100.0f;
+        if (keep <= 0) {
+            sx = sy = 0;
+        } else {
+            /* What's still to come of earlier input, plus the new. */
+            sx += dx, sy += dy;
+            dx = sx * (1 - keep), dy = sy * (1 - keep);
+            sx -= dx, sy -= dy;
+            if (fabsf(sx) < 0.01f) sx = 0;
+            if (fabsf(sy) < 0.01f) sy = 0;
+        }
+    }
     if (dx != 0 || dy != 0) sLastInput = wp_wall_seconds();
     if (g_wpad_held & ~lastHeld & HOST_PAD_B) sRecenter = 1;
     lastHeld = g_wpad_held;
@@ -296,7 +313,7 @@ static float wall_limit(CPUState* c, const float at[3], const float along[3]) {
 WP_HOOK(0x80024EE0, CameraFollow_Update) {
     u32 cam = c->gpr[3];
     int ours, i, turned;
-    float at[3], along[3], ray[3], down[3], eye[3], t, limit, steps;
+    float at[3], along[3], ray[3], down[3], eye[3], t, limit, steps, dist;
     uint64_t now;
     if (!wp_mem_ptr(cam, 0x120)) return 0;
     ours = LD32(cam + CAM_ID) == sCurrent && !hle_in_minigame();
@@ -316,19 +333,24 @@ WP_HOOK(0x80024EE0, CameraFollow_Update) {
     }
     if (ours && sRecenter) {
         sRecenter = 0;
+        /* Recenter speed: slow, normal (the game's own pace), fast. */
+        static const u32 kUpdates[3] = {RECENTER_UPDATES * 2, RECENTER_UPDATES, RECENTER_UPDATES * 2 / 5};
         stf(cam + CAM_YAW_TO, wrap180(ldf(cam + CAM_YAW) - sTurn));
-        ST32(cam + CAM_EASING, RECENTER_UPDATES);
+        ST32(cam + CAM_EASING, kUpdates[g_x[X_RECENTER_SPEED] < 0 || g_x[X_RECENTER_SPEED] > 2 ? 1 : g_x[X_RECENTER_SPEED]]);
         sTurn = sTilt = 0;
     }
     wp_call_original(c, FOLLOW_UPDATE);
-    turned = sTurn != 0 || sTilt != 0;
+    /* Camera distance: the eye further back along its line, in the park
+     * (walls and the ground still bring it in, as for a turn). */
+    dist = g_x[X_CAMERA_DISTANCE] / 100.0f;
+    turned = sTurn != 0 || sTilt != 0 || dist != 1.0f;
     if (!ours || (!turned && sPull >= 1)) {
         sPull = 1;
         return 1;
     }
     for (i = 0; i < 3; i++) {
         at[i] = ldf(cam + CAM_AT + i * 4);
-        along[i] = ldf(cam + CAM_EYE + i * 4) - at[i];
+        along[i] = (ldf(cam + CAM_EYE + i * 4) - at[i]) * dist;
     }
     /* Smoothly either way: a wall's edge passing a ray is a jump in the limit. */
     now = wp_timebase();

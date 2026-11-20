@@ -155,8 +155,10 @@ static void read_pointer(float* dx, float* dy) {
 }
 
 /* A stick axis, -32768 to 32767, as -1 to 1 past a dead zone. */
-static float stick_axis(SHORT v) {
-    const float kDead = 7849.0f; /* XInput's own suggestion for the left stick */
+/* Dead zone: the setting's percent of the stick's travel (24%, the default,
+ * is XInput's own suggestion for the left stick, 7849). */
+static float stick_axis(SHORT v, int deadPercent) {
+    const float kDead = 32767.0f * (float)deadPercent / 100.0f;
     float f = (float)v;
     if (f > kDead) return (f - kDead) / (32767.0f - kDead);
     if (f < -kDead) return (f + kDead) / (32768.0f - kDead);
@@ -180,10 +182,10 @@ static void pad_sticks(int chan, float* lx, float* ly, float* rx, float* ry) {
     PadState s;
     *lx = *ly = *rx = *ry = 0;
     if (pad_of(chan) < 0 || !pad_sdl_state(pad_of(chan), &s) || menu_is_open()) return;
-    *lx = stick_axis(s.lx);
-    *ly = stick_axis(s.ly);
-    *rx = stick_axis(s.rx);
-    *ry = stick_axis(s.ry);
+    *lx = stick_axis(s.lx, g_x[X_DEADZONE_LEFT]);
+    *ly = stick_axis(s.ly, g_x[X_DEADZONE_LEFT]);
+    *rx = stick_axis(s.rx, g_x[X_DEADZONE_RIGHT]);
+    *ry = stick_axis(s.ry, g_x[X_DEADZONE_RIGHT]);
 }
 
 static void read_sticks(float* lx, float* ly, float* rx, float* ry) { pad_sticks(0, lx, ly, rx, ry); }
@@ -256,15 +258,49 @@ static uint32_t keyboard(void) {
  * pad_sdl.c, which tells the button icons.) */
 static void controller_state(int pad, uint32_t* buttons, uint32_t* stick) {
     PadState s;
+    /* Trigger sensitivity: 50% counts a trigger half way down; 90% a touch. */
+    int trig = 255 * (100 - g_x[X_TRIGGER_SENSITIVITY]) / 100;
+    /* Half the stick's travel, or past the dead zone if that's bigger. */
+    int thr = g_x[X_DEADZONE_LEFT] * 32767 / 100 > STICK_THRESHOLD ? g_x[X_DEADZONE_LEFT] * 32767 / 100 : STICK_THRESHOLD;
     *buttons = *stick = 0;
     if (pad < 0 || !pad_sdl_state(pad, &s)) return;
     *buttons = s.buttons;
-    if (s.lt > 128) *buttons |= XPAD_LT;
-    if (s.rt > 128) *buttons |= XPAD_RT;
-    if (s.ly > STICK_THRESHOLD) *stick |= XPAD_UP;
-    if (s.ly < -STICK_THRESHOLD) *stick |= XPAD_DOWN;
-    if (s.lx < -STICK_THRESHOLD) *stick |= XPAD_LEFT;
-    if (s.lx > STICK_THRESHOLD) *stick |= XPAD_RIGHT;
+    if (s.lt > trig) *buttons |= XPAD_LT;
+    if (s.rt > trig) *buttons |= XPAD_RT;
+    if (s.ly > thr) *stick |= XPAD_UP;
+    if (s.ly < -thr) *stick |= XPAD_DOWN;
+    if (s.lx < -thr) *stick |= XPAD_LEFT;
+    if (s.lx > thr) *stick |= XPAD_RIGHT;
+}
+
+/* Controls > Charge (1): Toggle. A press of 1 longer than CHARGE_LATCH_MS
+ * keeps 1 held after it's let go (the charged move keeps charging) until
+ * the next press, which lets it go (the move fires). Shorter presses are
+ * taps, as before (dash attacks). */
+#define CHARGE_LATCH_MS 400
+static uint32_t charge_toggle(uint32_t held) {
+    static int latched, wasDown, swallow;
+    static ULONGLONG downAt;
+    int down = (held & HOST_PAD_1) != 0;
+    ULONGLONG now = GetTickCount64();
+    if (!g_x[X_CHARGE_TOGGLE] || menu_is_open()) {
+        latched = swallow = 0;
+        wasDown = down;
+        return held;
+    }
+    if (latched) {
+        if (down && !wasDown) latched = 0, swallow = 1;
+        else held |= HOST_PAD_1;
+    }
+    if (swallow) {
+        if (down) held &= ~HOST_PAD_1;
+        else swallow = 0;
+    } else if (down && !latched) {
+        if (!wasDown) downAt = now;
+        else if (now - downAt >= CHARGE_LATCH_MS) latched = 1;
+    }
+    wasDown = down;
+    return held;
 }
 
 /* The left stick always moves, besides what the d-pad is bound to. */
@@ -362,7 +398,7 @@ static int read_pad(int chan, uint32_t* held) {
     pad = controller(buttons, stick);
     if (pad || buttons || stick) sControllerLast = 1; /* any button, or the stick past half */
     else if (keys) sControllerLast = 0;
-    *held = keys | pad;
+    *held = charge_toggle(keys | pad);
     if (g_x[X_MIRROR_WORLD]) {
         /* The picture is flipped: left on screen is right in the game. */
         uint32_t lr = *held & (HOST_PAD_SCREEN_LEFT | HOST_PAD_SCREEN_RIGHT);
