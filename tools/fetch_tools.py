@@ -124,6 +124,13 @@ def install(t: Tool, src: Path) -> None:
     if t.file.endswith(".exe"):
         t.done.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(src, t.done)
+        # dtk needs Microsoft's C++ runtime (VCRUNTIME140.dll), which a fresh
+        # Windows may not have: the copy the shipped Python brings (Microsoft
+        # allows apps to carry their own) goes beside it.
+        for dll in ("vcruntime140.dll", "vcruntime140_1.dll"):
+            have, beside = TOOLS / "python" / dll, t.done.parent / dll
+            if have.is_file() and not beside.is_file():
+                shutil.copyfile(have, beside)
         return
     # The compiler: unzipped beside a temporary name, then renamed, so a
     # half-unzipped folder never counts as installed.
