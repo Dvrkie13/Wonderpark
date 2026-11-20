@@ -22,16 +22,19 @@ ignored). See `CLAUDE.md`.
 ## Commands
 
 ```
-python tools/extract_disc.py <disc.iso>      # verify (ID, revision, hash) and extract to game/
-python tools/recomp.py                       # DolRecomp: game/sys/main.dol -> generated/
-python tools/build_game.py                   # build build/game/Wonderpark.exe (clang-cl; --msvc for MSVC)
+python tools/fetch_tools.py                  # the build tools players get: llvm-mingw and dtk, into tools/ (pinned SHA-256; --status, --from FILE)
+python tools/make_tools.py                   # the ready-built tools a release ships: tools/python, tools/bin/ninja.exe and dolrecomp.exe, tools/prebuilt/sdl3-mingw
+python tools/extract_disc.py <disc.iso>      # verify (ID, revision, hash) and extract to game/ (--verify-only --hashes F keeps the hashes for the extract run)
+python tools/recomp.py                       # DolRecomp: game/sys/main.dol -> generated/ (tools/bin/dolrecomp.exe when there, else built with CMake)
+python tools/build_game.py --mingw           # build build/game/Wonderpark.exe with llvm-mingw: what players get, no Visual Studio and no CMake (build.ninja written by the script)
+python tools/build_game.py                   # the same with Visual Studio's clang-cl and CMake when it's installed (--msvc for MSVC; llvm-mingw when it isn't)
 python tools/pgo_train.py                    # PGO: instrumented build, train on a park and a beach save, merge to build/pgo/ (~35 min)
 python tools/build_game.py --no-pgo         # without the PGO profile (used by default when build/pgo/wonderpark.profdata exists)
 python tools/build_game.py --no-lto         # without ThinLTO (on by default when lld-link.exe and llvm-lib.exe are beside clang-cl; ~13 min instead of ~18)
 python tools/build_game.py --build-dir game-x --cflags "/arch:AVX2"   # a variant in build/game-x, for comparisons
 python builder/pipeline.py <disc.iso>        # all of the above, with progress for the launcher
 python builder/pipeline.py --rebuild         # recompile and compile again from the extracted disc in game/
-python builder/pipeline.py --status          # @status ok|missing|outdated (is build/game current with the sources?), @exe, @optimise needed|done
+python builder/pipeline.py --status          # @status ok|missing|outdated|building (is build/game current with the sources? building: @pid, @log of the build running), @exe, @optimise needed|done
 python builder/pipeline.py --optimise        # the fully optimised build, into build/game-opt (the launcher runs it in the background)
 python tools/build_game.py --chunk-opt 1     # the recompiled chunks at -O1 (the pipeline's quick first build)
 python tools/build_launcher.py               # build build/launcher/WonderparkLauncher.exe (the launcher, MSVC)
@@ -61,11 +64,23 @@ executable can ship in a release.
 
 - It finds the Wonderpark folder by looking upwards from itself for
   `builder/pipeline.py` (or `--root <dir>`, or `WONDERPARK_ROOT`).
-- It runs `builder/pipeline.py` with Python (`WONDERPARK_PYTHON`, else
-  `python.exe` on PATH, else `py -3`) on a worker thread, in a Windows job
-  object (stopping the build or closing the launcher ends every process
-  of it). Each build's output goes to `build/logs/build-<date>-<time>.log`
-  ("Show log" after an error opens it).
+- It runs `builder/pipeline.py` with Python (`WONDERPARK_PYTHON`, else the
+  embeddable Python a release ships in `tools\python`, else `python.exe` on
+  PATH, else `py -3`). The build runs on its own, outside the launcher's job
+  object: its output goes straight to `build/logs/build-<date>-<time>.log`
+  ("Show log" after an error opens it), which the launcher reads as it
+  grows. Closing the launcher leaves the build running; the pipeline notes
+  itself in `build/build-running.json`, and a launcher started later finds
+  it (`--status` says `building`) and shows it again ("Still building
+  Wonderpark"). Cancel (or Esc) asks first, then creates `build/build.cancel`;
+  the pipeline sees it within half a second and ends its running step and
+  everything that step started.
+- The build screen (bottom left while building): the five stages (Checking
+  your disc, Getting the build tools with its download size, Reading the
+  game, Recompiling, Compiling) and Ready, each ticked off; overall progress
+  with the time left (from the end of the download, by the progress since;
+  updated every 3 s); "You can leave this running"; a tip every 9 s (our own
+  words, `BUILD_TIPS`); Cancel.
 - At start it asks `pipeline.py --status`: a current build shows Play, an
   out-of-date one (the sources changed) Rebuild, none Place ISO. Play
   starts the optimised build (`build/game-opt`) only when it was made from
@@ -81,7 +96,8 @@ executable can ship in a release.
 - The disc check on "Verifying…" (game ID S2LE01, revision 0) is done by
   the launcher itself from the image's header; the full image hash is
   part of the build's first stage.
-- Esc, or closing the window, during a build asks whether to stop it.
+- Esc during a build asks whether to stop it; closing the window doesn't
+  stop it.
 - The Japanese disc (S2LJ01), dropped or picked, isn't built: its Pokémon
   voices are copied for Audio > Voice language (`tools/extract_voices.py`,
   output in `build/logs/voices-ja.log`; it needs dtk like the build), and the

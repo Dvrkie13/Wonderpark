@@ -72,17 +72,17 @@ Found a bug? [Open an issue](../../issues/new/choose). The template asks for wha
 
 ## Getting started
 
-Download the launcher from [Releases](../../releases) (beta versions for now), or build it from this repository. Either way the launcher does the rest, but for now your PC needs the tools below first.
+Download the launcher from [Releases](../../releases) (beta versions for now), unzip it and run it. Nothing else to install: no Python, no Visual Studio, no admin rights. (Releases up to 0.1.1-beta still needed the tools listed in their own notes.)
 
 ### What you need
 
 - **Windows 10 or 11, 64-bit**
 - **A graphics card with OpenGL 3.3** (any card from the last ten years)
-- **About 2 GB of free space** besides your disc image (the extracted disc, the recompiled code and the program). An SSD loads faster; a hard drive works.
+- **About 2.5 GB of free space** besides your disc image (the build tools, the extracted disc, the recompiled code and the program). An SSD loads faster; a hard drive works.
 - **Your own PokéPark 2: Wonders Beyond disc image, US version (S2LE01)**: `.iso`, `.wbfs`, `.rvz` or NKit. Other regions aren't supported yet.
-- **[Python 3](https://www.python.org/)** (3.10 or newer).
-- **[Visual Studio Build Tools](https://visualstudio.microsoft.com/downloads/)** with the "Desktop development with C++" workload (CMake and Ninja come with it), plus the "C++ Clang tools for Windows" component. Clang makes the game run about twice as fast as Microsoft's compiler; an [llvm-mingw](https://github.com/mstorsjo/llvm-mingw) install also works.
-- **[decomp-toolkit](https://github.com/encounter/decomp-toolkit)** (`dtk.exe`) on your PATH or in `tools\bin`, for reading a plain `.iso`, `.wbfs` or `.rvz` (NKit images are read without it).
+- **An internet connection for the first build** (about 200 MB, once): the launcher downloads the compiler ([llvm-mingw](https://github.com/mstorsjo/llvm-mingw)) and the disc reader ([decomp-toolkit](https://github.com/encounter/decomp-toolkit)) from their official pages into the Wonderpark folder and checks each one. No internet on that PC? Download those two files on another PC (the links are in `tools\fetch_tools.py`, and `python tools\fetch_tools.py --status` prints them) and drop them on the launcher.
+
+**Windows SmartScreen:** the launcher isn't signed, so the first time Windows may say "Windows protected your PC". Click **More info**, then **Run anyway**. On a PC with Smart App Control turned on, unsigned programs can't be run at all.
 
 **How to get the disc image:** dump your own disc with a modded Wii and CleanRip, following [Dolphin's guide to ripping games](https://dolphin-emu.org/docs/guides/ripping-games/). Wonderpark checks the game ID and warns you if the image doesn't match a clean US copy.
 
@@ -91,9 +91,9 @@ Download the launcher from [Releases](../../releases) (beta versions for now), o
 1. Download `Wonderpark-<version>.zip` from the [Releases](../../releases) page and unzip it into a folder of its own, on a drive with room for about 2 GB more (and 2.7 GB more for the optional HD Pack). Avoid a synced folder such as OneDrive.
 2. Run `WonderparkLauncher.exe` in that folder.
 
-   *From source instead:* `git clone --recursive <this repository's URL>` (the `--recursive` fetches DolRecomp and SDL3), build the launcher with `python tools/build_launcher.py`, and run `build\launcher\WonderparkLauncher.exe`.
+   *From source instead:* see [Building from source](#building-from-source).
 3. **Click the logo**, then the one button: **Place ISO** (pick your disc image; Wonderpark verifies it).
-4. **Build**: checks and extracts the disc, recompiles the game and compiles it (about 5-6 minutes on a recent 8-core PC; the star lights up as each stage finishes). That first build is a quick one; while the launcher stays open and you're not playing, it then makes a fully optimised build in the background (about 11 minutes more, stopped whenever you play and picked up again later) and uses it from then on.
+4. **Build**: checks your disc, gets the build tools (the first time only), reads the game, recompiles it and compiles it (about 5-6 minutes on a recent 8-core PC, plus the download the first time). The build screen ticks off each stage and shows the time left. You can close the launcher meanwhile: the build carries on, and the launcher shows it again when you open it. That first build is a quick one; while the launcher stays open and you're not playing, it then makes a fully optimised build in the background (about 11 minutes more, stopped whenever you play and picked up again later) and uses it from then on.
 5. **Play**. Next time the launcher goes straight to Play, or offers Rebuild after an update.
 
 Optional, for about a third less CPU time per frame: once you have a save in a busy area, `python tools/pgo_train.py`, then build again.
@@ -175,21 +175,22 @@ Keep F1 → Graphics → Shader compilation on Smooth, turn on Fast loading, and
 
 ## Building from source
 
-The launcher (above) runs these for you. To run them by hand (Windows, with the tools from [What you need](#what-you-need)):
+The launcher (above) runs these for you. To run them by hand from a source checkout you need [Python 3](https://www.python.org/) (3.11 or newer) and [CMake](https://cmake.org/) (which a release doesn't need: it ships DolRecomp and SDL3 ready-built); the compiler and dtk are fetched as for players:
 
 ```powershell
 git clone --recursive <this repository's URL>
 cd Wonderpark
-# all at once: verify and extract the disc, recompile, build
+python tools/fetch_tools.py                           # llvm-mingw and dtk, into tools/ (once)
+# all at once: check the disc, recompile, build
 python builder/pipeline.py path\to\your\disc.iso
 # or step by step:
 python tools/extract_disc.py path\to\your\disc.iso   # into game/
 python tools/recomp.py                                # DolRecomp, into generated/
-python tools/build_game.py                            # into build/game/ (clang-cl, Ninja, ThinLTO)
+python tools/build_game.py --mingw                    # into build/game/ (llvm-mingw, Ninja, ThinLTO)
 .\build\game\Wonderpark.exe
 ```
 
-`python tools/build_game.py --no-lto` builds faster for development. See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for the project layout, where each kind of fix belongs, and every setting and environment variable, and [docs/recomp-status.md](docs/recomp-status.md) for the progress notes.
+`--no-lto` builds faster for development. With Visual Studio installed, `build_game.py` without `--mingw` uses its clang-cl (the same speed) or `--msvc`. `python tools/build_launcher.py` builds the launcher (Visual Studio). See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for the project layout, where each kind of fix belongs, and every setting and environment variable, and [docs/recomp-status.md](docs/recomp-status.md) for the progress notes.
 
 ### Repository layout
 
