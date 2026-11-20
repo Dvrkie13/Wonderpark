@@ -358,6 +358,10 @@ WP_HOOK(0x80024EE0, CameraFollow_Update) {
     steps = steps > 4 ? 4 : steps;
     sPlacedAt = now;
     limit = turned ? wall_limit(c, at, along) : 1;
+    /* Zoomed out but not turned: a wall behind never brings the eye nearer
+     * than the game's own (which may itself be at a wall: in Wish Park the
+     * nearest allowed, 0.4 of 200%, was nearer than the game's). */
+    if (dist > 1 && sTurn == 0 && sTilt == 0 && limit < 1 / dist) limit = 1 / dist;
     if (limit < sPull) sPull += (limit - sPull) * (steps * WALL_EASE_IN > 1 ? 1 : steps * WALL_EASE_IN);
     else sPull = sPull + WALL_EASE_OUT * steps > limit ? limit : sPull + WALL_EASE_OUT * steps;
     for (i = 0; i < 3; i++) eye[i] = at[i] + along[i] * sPull;
@@ -368,6 +372,12 @@ WP_HOOK(0x80024EE0, CameraFollow_Update) {
     down[1] = eye[1] - GROUND_CLEARANCE - ray[1];
     t = wall_along(c, ray, down);
     if (t < 1 && eye[1] < ray[1] + down[1] * t + GROUND_CLEARANCE) eye[1] = ray[1] + down[1] * t + GROUND_CLEARANCE;
+    {
+        static unsigned n;
+        if (n++ % 120 == 0)
+            WP_LOG("camera", "placed: distance %.2f, wall limit %.2f, pull %.2f, eye %.1f from the point followed", dist, limit,
+                   sPull, sqrtf(along[0] * along[0] + along[1] * along[1] + along[2] * along[2]) * sPull);
+    }
     sPlaced = cam;
     for (i = 0; i < 3; i++) {
         sGameEye[i] = LD32(cam + CAM_EYE + i * 4);
