@@ -102,6 +102,7 @@ void wp_set_game_speed(int times) {
 }
 
 int wp_game_speed(void) { return s_speed; }
+int wp_clock_paused(void) { return s_paused; } /* F1 open (the sound thread doesn't count the silence as an underrun) */
 
 uint64_t wp_timebase(void) { return s_tb_offset + s_now; }
 

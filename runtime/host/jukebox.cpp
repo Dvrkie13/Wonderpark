@@ -42,6 +42,7 @@ extern "C" {
 const char* dvd_root(void);
 const char* wp_data_dir(void);
 int audio_queued_ms(void);
+int audio_target_ms(void);
 }
 
 namespace {
@@ -226,7 +227,7 @@ void play_thread(int index) {
                 Sleep(20);
                 continue;
             }
-            if (audio_queued_ms() > 150) {
+            if (audio_queued_ms() > audio_target_ms() + 10) {  // as full as the sound thread wants it
                 Sleep(4);
                 continue;
             }
