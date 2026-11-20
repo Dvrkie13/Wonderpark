@@ -115,7 +115,7 @@ static const struct {
     {"audio", "volume_voices", 100, 0, 100, "percent: Pokemon voices"},
     {"audio", "voice_language", 0, 0, 1, "0 English, 1 Japanese (not yet)"},
     {"audio", "mute_background", 1, 0, 1, "1: silent while another window is in front"},
-    {"audio", "audio_latency", 1, 0, 2, "sound delay: 0 low (48 ms), 1 normal (84 ms), 2 safe (132 ms)"},
+    {"audio", "audio_latency", 1, 0, 2, "sound delay: 0 low (about 40 ms), 1 normal (75 ms), 2 safe (140 ms)"},
     {"gameplay", "pause_background", 1, 0, 1, "1: the game pauses while another window is in front"},
     {"gameplay", "skip_logos", 0, 0, 1, "1: the title as soon as the park has loaded (the wrist strap screen cut short)"},
     {"gameplay", "save_backups", 1, 0, 1, "1: a copy of a save slot in backups\\ before each save (the last 10)"},

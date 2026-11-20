@@ -56,6 +56,7 @@ Wonderpark is a work in progress (a development preview): it has been played fro
 | The park: areas played so far, battles, chases | Working, 60 FPS |
 | Attractions without motion controls | Cake Contraption, Power Bash and Flight of Fancy working; Dance Inferno partly (the shake keys dance whatever move is due) |
 | Frame rates above 60 (120 / 144 / 240) | Working |
+| Performance overlay (F7: Compact / Detailed) | Working |
 | Widescreen and ultrawide | Working |
 | F1 settings, the Options page's PC Settings, the Friend Book | Working |
 | Japanese voices (needs your own Japanese disc) | Working, from the next start |
@@ -126,6 +127,8 @@ The game was played with a sideways Wii Remote. Wonderpark maps every move to ke
 
 - **In the game's Options menu:** a **PC Settings** row for display mode, resolution, frame rate, anti-aliasing, graphics quality, widescreen, V-Sync and button icons.
 - **Anywhere in game, press F1:** the full settings notebook (Display, Graphics, Controls, Audio, Gameplay, Multiplayer, Silly) and the Friend Book. The game pauses while it's open and changes apply right away. Unfinished settings are shown with a "Coming soon" stamp.
+
+- **F7 in game:** the performance overlay, in a corner: Compact (the frame rate) or Detailed (lows, frame times, what the game and your PC are doing). Its corner, size and opacity are in F1 > Display.
 
 Settings are saved in `%APPDATA%\Wonderpark\settings.ini` and controls in `%APPDATA%\Wonderpark\bindings.ini`. Every setting can also be overridden with an environment variable `WONDERPARK_<NAME>` (see [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)).
 
