@@ -15,6 +15,23 @@ The full plan and its phases live in `docs/handoff/` (a git-ignored copy of the 
 - **No heredocs.** On this machine, never write files or scripts through shell heredocs or inline echo; always use the Write/Edit tools.
 - **No blocking disk I/O on the game or render thread, ever.** Players may have spinning hard drives.
 
+## Friend Book rules
+
+- **Portraits are the Pokémon's real in-game icons**, the same ones the game's own PokéPark Pad shows. Read them from the player's disc at run time (MildRain479/PokePark-2-Wiicompiled's hle_pad_art.c, CC0, shows how) and keep them in memory only. Never draw letter or placeholder portraits in the shipped game, and never commit, cache to disk or ship the icons.
+- **All 194 befriendable Pokémon** (partners excluded) must appear, in six areas: Cove Area (Port Town, Seasong Beach), Arbor Area (Windmill Way, Verdant Courts), Crag Area (Rockridge Fort, Colosseum), Tech Area (Train Depot, Unawarehouse, Scientorium), Arcane Area (Lakeshore) and Wish Park (Cake, Dance, Power and Flight Zones). Names, areas, places and zones come from the game's data. The roster checklist (roster-checklist.csv) is a local test checklist only: keep it in a git-ignored folder, never commit it.
+
+## Game sound rule
+
+- **Nothing from the game plays before the game is fully recompiled.** No music, cry or sound from the game anywhere (launcher, F1 books, anything) until the player's own disc is verified AND the build has finished successfully. Before that, and after a failed, cancelled or deleted build, the launcher is silent.
+
+## Shelved for later (do not build until the owner says so)
+
+- **Multiplayer, local and online.** Player 1 only for now: no Multiplayer tab, no networking. The Wii Remotes 2-4 code stays in the repo but is off by default behind a disabled setting. The game's own "Multiplayer Attractions" menu stays as the game made it. The research is kept in the owner's handoff kit (`later/`) for when it comes back.
+
+## Removed features (do not build)
+
+- **3D glasses / stereo 3D** (red-cyan, side by side) was removed from the Silly settings on the owner's request. Don't add it back, don't add a `stereo_3d` setting, and remove any leftover code, settings.ini key, env var or doc mention of it.
+
 ## Key facts
 
 - Disc: S2LE01, v1.00. Clean ISO SHA-1 `e429a232431ea7075ae959b030a7675846357c19` (from GameTDB). A mismatch is a warning, not an error.
