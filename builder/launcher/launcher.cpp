@@ -9,9 +9,11 @@
 // Flow, with the one main button: Place ISO -> Verifying... -> Build ->
 // percent while building -> Play. The build is builder/pipeline.py, run by
 // Python on a worker thread (the window never waits on it or on the disk);
-// its output goes to build/logs/build-<time>.log. Each finished stage
-// relights one star point (top, right, bottom, left). Esc or closing the
-// window during a build offers to stop it. On later runs the button goes
+// its output goes to build/logs/build-<time>.log. The build screen (bottom
+// left) ticks off each stage, and each finished stage relights one star
+// point (top, right, bottom, left). The build carries on with the launcher
+// closed, and shows again when it's opened; Cancel or Esc offers to stop
+// it. On later runs the button goes
 // straight to Play when the build is current, or Rebuild when it's out of
 // date (pipeline.py --status).
 //
@@ -150,8 +152,13 @@ struct Shared {
     bool error_has_log = false; // ... with "Show log" after it
     std::wstring warn;          // a cream line ("Build stopped.", "Wonderpark was updated...")
     bool rebuild = false;       // READY means Rebuild (from game/, no image needed)
-    int stage = 0;              // 1-4 while building
+    int stage = 0;              // 1-5 while building
     int lit = 0;                // star points relit
+    long long tools_bytes = -1; // stage 2: what's left to download (-1: not known yet)
+    double build_t0 = 0;        // when the build started (or was found running), for the tips
+    double eta_t0 = 0;          // time left: measured from here (the end of the download)...
+    float eta_p0 = 0;           // ... and this much progress
+    bool attached = false;      // a build already running when the launcher started
     float progress = 0;         // 0-100
     std::wstring stage_name;
     std::wstring exe;           // the Wonderpark.exe to play when built (build/game-opt's once optimised)
@@ -172,8 +179,11 @@ static void wake() {
     if (g_wnd) PostMessageW(g_wnd, WM_APP, 0, 0);
 }
 
-static const wchar_t* STAGE_NAMES[4] = {L"Verifying disc", L"Extracting main.dol and files",
-                                        L"Recompiling PowerPC to C++", L"Compiling Wonderpark.exe"};
+// The build's stages (builder/pipeline.py's), then "Ready".
+static const int NSTAGES = 5;
+static const wchar_t* STAGE_NAMES[NSTAGES] = {L"Checking your disc", L"Getting the build tools", L"Reading the game",
+                                              L"Recompiling", L"Compiling"};
+static std::atomic<bool> g_unfollow{false};  // the launcher is closing: stop following the build (it carries on)
 
 // ------------------------------------------------------------------------
 // Finding things
@@ -194,11 +204,17 @@ static std::wstring find_root(const wchar_t* given) {
     return L"";
 }
 
-// A real python.exe (not the Microsoft Store's placeholder), or the py launcher.
+// The Python the release ships (tools\python, the official embeddable one:
+// nothing to install), else a real python.exe on PATH (not the Microsoft
+// Store's placeholder), or the py launcher (a source checkout).
 static void find_python() {
     wchar_t buf[MAX_PATH * 2];
     if (GetEnvironmentVariableW(L"WONDERPARK_PYTHON", buf, MAX_PATH * 2) && file_exists(buf)) {
         g_python = buf;
+        return;
+    }
+    if (file_exists(g_root + L"\\tools\\python\\python.exe")) {
+        g_python = g_root + L"\\tools\\python\\python.exe";
         return;
     }
     wchar_t path[32768];
@@ -295,23 +311,32 @@ static void join_worker() {
     if (g_worker.joinable()) g_worker.join();
 }
 
-// At start: is there a current build?
+static void attach_build(DWORD pid, const std::wstring& log_path);  // below
+
+// At start: is there a current build (or one running)?
 static void check_status() {
     join_worker();
     g_worker = std::thread([] {
         std::string status, optimise;
-        std::wstring image, exe;
+        std::wstring image, exe, log;
+        DWORD pid = 0;
         int rc = run_python(L"builder\\pipeline.py --status", nullptr, [&](const std::string& l) {
             if (l.rfind("@status ", 0) == 0) status = l.substr(8);
             if (l.rfind("@image ", 0) == 0) image = widen(l.substr(7));
             if (l.rfind("@exe ", 0) == 0) exe = widen(l.substr(5));
             if (l.rfind("@optimise ", 0) == 0) optimise = l.substr(10);
+            if (l.rfind("@pid ", 0) == 0) pid = (DWORD)strtoul(l.c_str() + 5, nullptr, 10);
+            if (l.rfind("@log ", 0) == 0) log = widen(l.substr(5));
         });
+        if (status == "building" && pid) {
+            attach_build(pid, log);  // carries on on this thread until the build ends
+            return;
+        }
         std::lock_guard<std::mutex> lk(g.m);
         g.image = image;
         if (g_python.empty() || rc < 0) {
             g.state = S_NOISO;
-            g.error = L"Python 3 wasn't found. The README says what to install.";
+            g.error = L"The builder couldn't start: tools\\python is missing. Download the full release again.";
         } else if (status == "ok") {
             g.state = S_DONE;
             g.lit = 4;
@@ -506,6 +531,132 @@ static void start_verify(const std::wstring& path) {
     });
 }
 
+// The build runs on its own (pipeline.py, outside the launcher's job object):
+// closing the launcher leaves it running, and a launcher started later finds
+// it (pipeline.py --status) and follows it again. Its output goes straight to
+// its log file; the launcher reads the file as it grows.
+static HANDLE spawn_build(const std::wstring& args, const std::wstring& log_path) {
+    if (g_python.empty()) return nullptr;
+    SECURITY_ATTRIBUTES sa = {sizeof(sa), nullptr, TRUE};
+    HANDLE out = CreateFileW(log_path.c_str(), GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                             &sa, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (out == INVALID_HANDLE_VALUE) return nullptr;
+    STARTUPINFOW si = {sizeof(si)};
+    si.dwFlags = STARTF_USESTDHANDLES;
+    si.hStdOutput = out;
+    si.hStdError = out;
+    PROCESS_INFORMATION pi = {};
+    std::wstring cmd = L"\"" + g_python + L"\" " + g_python_args + L"-u " + args + L" --log \"" + log_path + L"\"";
+    SetEnvironmentVariableW(L"PYTHONIOENCODING", L"utf-8");
+    SetEnvironmentVariableW(L"PYTHONUNBUFFERED", L"1");
+    std::vector<wchar_t> cmdbuf(cmd.begin(), cmd.end());
+    cmdbuf.push_back(0);
+    DWORD fl = CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT | CREATE_NEW_PROCESS_GROUP | BELOW_NORMAL_PRIORITY_CLASS;
+    // Out of any job the launcher itself was started in, where that's allowed.
+    BOOL ok = CreateProcessW(nullptr, cmdbuf.data(), nullptr, nullptr, TRUE, fl | CREATE_BREAKAWAY_FROM_JOB, nullptr,
+                             g_root.c_str(), &si, &pi);
+    if (!ok)
+        ok = CreateProcessW(nullptr, cmdbuf.data(), nullptr, nullptr, TRUE, fl, nullptr, g_root.c_str(), &si, &pi);
+    CloseHandle(out);
+    if (!ok) return nullptr;
+    CloseHandle(pi.hThread);
+    return pi.hProcess;
+}
+
+// Follows a running build (worker thread) until it ends, or until the
+// launcher closes (g_unfollow): reads its log from the start, so a build
+// found running shows its stages and progress as they are.
+static void follow_build(HANDLE proc, const std::wstring& log_path) {
+    std::wstring done, error;
+    bool cancelled = false;
+    auto on_line = [&](const std::string& l) {
+        std::lock_guard<std::mutex> lk(g.m);
+        if (l.rfind("@stage ", 0) == 0) {
+            int s = atoi(l.c_str() + 7);
+            if (s >= 1 && s <= NSTAGES) {
+                g.stage = s;
+                g.lit = s - 1 < 4 ? s - 1 : 4;
+                g.stage_name = STAGE_NAMES[s - 1];
+                if (s >= 3 && g.eta_t0 == 0) {  // after the download: time left from here
+                    g.eta_t0 = now_s();
+                    g.eta_p0 = g.progress;
+                }
+            }
+        } else if (l.rfind("@progress ", 0) == 0) {
+            g.progress = (float)atof(l.c_str() + 10);
+            size_t sp = l.find(' ', 10);
+            if (sp != std::string::npos && l.find("Preparing shaders", sp) != std::string::npos)
+                g.stage_name = L"Preparing shaders";
+        } else if (l.rfind("@size ", 0) == 0) {
+            g.tools_bytes = _atoi64(l.c_str() + 6);
+        } else if (l.rfind("@done ", 0) == 0) {
+            done = widen(l.substr(6));
+        } else if (l.rfind("@error ", 0) == 0) {
+            error = widen(l.substr(7));
+        } else if (l == "@cancelled") {
+            cancelled = true;
+        } else {
+            return;
+        }
+        wake();
+    };
+    HANDLE f = INVALID_HANDLE_VALUE;
+    std::string pending;
+    std::vector<char> buf(1 << 16);
+    for (;;) {
+        if (f == INVALID_HANDLE_VALUE && !log_path.empty())
+            f = CreateFileW(log_path.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                            nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+        bool exited = WaitForSingleObject(proc, 0) == WAIT_OBJECT_0;
+        bool any = false;
+        DWORD n;
+        while (f != INVALID_HANDLE_VALUE && ReadFile(f, buf.data(), (DWORD)buf.size(), &n, nullptr) && n) {
+            any = true;
+            pending.append(buf.data(), n);
+            size_t e;
+            while ((e = pending.find('\n')) != std::string::npos) {
+                std::string line = pending.substr(0, e);
+                pending.erase(0, e + 1);
+                if (!line.empty() && line.back() == '\r') line.pop_back();
+                on_line(line);
+            }
+        }
+        if (exited || g_unfollow) break;  // (read to the end after it exited)
+        if (!any) WaitForSingleObject(proc, 250);
+    }
+    if (f != INVALID_HANDLE_VALUE) CloseHandle(f);
+    DWORD code = (DWORD)-1;
+    GetExitCodeProcess(proc, &code);
+    CloseHandle(proc);
+    if (g_unfollow) return;
+    {
+        std::lock_guard<std::mutex> lk(g.m);
+        g.eta_t0 = 0;
+        if (cancelled || g_cancel) {
+            g.state = S_READY;
+            g.warn = L"Build stopped. Press Build to start again.";
+            g.lit = 0;
+        } else if (code == 0 && !done.empty()) {
+            g.state = S_DONE;
+            g.lit = 4;
+            g.progress = 100;
+            g.exe = done;
+            g.built_now = true;
+            g.rebuild = false;
+            g.optimise = true;  // the quick build: the optimised one follows in the background
+        } else {
+            g.state = S_READY;
+            g.lit = 0;
+            g.error = error.empty() ? L"The build failed." : error;
+            g.error_has_log = true;
+        }
+        // A build found running had no disc chosen here: place it again.
+        if (g.state == S_READY && g.image.empty() && !g.rebuild) g.state = S_NOISO;
+        g.attached = false;
+    }
+    wake();
+}
+
 static void start_build() {
     join_worker();
     std::wstring args, image;
@@ -519,13 +670,16 @@ static void start_build() {
         g.lit = 0;
         g.progress = 0;
         g.stage_name = STAGE_NAMES[0];
+        g.tools_bytes = -1;
+        g.build_t0 = now_s();
+        g.eta_t0 = 0;
         g.error.clear();
         g.warn.clear();
         g.error_has_log = false;
     }
     g_cancel = false;
     args = rebuild ? L"builder\\pipeline.py --rebuild" : L"builder\\pipeline.py \"" + image + L"\"";
-    g_worker = std::thread([args, rebuild] {
+    g_worker = std::thread([args] {
         std::wstring logdir = g_root + L"\\build\\logs";
         SHCreateDirectoryExW(nullptr, logdir.c_str(), nullptr);
         SYSTEMTIME st;
@@ -534,60 +688,52 @@ static void start_build() {
         swprintf(name, 64, L"\\build-%04d%02d%02d-%02d%02d%02d.log", st.wYear, st.wMonth, st.wDay, st.wHour,
                  st.wMinute, st.wSecond);
         std::wstring log_path = logdir + name;
-        FILE* log = _wfopen(log_path.c_str(), L"wb");
         {
             std::lock_guard<std::mutex> lk(g.m);
             g.log_path = log_path;
         }
-        std::wstring done, error;
-        int rc = run_python(args, log, [&](const std::string& l) {
+        HANDLE proc = spawn_build(args, log_path);
+        if (!proc) {
             std::lock_guard<std::mutex> lk(g.m);
-            if (l.rfind("@stage ", 0) == 0) {
-                int s = atoi(l.c_str() + 7);
-                if (s >= 1 && s <= 4) {
-                    g.stage = s;
-                    g.lit = s - 1;
-                    g.stage_name = STAGE_NAMES[s - 1];
-                }
-            } else if (l.rfind("@progress ", 0) == 0) {
-                g.progress = (float)atof(l.c_str() + 10);
-            } else if (l.rfind("@done ", 0) == 0) {
-                done = widen(l.substr(6));
-            } else if (l.rfind("@error ", 0) == 0) {
-                error = widen(l.substr(7));
-            } else {
-                return;
-            }
+            g.state = S_READY;
+            g.error = L"The builder couldn't start: tools\\python is missing. Download the full release again.";
             wake();
-        });
-        if (log) fclose(log);
-        std::lock_guard<std::mutex> lk(g.m);
-        if (g_cancel) {
-            g.state = S_READY;
-            g.warn = L"Build stopped. Press Build to start again.";
-            g.lit = 0;
-        } else if (rc == 0 && !done.empty()) {
-            g.state = S_DONE;
-            g.lit = 4;
-            g.progress = 100;
-            g.exe = done;
-            g.built_now = true;
-            g.rebuild = false;
-            g.optimise = true;  // the quick build: the optimised one follows in the background
-        } else {
-            g.state = S_READY;
-            g.lit = 0;
-            if (rc < 0 && error.empty()) error = L"The builder couldn't start (Python 3 is needed).";
-            g.error = error.empty() ? L"The build failed." : error;
-            g.error_has_log = true;
+            return;
         }
-        wake();
+        follow_build(proc, log_path);
     });
 }
 
+// A build found running at start (pipeline.py --status said "building").
+static void attach_build(DWORD pid, const std::wstring& log_path) {
+    HANDLE proc = OpenProcess(SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+    if (!proc) return;
+    {
+        std::lock_guard<std::mutex> lk(g.m);
+        g.state = S_BUILDING;
+        g.attached = true;
+        g.stage = 1;
+        g.lit = 0;
+        g.progress = 0;
+        g.stage_name = STAGE_NAMES[0];
+        g.tools_bytes = -1;
+        g.build_t0 = now_s();
+        g.eta_t0 = 0;
+        g.log_path = log_path;
+    }
+    g_cancel = false;
+    follow_build(proc, log_path);
+}
+
+// Asks the build to stop (pipeline.py watches for build\build.cancel and
+// ends everything it started); the follower sees it end.
 static void cancel_build() {
     g_cancel = true;
-    if (g_job) TerminateJobObject(g_job, 1);
+    std::wstring dir = g_root + L"\\build";
+    SHCreateDirectoryExW(nullptr, dir.c_str(), nullptr);
+    HANDLE h = CreateFileW((dir + L"\\build.cancel").c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS,
+                           FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (h != INVALID_HANDLE_VALUE) CloseHandle(h);
 }
 
 // ------------------------------------------------------------------------
@@ -1285,6 +1431,9 @@ struct View {
     double last_frame = 0, last_render = -1;
     double fast_until = 3;     // 60 fps until then (the intro, then after input)
     D2D1_RECT_F button = {}, log_link = {};
+    D2D1_RECT_F cancel = {};   // the build screen's Cancel (scene units; hover 8)
+    double eta_shown_t = 0;    // the time left, settled: updated every few seconds, not every frame
+    double eta_shown = -1;
     // The Mods page
     bool mods = false;         // open (or opening)
     float modsK = 0;           // 0 closed .. 1 open, linear over .8 s (eased where drawn)
@@ -2174,6 +2323,144 @@ static void render_mods(double t, float /*mk*/) {
     dc->SetTransform(R);
 }
 
+// Tips on the build screen, a new one every 9 s (our own words; nothing
+// from the game).
+static const wchar_t* const BUILD_TIPS[] = {
+    L"Wonderpark turns the game on your own disc into a PC program, right here on this PC.",
+    L"In the game, press F1 for the settings: graphics, controls, sound and more.",
+    L"Controllers work as they are: Xbox, PlayStation and Switch pads. Plug one in any time.",
+    L"This first build is the quick one. A faster one is made in the background afterwards.",
+    L"Extras > Saves keeps backups of your saves, and can import and export them.",
+    L"Mods go in through Extras > Mods: drop a mod's zip on the launcher.",
+    L"Never share your built Wonderpark folder: once built, it contains the game.",
+};
+
+static std::wstring mb(long long bytes) {
+    return std::to_wstring((bytes + 500000) / 1000000) + L" MB";
+}
+
+static void render_build_panel(double t, const Shared& s, const Matrix3x2F& R) {
+    auto* dc = G.dc.Get();
+    dc->SetTransform(R);
+    const float x = 28, w = 364, pad = 18, ix = x + pad, iw = w - 2 * pad;
+    const float rowH = 27;
+    // What each row says: the stages, then "Ready"; the current one with its detail.
+    struct Row { std::wstring name, detail; int st; };  // st 0 waiting, 1 now, 2 done
+    std::vector<Row> rows;
+    for (int i = 0; i <= NSTAGES; i++) {
+        Row r{i < NSTAGES ? STAGE_NAMES[i] : L"Ready to play", L"", 0};
+        int n = i + 1;
+        r.st = n < s.stage ? 2 : n == s.stage ? 1 : 0;
+        if (i == 1 && s.tools_bytes == 0 && s.stage > 2) r.detail = L"already here";
+        if (i == 1 && s.tools_bytes > 0) r.detail = mb(s.tools_bytes) + L" · one time";
+        if (r.st == 1 && i == NSTAGES - 1 && s.stage_name == L"Preparing shaders") r.detail = L"preparing shaders";
+        rows.push_back(r);
+    }
+    // Time left: from the end of the download, by the progress since; settled
+    // so it doesn't flicker (a new figure every 3 s).
+    std::wstring left;
+    if (s.eta_t0 > 0 && s.progress - s.eta_p0 >= 2 && t - s.eta_t0 >= 8) {
+        double secs = (t - s.eta_t0) * (100 - s.progress) / (s.progress - s.eta_p0);
+        if (V.eta_shown < 0 || t - V.eta_shown_t > 3) {
+            V.eta_shown = secs;
+            V.eta_shown_t = t;
+        }
+        double e = V.eta_shown;
+        left = e < 60 ? L"less than a minute left" : L"about " + std::to_wstring((int)ceil(e / 60)) + L" min left";
+    } else {
+        V.eta_shown = -1;
+        left = s.stage == 2 && s.tools_bytes > 0 ? L"downloading, one time" : L"working out the time left…";
+    }
+    const std::wstring leave = L"You can leave this running: it carries on if you close the launcher.";
+    int tipN = (int)(sizeof(BUILD_TIPS) / sizeof(BUILD_TIPS[0]));
+    double tt = t - s.build_t0;
+    int tip = ((int)(tt / 9)) % tipN;
+    float tipA = V.reduced ? 1 : clamp01((float)fmod(tt, 9) / .5f) * clamp01((9 - (float)fmod(tt, 9)) / .5f);
+    float tipH = 0;
+    for (auto* tp : BUILD_TIPS) tipH = std::max(tipH, text_height(tp, G.tfDropSmall.Get(), iw - 26));
+    float leaveH = text_height(leave, G.tfDropSmall.Get(), iw);
+    const float titleH = 30, barH = 40, btnH = 34;
+    float h = pad + titleH + rowH * rows.size() + 10 + barH + 10 + leaveH + 12 + tipH + 14 + btnH + pad;
+    float y0 = H - 30 - h;
+
+    // The panel: night glass, a soft purple glow, a thin gold edge (the hint pill's look).
+    for (int i = 5; i >= 1; i--) {
+        float g2 = i * 4.4f;
+        dc->FillRoundedRectangle(D2D1::RoundedRect(RectF(x - g2, y0 - g2, x + w + g2, y0 + h + g2), 22 + g2, 22 + g2),
+                                 brush(rgb(0x8b5bd2, .035f)).Get());
+    }
+    D2D1_ROUNDED_RECT panel = D2D1::RoundedRect(RectF(x, y0, x + w, y0 + h), 22, 22);
+    dc->FillRoundedRectangle(panel, brush(rgb(0x0d1430, .82f)).Get());
+    dc->DrawRoundedRectangle(D2D1::RoundedRect(RectF(x + 2, y0 + 2, x + w - 2, y0 + h - 2), 20, 20),
+                             brush(ColorF(1, 1, 1, .05f)).Get(), 3);
+    dc->DrawRoundedRectangle(D2D1::RoundedRect(RectF(x + .5f, y0 + .5f, x + w - .5f, y0 + h - .5f), 21.5f, 21.5f),
+                             brush(rgb(0xf3cf6b, .55f)).Get(), 1.2f);
+
+    float y = y0 + pad;
+    draw_text(s.attached ? L"Still building Wonderpark" : L"Building Wonderpark", G.tfHint.Get(), ix, y - 2, iw, 30,
+              rgb(0xffe7a3));
+    y += titleH;
+    // The stages: a tick when done, a glowing gold point now, a faint ring to come.
+    for (auto& r : rows) {
+        float cy = y + rowH / 2;
+        if (r.st == 2) {
+            dc->SetTransform(Matrix3x2F::Scale(.62f, .62f) * Matrix3x2F::Translation(ix + 1, cy - 7.5f) * R);
+            strokeG(G.checkMark.Get(), brush(rgb(0xa8f0d0)).Get(), 3, G.round.Get());
+            dc->SetTransform(R);
+        } else if (r.st == 1) {
+            float p = V.reduced ? 1 : .55f + .45f * wave(t, 1.6f);
+            dc->FillEllipse(D2D1::Ellipse(Point2F(ix + 8, cy), 10, 10), brush(rgb(0xf3cf6b, .18f * p)).Get());
+            dc->FillEllipse(D2D1::Ellipse(Point2F(ix + 8, cy), 5, 5), brush(rgb(0xffd96b)).Get());
+        } else {
+            dc->DrawEllipse(D2D1::Ellipse(Point2F(ix + 8, cy), 5, 5), brush(rgb(0x8a96b8, .7f)).Get(), 1.4f);
+        }
+        uint32_t col = r.st == 1 ? 0xffffff : r.st == 2 ? 0xc9d3e8 : 0x8a96b8;
+        float nw = 0;
+        text_height(r.name, G.tfStatus.Get(), 1000, &nw);
+        draw_text(r.name, G.tfStatus.Get(), ix + 26, cy - 10, iw - 26, 22, rgb(col));
+        if (!r.detail.empty())
+            draw_text(L"· " + r.detail, G.tfDropSmall.Get(), ix + 26 + nw + 6, cy - 8.5f, iw - 32 - nw, 20,
+                      rgb(r.st == 1 ? 0xffe7a3 : 0x8a96b8));
+        y += rowH;
+    }
+    y += 10;
+    // Overall progress: the launcher's bar (gold edge, teal fill), the time left beside it.
+    draw_text(left, G.tfProgress.Get(), ix, y, iw - 50, 20, rgb(0xd6deef));
+    draw_text(std::to_wstring((int)s.progress) + L"%", G.tfProgress.Get(), ix, y, iw, 20, rgb(0xe6ebf5),
+              DWRITE_TEXT_ALIGNMENT_TRAILING);
+    float by = y + 22;
+    D2D1_ROUNDED_RECT bar = D2D1::RoundedRect(RectF(ix + 1, by + 1, ix + iw - 1, by + 13), 6, 6);
+    dc->FillRoundedRectangle(bar, brush(rgb(0x121b3a)).Get());
+    float fw = (iw - 4) * clamp01(s.progress / 100);
+    if (fw > 1)
+        dc->FillRoundedRectangle(D2D1::RoundedRect(RectF(ix + 2, by + 2, ix + 2 + fw, by + 12), 5, 5),
+                                 brush(rgb(0x3fd0d8)).Get());
+    dc->DrawRoundedRectangle(bar, brush(rgb(0xf3cf6b)).Get(), 2);
+    y += barH + 10;
+    draw_text(leave, G.tfDropSmall.Get(), ix, y, iw, leaveH + 4, rgb(0xa8f0d0));
+    y += leaveH + 12;
+    // The tip: a small sparkle, the words fading between tips.
+    {
+        float w2 = V.reduced ? 1 : wave(t, 2.2f);
+        draw_sparkle(R, ix + 1, y + 1, 14, rgb(0xfff4cf), (V.reduced ? 1 : .35f + .65f * w2) * tipA, 1);
+        dc->SetTransform(R);
+        draw_text(BUILD_TIPS[tip], G.tfDropSmall.Get(), ix + 26, y, iw - 26, tipH + 4, rgb(0xd0d8ea, tipA));
+    }
+    y += tipH + 14;
+    // Cancel: a glass pill, bottom right of the panel.
+    {
+        float tw = 0, th = text_height(L"Cancel", G.tfBtn.Get(), 1000, &tw);
+        float bw = tw + 40, bx = x + w - pad - bw;
+        bool hov = V.hover == 8;
+        D2D1_ROUNDED_RECT b = D2D1::RoundedRect(RectF(bx, y, bx + bw, y + btnH), btnH / 2, btnH / 2);
+        dc->FillRoundedRectangle(b, brush(hov ? rgb(0x24335f) : rgb(0x121b3a, .7f)).Get());
+        dc->DrawRoundedRectangle(b, brush(rgb(0xf3cf6b, hov ? .9f : .5f)).Get(), 1.2f);
+        draw_text(L"Cancel", G.tfBtn.Get(), bx, y + btnH / 2 - th / 2, bw, th + 2, rgb(hov ? 0xffffff : 0xffe7a3),
+                  DWRITE_TEXT_ALIGNMENT_CENTER);
+        V.cancel = RectF(bx, y, bx + bw, y + btnH);
+    }
+}
+
 static void render(double t, const Shared& s) {
     ID2D1DeviceContext2* dc = G.dc.Get();
     Matrix3x2F R = root_m();
@@ -2615,8 +2902,8 @@ static void render(double t, const Shared& s) {
                 lines.push_back({L"Place your own US disc as an .iso (S2LE01)", 0xd6deef, 0});
                 break;
             case S_VERIFYING: lines.push_back({L"Verifying " + file_name(s.image) + L"…", 0xffe7a3, 0}); break;
+            case S_BUILDING: break;  // the build panel, below
             case S_READY:
-            case S_BUILDING:
             case S_DONE:
                 if (!s.warn.empty()) lines.push_back({s.warn, 0xffe7a3, 0});
                 if (!s.image.empty() && !(s.state == S_READY && s.rebuild))
@@ -2687,6 +2974,11 @@ static void render(double t, const Shared& s) {
             y += hs[i] + 12;
         }
     }
+    // ---- The build panel, bottom left, while building: the stages with
+    // ticks, overall progress and the time left, that the build carries on
+    // with the launcher closed, a tip (our own words), and Cancel.
+    V.cancel = {};
+    if (s.state == S_BUILDING) render_build_panel(t, s, R);
     // Legal line, bottom right.
     {
         dc->SetTransform(R);
@@ -3254,6 +3546,7 @@ static int hit(int x, int y) {
     }
     if (ins(V.tab)) return 5;
     if (in(V.log_link)) return 4;
+    if (ins(V.cancel)) return 8;
     if (V.menu) return in(V.button) ? 3 : 0;
     float dx = sx - 640, dy = sy - 360;  // the logo button: a 340 circle at the stage centre
     if (dx * dx + dy * dy <= 170 * 170) return 1;
@@ -3261,6 +3554,10 @@ static int hit(int x, int y) {
 }
 
 static void click(int h) {
+    if (h == 8) {
+        if (current_state() == S_BUILDING && ask_cancel()) cancel_build();
+        return;
+    }
     if (h == 1) open_menu();
     else if (h == 5) open_mods();
     else if (h == 6) close_mods();
@@ -3388,10 +3685,8 @@ static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
             V.reduced = reduced_motion();
             return 0;
         case WM_CLOSE:
-            if (current_state() == S_BUILDING) {
-                if (lp != 1 && !ask_cancel()) return 0;
-                cancel_build();
-            }
+            // A build carries on with the launcher closed (it says so on the
+            // build screen); the next start shows it again.
             DestroyWindow(w);
             return 0;
         case WM_DESTROY:
@@ -3573,6 +3868,11 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show) {
             s.stage_name = g.stage_name;
             s.exe = g.exe;
             s.built_now = g.built_now;
+            s.tools_bytes = g.tools_bytes;
+            s.build_t0 = g.build_t0;
+            s.eta_t0 = g.eta_t0;
+            s.eta_p0 = g.eta_p0;
+            s.attached = g.attached;
         }
         if (s.state == S_DONE && shown != S_DONE && s.built_now) {
             V.done_t = t;
@@ -3651,7 +3951,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show) {
         // A launched game: close a little after the toast.
         if (V.toast_t > 0 && t - V.toast_t > 2.6 && g_quit_after_toast) PostMessageW(g_wnd, WM_CLOSE, 0, 0);
     }
-    if (current_state() == S_BUILDING) cancel_build();
+    g_unfollow = true;  // a build carries on; stop following it
     join_worker();
     mods_install_join();
     OleUninitialize();

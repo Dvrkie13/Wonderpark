@@ -303,6 +303,7 @@ def main() -> int:
     ap.add_argument("--out", type=Path, default=REPO / "game")
     ap.add_argument("--dtk", help="path to dtk (else $WONDERPARK_DTK, tools/bin/, PATH)")
     ap.add_argument("--verify-only", action="store_true")
+    ap.add_argument("--hashes", type=Path, help="keep (--verify-only) or reuse the image's hashes in this file")
     ap.add_argument("--force", action="store_true", help="overwrite an existing output folder")
     ap.add_argument("--allow-untested-revision", action="store_true", help="accept a disc revision not yet tested")
     ap.add_argument("--progress", action="store_true",
@@ -320,8 +321,22 @@ def main() -> int:
         print("[1/2] Verifying disc")
         kind, rev = verify(a.image, a.allow_untested_revision)
         print(f"  game ID {EXPECTED_ID.decode()}, revision {rev} OK ({kind})")
-        hashes = check_hashes(a.image, kind)
+        # --hashes: the image's hashes from a --verify-only run, so the
+        # extract run doesn't read the whole image a second time.
+        st = a.image.stat()
+        key = {"image": str(a.image.resolve()), "size": st.st_size, "mtime": st.st_mtime}
+        saved = None
+        if a.hashes and not a.verify_only and a.hashes.is_file():
+            try:
+                j = json.loads(a.hashes.read_text())
+                saved = j["hashes"] if j.get("key") == key else None
+            except (OSError, ValueError, KeyError):
+                saved = None
+        hashes = saved if saved is not None else check_hashes(a.image, kind)
         if a.verify_only:
+            if a.hashes:
+                a.hashes.parent.mkdir(parents=True, exist_ok=True)
+                a.hashes.write_text(json.dumps({"key": key, "hashes": hashes}))
             return 0
 
         if a.out.exists() and any(a.out.iterdir()):
