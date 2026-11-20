@@ -161,6 +161,7 @@ struct Shared {
     double eta_t0 = 0;          // time left: measured from here (the end of the download)...
     float eta_p0 = 0;           // ... and this much progress
     bool attached = false;      // a build already running when the launcher started
+    bool stopping = false;      // Cancel was pressed; the build is ending its running step
     float progress = 0;         // 0-100
     std::wstring stage_name;
     std::wstring exe;           // the Wonderpark.exe to play when built (build/game-opt's once optimised)
@@ -647,6 +648,7 @@ static void follow_build(HANDLE proc, const std::wstring& log_path) {
     {
         std::lock_guard<std::mutex> lk(g.m);
         g.eta_t0 = 0;
+        g.stopping = false;
         if (cancelled || g_cancel) {
             g.state = S_READY;
             g.warn = L"Build stopped. Press Build to start again.";
@@ -687,6 +689,7 @@ static void start_build() {
         g.stage_name = STAGE_NAMES[0];
         g.tools_bytes = -1;
         g.detail.clear();
+        g.stopping = false;
         g.build_t0 = now_s();
         g.eta_t0 = 0;
         g.error.clear();
@@ -734,6 +737,7 @@ static void attach_build(DWORD pid, const std::wstring& log_path) {
         g.stage_name = STAGE_NAMES[0];
         g.tools_bytes = -1;
         g.detail.clear();
+        g.stopping = false;
         g.build_t0 = now_s();
         g.eta_t0 = 0;
         g.log_path = log_path;
@@ -746,6 +750,11 @@ static void attach_build(DWORD pid, const std::wstring& log_path) {
 // ends everything it started); the follower sees it end.
 static void cancel_build() {
     g_cancel = true;
+    {
+        std::lock_guard<std::mutex> lk(g.m);
+        g.stopping = true;
+    }
+    wake();
     std::wstring dir = g_root + L"\\build";
     SHCreateDirectoryExW(nullptr, dir.c_str(), nullptr);
     HANDLE h = CreateFileW((dir + L"\\build.cancel").c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS,
@@ -2415,8 +2424,8 @@ static void render_build_panel(double t, const Shared& s, const Matrix3x2F& R) {
                              brush(rgb(0xf3cf6b, .55f)).Get(), 1.2f);
 
     float y = y0 + pad;
-    draw_text(s.attached ? L"Still building Wonderpark" : L"Building Wonderpark", G.tfHint.Get(), ix, y - 2, iw, 30,
-              rgb(0xffe7a3));
+    draw_text(s.stopping ? L"Stopping the build…" : s.attached ? L"Still building Wonderpark" : L"Building Wonderpark",
+              G.tfHint.Get(), ix, y - 2, iw, 30, rgb(0xffe7a3));
     y += titleH;
     // The stages: a tick when done, a glowing gold point now, a faint ring to come.
     for (auto& r : rows) {
@@ -2465,8 +2474,8 @@ static void render_build_panel(double t, const Shared& s, const Matrix3x2F& R) {
         draw_text(BUILD_TIPS[tip], G.tfDropSmall.Get(), ix + 26, y, iw - 26, tipH + 4, rgb(0xd0d8ea, tipA));
     }
     y += tipH + 14;
-    // Cancel: a glass pill, bottom right of the panel.
-    {
+    // Cancel: a glass pill, bottom right of the panel (gone once pressed).
+    if (!s.stopping) {
         float tw = 0, th = text_height(L"Cancel", G.tfBtn.Get(), 1000, &tw);
         float bw = tw + 40, bx = x + w - pad - bw;
         bool hov = V.hover == 8;
@@ -3898,6 +3907,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show) {
             s.eta_t0 = g.eta_t0;
             s.eta_p0 = g.eta_p0;
             s.attached = g.attached;
+            s.stopping = g.stopping;
         }
         if (s.state == S_DONE && shown != S_DONE && s.built_now) {
             V.done_t = t;
