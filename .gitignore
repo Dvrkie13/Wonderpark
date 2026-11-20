@@ -44,6 +44,11 @@
 
 # Local tool binaries fetched by scripts (dtk, DolRecomp builds, ...)
 /tools/bin/
+# Ready-built SDL3 for the release zip, and the compiler the launcher downloads
+/tools/prebuilt/
+/tools/python/
+/tools/llvm-mingw*/
+/tools/downloads/
 
 # Runtime user files: settings, controls, saves, mods, backups, caches, logs
 settings.ini

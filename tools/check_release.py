@@ -29,7 +29,9 @@ BAD_EXT = {
     ".sav", ".log", ".bmp", ".dmp", ".pdb",
 }
 BAD_NAMES = {"wonderpark.exe", "main.dol", "bi2.bin", "boot.bin", "fst.bin", "apploader.img", "settings.ini",
-             "bindings.ini", "dolrecomp.log"}
+             "bindings.ini", "dolrecomp.log",
+             # dtk carries the Wii disc key: players download it from its author (tools/fetch_tools.py)
+             "dtk.exe", "dtk-windows-x86_64.exe", "nodtool.exe"}
 BAD_DIRS = {"game", "generated", "nand", "s2le01_generated", "backups", "voices",
             "hd", "hd-pack"}  # hd: the HD Pack (upscaled game art) and its downloaded upscaler
 MAGICS = [
