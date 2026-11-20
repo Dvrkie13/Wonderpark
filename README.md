@@ -94,7 +94,7 @@ There's no download yet. For now you build the launcher from this repository onc
 
    *From source instead:* `git clone --recursive <this repository's URL>` (the `--recursive` fetches DolRecomp and SDL3), build the launcher with `python tools/build_launcher.py`, and run `build\launcher\WonderparkLauncher.exe`.
 3. **Click the logo**, then the one button: **Place ISO** (pick your disc image; Wonderpark verifies it).
-4. **Build**: checks and extracts the disc, recompiles the game and compiles it (about 10 minutes on a recent 8-core PC; the star lights up as each stage finishes). That first build is a quick one; while the launcher stays open and you're not playing, it then makes a fully optimised build in the background (about 11 minutes more, stopped whenever you play and picked up again later) and uses it from then on.
+4. **Build**: checks and extracts the disc, recompiles the game and compiles it (about 5-6 minutes on a recent 8-core PC; the star lights up as each stage finishes). That first build is a quick one; while the launcher stays open and you're not playing, it then makes a fully optimised build in the background (about 11 minutes more, stopped whenever you play and picked up again later) and uses it from then on.
 5. **Play**. Next time the launcher goes straight to Play, or offers Rebuild after an update.
 
 Optional, for about a third less CPU time per frame: once you have a save in a busy area, `python tools/pgo_train.py`, then build again.
