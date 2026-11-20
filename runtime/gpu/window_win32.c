@@ -138,6 +138,9 @@ static int set_mode(int w, int h, int hz) {
         }
         fprintf(stderr, "window: the screen can't run at %d Hz at %dx%d; it keeps its own rate\n", hz, w, h);
     }
+    if (EnumDisplaySettingsA(mi.szDevice, ENUM_CURRENT_SETTINGS, &dm))
+        fprintf(stderr, "window: fullscreen: the screen is at %lux%lu, %lu Hz\n", (unsigned long)dm.dmPelsWidth,
+                (unsigned long)dm.dmPelsHeight, (unsigned long)dm.dmDisplayFrequency);
     if (!sModeDevice[0]) {
         static int registered;
         if (!registered) registered = 1, atexit(restore_mode);
