@@ -152,6 +152,7 @@ struct Row {
     bool soon = false;      // the whole row (or a HEAD's section): "Coming soon"
     bool mini = false;        // CHOICE: the Friend Book's smaller filter pills
     int act = -1;           // BIND: the Wii Remote button (ACT_*); PLACEHEAD: the place
+    int xkey = -1;          // BIND: instead a PC key in g_x (one key, the first slot): the overlay key
     uint32_t color = 0;     // PLACEHEAD: the place's color
     std::vector<int> items; // CARDS, PLACES
     std::function<int()> get;
@@ -277,9 +278,18 @@ void build_rows() {
         rd.set = [](int) {};
         rd.reset = [] {};
         c.rows.push_back(rd);
-        c.rows.push_back(xrow(CHOICE, X_SHOW_FPS, L"Show FPS", L"The frames shown each second, in a corner: green at your frame rate, yellow a little under, red well under.",
-                              {L"Off", L"Top left", L"Top right"}));
         c.rows.push_back(xslider(X_BRIGHTNESS, L"Brightness", nullptr, 50, 150, 5, L"%", false));
+        // The performance overlay (perf_overlay.cpp).
+        c.rows.push_back(head(L"Performance overlay"));
+        c.rows.push_back(xrow(CHOICE, X_SHOW_FPS, L"Show FPS",
+                              L"Compact: the frame rate, green at your frame rate, yellow a little under, red well under. Detailed: also the lows, frame times, and what the game and your PC are doing. The overlay key (F7) cycles it.",
+                              {L"Off", L"Compact", L"Detailed"}));
+        c.rows.push_back(xrow(CHOICE, X_OVERLAY_CORNER, L"Corner", nullptr,
+                              {L"Top left", L"Top right", L"Bottom left", L"Bottom right"}));
+        c.rows.push_back(xslider(X_OVERLAY_SIZE, L"Size", nullptr, 75, 150, 5, L"%", false));
+        c.rows.push_back(xslider(X_OVERLAY_OPACITY, L"Opacity", nullptr, 40, 100, 5, L"%", false));
+        c.rows.push_back(xrow(TOGGLE, X_OVERLAY_SCREENSHOTS, L"Include in screenshots",
+                              L"Wonderpark has no screenshot key yet. The game's own photos never show it.", {}, true));
         {
             // Small, at the bottom: which build this is and the one settings
             // file it reads and writes (paths are in the system's code page).
@@ -416,6 +426,15 @@ void build_rows() {
         fb.kind = FIXEDBIND;
         fb.label = L"Settings";
         c.rows.push_back(fb);
+        {
+            // The performance overlay's key (Display > Show FPS): one key.
+            Row ok;
+            ok.kind = BIND;
+            ok.xkey = X_OVERLAY_KEY;
+            ok.label = L"Performance overlay";
+            ok.reset = [] { settings_set_x(X_OVERLAY_KEY, settings_x_default(X_OVERLAY_KEY)); };
+            c.rows.push_back(ok);
+        }
         c.rows.push_back(head(L"Feel"));
         c.rows.push_back(xslider(X_STEER_SENSITIVITY, L"Steering sensitivity",
                                  L"Flight of Fancy: how hard the stick or keys turn you, and how quickly.", 25, 200, 5, L"%", false));
@@ -1462,7 +1481,10 @@ void draw_rows(float listTop, float t) {
                 D2D1_RECT_F b = shift(p.parts[s], 0, dy);
                 std::wstring v;
                 if (r.kind == FIXEDBIND) v = s == 0 ? L"F1" : s == 2 ? L"Back + Start" : L"";
+                else if (r.xkey >= 0) v = s == 0 && g_x[r.xkey] ? key_text(g_x[r.xkey]) : L"";
                 else v = slot_text(r.act, s);
+                // The overlay key has one slot: the others are left blank.
+                if (r.xkey >= 0 && s > 0) continue;
                 bool listen = U.listenRow == (int)i && U.listenSlot == s;
                 bool hov = U.hoverRow == (int)i && U.hoverPart == s && r.kind == BIND;
                 float bw = b.right - b.left;
@@ -1471,7 +1493,7 @@ void draw_rows(float listTop, float t) {
                 std::vector<const char*> icons;
                 if (r.kind == FIXEDBIND && s == 2)
                     icons = {pad_icons_name(XPAD_BACK, pad_icons_pad_set()), pad_icons_name(XPAD_START, pad_icons_pad_set())};
-                else if (s >= 2 && r.kind == BIND && g_settings.pad[r.act][s - 2])
+                else if (s >= 2 && r.kind == BIND && r.act >= 0 && g_settings.pad[r.act][s - 2])
                     icons = {pad_icons_name(g_settings.pad[r.act][s - 2], pad_icons_pad_set())};
                 for (auto* n : icons)
                     if (pad_icon_w(n, 26) <= 0) icons.clear();  // not read yet: the name, as before
@@ -2094,6 +2116,8 @@ void reset_tab() {
 }
 
 void start_listen(int row, int slot) {
+    const Row* r = row_at(row);
+    if (r && r->xkey >= 0 && slot != 0) return;  // the overlay key: one key only
     U.listenRow = row;
     U.listenSlot = slot;
     U.listenT = now_s();
@@ -2104,14 +2128,18 @@ void bind_now(int vk, uint32_t pad) {
     const Row* r = row_at(U.listenRow);
     if (!r || r->kind != BIND) return;
     int s = U.listenSlot;
-    if (s < 2 && vk) settings_bind(r->act, s, vk, 0);
+    if (r->xkey >= 0) {
+        if (vk > VK_XBUTTON2) settings_set_x(r->xkey, vk);  // a key, not a mouse button
+    } else if (s < 2 && vk) settings_bind(r->act, s, vk, 0);
     else if (s >= 2 && pad) settings_bind(r->act, s - 2, 0, pad);
     U.listenRow = U.listenSlot = -1;
     changed();
 }
 void clear_slot() {
     const Row* r = row_at(U.listenRow);
-    if (r && r->kind == BIND) {
+    if (r && r->kind == BIND && r->xkey >= 0) {
+        settings_set_x(r->xkey, 0);
+    } else if (r && r->kind == BIND) {
         if (U.listenSlot < 2) g_settings.key[r->act][U.listenSlot] = 0;
         else g_settings.pad[r->act][U.listenSlot - 2] = 0;
         settings_save();
@@ -4205,91 +4233,6 @@ extern "C" const uint32_t* options_rows_draw(int w, int h) {
         dw = w, dh = h;
     }
     return G.image.data();
-}
-
-// Show FPS (Display): a small badge for a corner of the screen, drawn with
-// the notebook's own fonts: a coloured dot (green at the frame rate set or
-// near it, yellow a little under, red well under), the number, "FPS".
-// Drawn again only when what it shows changes (about once a second).
-// Straight-alpha BGRA, top row first, *bw x *bh pixels for a window win_h
-// tall (the renderer puts it in the corner).
-extern "C" const uint32_t* fps_badge_draw(int fps, int target, int win_h, int* bw, int* bh) {
-    static ComPtr<IWICBitmap> bmp;
-    static ComPtr<ID2D1RenderTarget> rt;
-    static ComPtr<ID2D1SolidColorBrush> br;
-    static std::vector<uint32_t> img;
-    static int lastFps = -1, lastTarget = -1, lastScaleQ = -1, W = 0, H = 0;
-    if (!G.ok && !ensure_target(G.w ? G.w : 16, G.h ? G.h : 16)) return nullptr;
-    float s = std::max(1.f, std::min(3.f, win_h / 720.f));
-    int q = (int)(s * 8);
-    if (fps == lastFps && target == lastTarget && q == lastScaleQ && rt) {
-        *bw = W, *bh = H;
-        return img.data();
-    }
-    std::wstring num = std::to_wstring(fps);
-    IDWriteTextFormat* fNum = fmt(L"Fredoka", 700, 19 * s);
-    IDWriteTextFormat* fLab = fmt(L"Nunito", 800, 10.5f * s);
-    auto lNum = layout(num, fNum, 400 * s, 100 * s);
-    auto lLab = layout(L"FPS", fLab, 100 * s, 100 * s, LEFT, 1.2f * s);
-    DWRITE_TEXT_METRICS mn, ml;
-    lNum->GetMetrics(&mn);
-    lLab->GetMetrics(&ml);
-    float pad = 10 * s, dot = 8 * s, gap = 7 * s;
-    int w = (int)std::ceil(pad + dot + gap + mn.widthIncludingTrailingWhitespace + 5 * s + ml.widthIncludingTrailingWhitespace + pad);
-    int h = (int)std::ceil(34 * s);
-    if (w != W || h != H || !rt) {
-        rt.Reset(), bmp.Reset(), br.Reset();
-        if (FAILED(G.wic->CreateBitmap(w, h, GUID_WICPixelFormat32bppPBGRA, WICBitmapCacheOnDemand, &bmp))) return nullptr;
-        D2D1_RENDER_TARGET_PROPERTIES p = D2D1::RenderTargetProperties(
-            D2D1_RENDER_TARGET_TYPE_SOFTWARE, D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED), 96, 96);
-        if (FAILED(G.f->CreateWicBitmapRenderTarget(bmp.Get(), p, &rt))) return nullptr;
-        rt->CreateSolidColorBrush(ColorF(1, 1, 1), &br);
-        W = w, H = h;
-        img.assign((size_t)w * h, 0);
-    }
-    D2D1_COLOR_F state = fps >= target * 0.95 ? rgb(0x6fdc8c) : fps >= target * 0.75 ? rgb(0xf5d34a) : rgb(0xf26b6b);
-    rt->BeginDraw();
-    rt->Clear(ColorF(0, 0, 0, 0));
-    rt->SetTextAntialiasMode(D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE);
-    float r = h / 2.f - 1;
-    br->SetColor(rgb(0x10182f, .82f));
-    rt->FillRoundedRectangle(D2D1::RoundedRect(D2D1::RectF(.5f, .5f, w - .5f, h - .5f), r, r), br.Get());
-    br->SetColor(rgb(0xffffff, .14f));
-    rt->DrawRoundedRectangle(D2D1::RoundedRect(D2D1::RectF(1, 1, w - 1.f, h - 1.f), r, r), br.Get(), 1.2f * s);
-    br->SetColor(state);
-    rt->FillEllipse(D2D1::Ellipse(Point2F(pad + dot / 2, h / 2.f), dot / 2, dot / 2), br.Get());
-    float x = pad + dot + gap;
-    br->SetColor(rgb(0xf6f3ea));
-    rt->DrawTextLayout(Point2F(x, h / 2.f - mn.height / 2), lNum.Get(), br.Get());
-    x += mn.widthIncludingTrailingWhitespace + 5 * s;
-    br->SetColor(rgb(0xb9c4dc));
-    // "FPS" sits on the number's baseline.
-    DWRITE_LINE_METRICS lmN, lmL;
-    UINT32 cnt = 1;
-    lNum->GetLineMetrics(&lmN, 1, &cnt);
-    lLab->GetLineMetrics(&lmL, 1, &cnt);
-    rt->DrawTextLayout(Point2F(x, h / 2.f - mn.height / 2 + lmN.baseline - lmL.baseline), lLab.Get(), br.Get());
-    if (FAILED(rt->EndDraw())) return nullptr;
-    WICRect wr = {0, 0, w, h};
-    ComPtr<IWICBitmapLock> lock;
-    if (FAILED(bmp->Lock(&wr, WICBitmapLockRead, &lock))) return nullptr;
-    UINT size = 0, stride = 0;
-    BYTE* px = nullptr;
-    lock->GetDataPointer(&size, &px);
-    lock->GetStride(&stride);
-    for (int y = 0; y < h; y++) {
-        const uint32_t* src = (const uint32_t*)(px + (size_t)y * stride);
-        for (int xx = 0; xx < w; xx++) {
-            uint32_t c = src[xx], a = c >> 24;
-            if (a && a != 255)
-                c = a << 24 | std::min(255u, ((c >> 16 & 255) * 255 + a / 2) / a) << 16 |
-                    std::min(255u, ((c >> 8 & 255) * 255 + a / 2) / a) << 8 | std::min(255u, ((c & 255) * 255 + a / 2) / a);
-            img[(size_t)y * w + xx] = c;
-        }
-    }
-    lastFps = fps, lastTarget = target, lastScaleQ = q;
-    *bw = W, *bh = H;
-    return img.data();
 }
 
 extern "C" const uint32_t* settings_ui_draw(int w, int h) {

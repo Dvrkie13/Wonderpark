@@ -2799,44 +2799,39 @@ static int gl_present(int x, int y, int cw, int ch, int may_drop) {
     return finish_present(w, h, may_drop);
 }
 
-/* Show FPS (Display; [display] show_fps): last second's frames shown, as a
- * small badge in a corner (settings_ui.cpp fps_badge_draw: the notebook's
- * fonts, a dot green at the frame rate expected or near it, yellow a
- * little under, red well under). Expected: the setting, or the display's
- * refresh rate if that's lower (no more is ever shown). The badge's image
- * is uploaded only when it changes, about once a second. */
+/* The performance overlay (F1 > Display; [overlay]): perf_overlay.cpp draws
+ * its picture on a thread of its own a few times a second; here it's laid
+ * over the window, uploaded only when it changed. */
 static void draw_fps(int w, int h) {
-    extern WpStats g_wp_stats;
-    extern const uint32_t* fps_badge_draw(int fps, int target, int win_h, int* bw, int* bh);
+    extern const uint32_t* perf_overlay_lock(int win_w, int win_h, int* bw, int* bh, int* x, int* y, unsigned* serial);
+    extern void perf_overlay_unlock(void);
     static GLuint tex;
-    static const uint32_t* lastImg;
-    static int lastFps = -1, lastW, lastH;
-    int fps = (int)(g_wp_stats.fps + 0.5), target, bw = 0, bh = 0, margin, x0, y0;
-    double hz = win_display_hz();
+    static unsigned lastSerial = ~0u;
+    int bw = 0, bh = 0, x0 = 0, ytop = 0, y0;
+    unsigned serial = 0;
     const uint32_t* img;
     if (!g_x[X_SHOW_FPS] || h <= 0) return;
-    target = g_settings.frame_rate > 0 ? g_settings.frame_rate : 30;
-    if (hz >= 30 && hz + 0.5 < target) target = (int)(hz + 0.5);
-    img = fps_badge_draw(fps, target, h, &bw, &bh);
-    if (!img || bw <= 0 || bh <= 0 || bw > w || bh > h) return;
+    img = perf_overlay_lock(w, h, &bw, &bh, &x0, &ytop, &serial);
+    if (!img) return;
     if (!tex) {
         glGenTextures(1, &tex);
         glBindTexture(GL_TEXTURE_2D, tex);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     }
-    margin = h / 60 < 8 ? 8 : h / 60;
-    x0 = g_x[X_SHOW_FPS] == 2 ? w - bw - margin : margin;
-    y0 = h - bh - margin; /* GL counts up from the bottom: a top corner */
+    y0 = h - ytop - bh; /* GL counts up from the bottom */
     p_glBindFramebuffer(GL_FRAMEBUFFER, sWinFbo);
     p_glUseProgram(sOverlayProgram);
     p_glBindVertexArray(sCopyVao);
     p_glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, tex);
-    if (img != lastImg || fps != lastFps || bw != lastW || bh != lastH) {
+    if (serial != lastSerial) {
+        glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, bw, bh, 0, GL_BGRA, GL_UNSIGNED_BYTE, img);
-        lastImg = img, lastFps = fps, lastW = bw, lastH = bh;
+        lastSerial = serial;
     }
+    perf_overlay_unlock();
     glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
     glDisable(GL_SCISSOR_TEST);
     glDisable(GL_DEPTH_TEST);

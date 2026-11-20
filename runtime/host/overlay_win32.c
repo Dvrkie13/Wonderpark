@@ -67,6 +67,12 @@ int menu_window_message(void* hwnd, unsigned msg, uintptr_t wp, intptr_t lp) {
         sDrawnSerial = ~0u;
         return 1;
     }
+    if (g_x[X_OVERLAY_KEY] && (int)wp == g_x[X_OVERLAY_KEY]) {
+        /* The performance overlay's key (F7; Controls): Off, Compact, Detailed. */
+        extern void perf_overlay_cycle(void);
+        perf_overlay_cycle();
+        return 1;
+    }
     return 0;
 }
 

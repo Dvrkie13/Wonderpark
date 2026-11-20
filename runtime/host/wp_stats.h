@@ -9,6 +9,7 @@ typedef struct {
     double fps, slowest_ms;
     double frames;        /* the game's frames in the second */
     double cpu_ms, gpu_ms, wait_ms, hidden_ms;
+    double gpu_present_ms; /* the GPU's own time per frame shown (timer queries); -1 not known */
     int render_thread; /* GPU work on its own thread (gpu/gx_thread.c) */
     unsigned shader_compiles, shader_compiles_total;
     unsigned texture_uploads;

@@ -84,7 +84,13 @@ enum {
     X_STICK_SENSITIVITY, /* 10-300 %: the right stick's turning */
     X_CAMERA_RECENTER,  /* seconds without turning before the camera eases back; 0 never */
     X_FOV_ATTRACTIONS,  /* [display]: Field of view in attractions too (hle_camera.c) */
-    X_SHOW_FPS,         /* [display]: the frame rate in a corner: 0 off, 1 top left, 2 top right (gl_backend.c) */
+    /* [overlay]: the performance overlay (perf_overlay.cpp) */
+    X_SHOW_FPS,         /* 0 off, 1 compact, 2 detailed */
+    X_OVERLAY_CORNER,   /* 0 top left, 1 top right, 2 bottom left, 3 bottom right */
+    X_OVERLAY_SIZE,     /* 75-150 % */
+    X_OVERLAY_OPACITY,  /* 40-100 % */
+    X_OVERLAY_SCREENSHOTS, /* in screenshots too (no screenshot key yet) */
+    X_OVERLAY_KEY,      /* the key that cycles Show FPS (VK code; F7) */
     /* [input] */
     X_BUTTON_ICONS,     /* 0 auto, 1 Xbox, 2 PlayStation, 3 Nintendo, 4 keyboard only (pad_icons.cpp) */
     X_KEYBOARD_PLAYER,  /* 0: the keyboard and controller 1 are player 1; 1: the keyboard alone is, controller 1 is player 2 */

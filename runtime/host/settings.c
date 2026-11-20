@@ -101,7 +101,12 @@ static const struct {
     {"controls", "stick_sensitivity", 100, 10, 300, "percent: how fast the right stick turns the camera"},
     {"controls", "camera_recenter", 0, 0, 30, "seconds without turning before the camera eases back behind; 0 never"},
     {"display", "fov_attractions", 0, 0, 1, "1: the field of view applies in attractions too"},
-    {"display", "show_fps", 0, 0, 2, "the frame rate in a corner: 0 off, 1 top left, 2 top right"},
+    {"overlay", "show_fps", 0, 0, 2, "the performance overlay: 0 off, 1 compact (the frame rate), 2 detailed"},
+    {"overlay", "corner", 0, 0, 3, "0 top left, 1 top right, 2 bottom left, 3 bottom right"},
+    {"overlay", "size", 100, 75, 150, "percent"},
+    {"overlay", "opacity", 100, 40, 100, "percent"},
+    {"overlay", "screenshots", 0, 0, 1, "1: in screenshots too (no screenshot key yet)"},
+    {"overlay", "key", 0x76, 0, 255, "the key that cycles Show FPS (a Windows virtual-key code; 0x76 is F7)"},
     {"input", "button_icons", 0, 0, 4, "button icons: 0 auto (the pad used last), 1 Xbox, 2 PlayStation, 3 Nintendo, 4 keyboard only"},
     {"input", "keyboard_player", 0, 0, 1, "0: keyboard and controller 1 are player 1; 1: keyboard alone is player 1, controllers are players 2-4"},
     {"audio", "volume_master", 100, 0, 100, "percent"},
@@ -492,6 +497,8 @@ void settings_save(void) {
             g_settings.renderer == RENDERER_VULKAN ? "vulkan" : "opengl");
 #endif
     emit_x(&s, "display");
+    tprintf(&s, "\n[overlay]\n");
+    emit_x(&s, "overlay");
     tprintf(&s, "\n[graphics]\n");
     emit_x(&s, "graphics");
     tprintf(&s, "\n[controls]\n");
@@ -557,7 +564,13 @@ static void parse_option(const char* section, const char* name, const char* p, i
     char* end;
     unsigned long a, b;
     if ((i = x_index(section, name)) >= 0) {
-        g_x[i] = x_clamp(i, atoi(p));
+        g_x[i] = x_clamp(i, strtol(p, NULL, 0)); /* (the overlay's key is written in hex) */
+        return;
+    }
+    if (!strcmp(section, "display") && !strcmp(name, "show_fps")) {
+        /* Before the performance overlay: 1 top left, 2 top right (the small badge). */
+        int v = atoi(p);
+        if (v > 0) g_x[X_SHOW_FPS] = 1, g_x[X_OVERLAY_CORNER] = v == 2 ? 1 : 0;
         return;
     }
     if (!strcmp(section, "display")) {

@@ -116,9 +116,11 @@ static void report(void) {
         since = last = now;
     } else {
         double ms = (now.QuadPart - last.QuadPart) * 1000.0 / freq.QuadPart;
+        extern void perf_overlay_frame(double ms); /* the performance overlay (perf_overlay.cpp) */
         if (ms > worst) worst = ms;
         frames++;
         last = now;
+        perf_overlay_frame(ms);
     }
     if (now.QuadPart - since.QuadPart >= freq.QuadPart) {
         char title[96];
@@ -206,6 +208,7 @@ static void report(void) {
                 extern double g_gl_gpu_ms;
                 extern unsigned g_gl_gpu_n;
                 extern unsigned g_spec_draws, g_uber_draws, g_spec_compiled, g_spec_loaded, g_spec_waiting;
+                g_wp_stats.gpu_present_ms = g_gl_gpu_n ? g_gl_gpu_ms / g_gl_gpu_n : -1;
                 if (e && *e == '1' && g_gl_gpu_n && frames > 0) {
                     double per = g_gl_gpu_ms / g_gl_gpu_n;
                     unsigned draws = g_spec_draws + g_uber_draws;
