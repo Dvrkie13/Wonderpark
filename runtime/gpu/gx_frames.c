@@ -805,6 +805,13 @@ static void frame_render(void) {
     sNextOut += step;
     if ((int64_t)(now - sNextOut) > (int64_t)step) sNextOut = now + step; /* fell behind: start again from now */
     if (t == 1.0f && sLastT == 1.0f) return; /* the game is late: nothing new to show */
+    /* The GPU still on the last frame shown: this one is left out rather
+     * than queued behind it (the game's own next frame would wait for both,
+     * and miss its audio DMAs: pops above 60 fps). */
+    if (sDev->gpu_busy && sDev->gpu_busy()) {
+        sPresentsDropped++;
+        return;
+    }
     sLastT = t;
     GL_ENTER();
     render_frame(t);

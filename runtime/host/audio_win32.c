@@ -355,6 +355,25 @@ static DWORD WINAPI sound_thread(LPVOID arg) {
             steer();
             if (SUCCEEDED(IAudioRenderClient_GetBuffer(sRender, room, &buf))) {
                 fill((float*)buf, (int)room);
+                {
+                    /* Tests: WONDERPARK_AUDIO_OUT_DUMP=<file> keeps what the device
+                     * gets, 48 kHz stereo 16-bit raw (this thread, never the game's). */
+                    static FILE* dump;
+                    static int opened;
+                    if (!opened) {
+                        const char* p = getenv("WONDERPARK_AUDIO_OUT_DUMP");
+                        opened = 1;
+                        if (p && *p) dump = fopen(p, "wb");
+                    }
+                    if (dump) {
+                        UINT32 k;
+                        for (k = 0; k < room * 2; k++) {
+                            float v = ((float*)buf)[k] * 32767.0f;
+                            int16_t s = (int16_t)(v > 32767 ? 32767 : v < -32768 ? -32768 : v);
+                            fwrite(&s, 2, 1, dump);
+                        }
+                    }
+                }
                 IAudioRenderClient_ReleaseBuffer(sRender, room, 0);
                 InterlockedExchangeAdd(&sFramesOut, (LONG)room);
                 padding += room;

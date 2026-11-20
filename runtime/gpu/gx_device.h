@@ -76,6 +76,9 @@ typedef struct GXDevice {
      * 0 all, 1 red alone (left eye), 2 green and blue (right eye). NULL:
      * none. */
     void (*eye_mask)(int eye);
+    /* Whether the GPU is still on the last frame shown (frames between are
+     * then left out). NULL: never. */
+    int (*gpu_busy)(void);
 } GXDevice;
 
 extern const GXDevice g_gl_device, g_vk_device;

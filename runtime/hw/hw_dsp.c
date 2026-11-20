@@ -154,6 +154,28 @@ uint64_t hw_dsp_next_event(void) { return s_ai_period ? s_ai_next : 0; }
 void hw_dsp_tick(uint64_t now) {
     if (s_ai_period && (int64_t)(now - s_ai_next) >= 0) {
         u32 addr = (u32)R(0x30) << 16 | R(0x32), bytes = (u32)(R(0x36) & 0x7FFF) * 32;
+        {
+            /* WONDERPARK_LOG=aidma: how late the audio DMAs fire (the game
+             * thread was busy), every 5 s: over 1 ms, over a whole 3 ms
+             * buffer, the latest. */
+            static int log = -1;
+            static u32 n, late1, late3;
+            static uint64_t worst;
+            uint64_t late = now - s_ai_next;
+            if (log < 0) log = wp_log_on("aidma");
+            if (log) {
+                n++;
+                if (late > TB_HZ / 1000) late1++;
+                if (late > s_ai_period) late3++;
+                if (late > worst) worst = late;
+                if (n == 1667) {
+                    fprintf(stderr, "[aidma] %u DMAs: %u over 1 ms late, %u over a buffer late, latest %.1f ms\n", n, late1,
+                            late3, (double)worst * 1000.0 / TB_HZ);
+                    n = late1 = late3 = 0;
+                    worst = 0;
+                }
+            }
+        }
         s_ai_next += s_ai_period;
         if ((int64_t)(now - s_ai_next) > (int64_t)(TB_HZ / 4)) s_ai_next = now + s_ai_period;
         if (g_dsp_ai_buffer) g_dsp_ai_buffer(addr, bytes);

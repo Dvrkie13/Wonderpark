@@ -3036,6 +3036,23 @@ static void draw_gallery3d(int winW, int winH) {
     gl_forget();
 }
 
+/* Whether the GPU is still working on the last frame shown (gx_frames.c
+ * leaves a frame between out rather than queue another behind it: a
+ * readback in the game's next frame would wait for all of them, and the
+ * game thread would miss its audio DMAs, which popped above 60 fps). */
+/* One frame may be in flight (none left out every frame between): busy
+ * while the frame before the last isn't finished. */
+static GLsync sFrameFence, sOlderFence;
+static int gl_gpu_busy(void) {
+    GLenum r;
+    if (!sOlderFence || !p_glClientWaitSync) return 0;
+    r = p_glClientWaitSync(sOlderFence, 0, 0);
+    if (r == 0x911B /* GL_TIMEOUT_EXPIRED */) return 1;
+    p_glDeleteSync(sOlderFence);
+    sOlderFence = NULL;
+    return 0;
+}
+
 static int finish_present(int w, int h, int may_drop) {
     int dropped;
     draw_fps(w, h);
@@ -3110,6 +3127,13 @@ static int finish_present(int w, int h, int may_drop) {
     }
     gpu_timer_end();
     dropped = window_present(w, h, may_drop);
+    /* A fence after each frame shown: gl_gpu_busy says whether the GPU has
+     * finished it yet. */
+    if (p_glFenceSync) {
+        if (sOlderFence) p_glDeleteSync(sOlderFence);
+        sOlderFence = sFrameFence;
+        sFrameFence = p_glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+    }
     gpu_timer_begin();
     spec_frame();
     {
@@ -3145,5 +3169,5 @@ const GXDevice g_gl_device = {
     "OpenGL",       gl_init,       gl_texture,     gl_texture_update, gl_texture_delete, gl_draw,
     gl_frame_data,  gl_draw_recorded, gl_clear,    gl_copy_target,    gl_copy_texture,   gl_copy,
     gl_present,     gl_apply_settings, gl_scale,   gl_msaa,          gl_arena_alloc,    gl_arena_write,
-    gl_arena_free,  NULL,          gl_copy_read,      gl_present_last,   gl_eye_mask,
+    gl_arena_free,  NULL,          gl_copy_read,      gl_present_last,   gl_eye_mask,       gl_gpu_busy,
 };
