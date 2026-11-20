@@ -2805,12 +2805,16 @@ static int gl_present(int x, int y, int cw, int ch, int may_drop) {
 static void draw_fps(int w, int h) {
     extern const uint32_t* perf_overlay_lock(int win_w, int win_h, int* bw, int* bh, int* x, int* y, unsigned* serial);
     extern void perf_overlay_unlock(void);
+    extern void perf_overlay_render_time(double ms);
     static GLuint tex;
     static unsigned lastSerial = ~0u;
+    static int texW, texH;
     int bw = 0, bh = 0, x0 = 0, ytop = 0, y0;
     unsigned serial = 0;
     const uint32_t* img;
+    LARGE_INTEGER t0, t1, fq;
     if (!g_x[X_SHOW_FPS] || h <= 0) return;
+    QueryPerformanceCounter(&t0);
     img = perf_overlay_lock(w, h, &bw, &bh, &x0, &ytop, &serial);
     if (!img) return;
     if (!tex) {
@@ -2826,9 +2830,13 @@ static void draw_fps(int w, int h) {
     p_glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, tex);
     if (serial != lastSerial) {
-        glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
-        glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, bw, bh, 0, GL_BGRA, GL_UNSIGNED_BYTE, img);
+        /* The same storage while the size stays (no reallocation). */
+        if (bw != texW || bh != texH) {
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, bw, bh, 0, GL_BGRA, GL_UNSIGNED_BYTE, img);
+            texW = bw, texH = bh;
+        } else {
+            glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, bw, bh, GL_BGRA, GL_UNSIGNED_BYTE, img);
+        }
         lastSerial = serial;
     }
     perf_overlay_unlock();
@@ -2838,7 +2846,7 @@ static void draw_fps(int w, int h) {
     glDisable(GL_CULL_FACE);
     glEnable(GL_BLEND);
     p_glBlendEquation(GL_FUNC_ADD);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA); /* the picture is premultiplied (perf_overlay.cpp) */
     glViewport(x0, y0, bw, bh);
     glDrawArrays(GL_TRIANGLES, 0, 3);
     glViewport(0, 0, w, h);
@@ -2846,6 +2854,9 @@ static void draw_fps(int w, int h) {
     p_glUseProgram(sProgram);
     p_glBindVertexArray(sVao);
     gl_forget();
+    QueryPerformanceCounter(&t1);
+    QueryPerformanceFrequency(&fq);
+    perf_overlay_render_time((double)(t1.QuadPart - t0.QuadPart) * 1000.0 / (double)fq.QuadPart);
 }
 
 /* The Gallery's 3D view (gallery3d.cpp): the friend's model, posed and

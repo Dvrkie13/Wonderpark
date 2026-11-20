@@ -282,7 +282,7 @@ void build_rows() {
         // The performance overlay (perf_overlay.cpp).
         c.rows.push_back(head(L"Performance overlay"));
         c.rows.push_back(xrow(CHOICE, X_SHOW_FPS, L"Show FPS",
-                              L"Compact: the frame rate, green at your frame rate, yellow a little under, red well under. Detailed: also the lows, frame times, and what the game and your PC are doing. The overlay key (F7) cycles it.",
+                              L"Compact: the frame rate (green at your frame rate, yellow a little under, red well under). Detailed: also lows, frame times and your PC's load. F7 cycles it.",
                               {L"Off", L"Compact", L"Detailed"}));
         c.rows.push_back(xrow(CHOICE, X_OVERLAY_CORNER, L"Corner", nullptr,
                               {L"Top left", L"Top right", L"Bottom left", L"Bottom right"}));
@@ -431,7 +431,7 @@ void build_rows() {
             Row ok;
             ok.kind = BIND;
             ok.xkey = X_OVERLAY_KEY;
-            ok.label = L"Performance overlay";
+            ok.label = L"FPS overlay";
             ok.reset = [] { settings_set_x(X_OVERLAY_KEY, settings_x_default(X_OVERLAY_KEY)); };
             c.rows.push_back(ok);
         }
@@ -4387,6 +4387,7 @@ extern "C" int settings_ui_message(void* hwnd, unsigned msg, uintptr_t wp, intpt
 // seconds from the first frame shown; keys f1 esc up down left right enter q e
 // backspace, or one letter or digit; "shot=<file.bmp>" saves the frame shown.
 // Handled as the window's own key presses (works headless too).
+extern "C" int menu_window_message(void* hwnd, unsigned msg, uintptr_t wp, intptr_t lp);  // overlay_win32.c
 static void run_key_script() {
     static std::vector<std::pair<double, std::string>> items;
     static size_t pos;
@@ -4420,7 +4421,7 @@ static void run_key_script() {
             continue;
         }
         static const std::map<std::string, int> kKeys = {
-            {"f1", VK_F1}, {"f2", VK_F2}, {"f3", VK_F3}, {"f4", VK_F4}, {"f5", VK_F5},
+            {"f1", VK_F1}, {"f2", VK_F2}, {"f3", VK_F3}, {"f4", VK_F4}, {"f5", VK_F5}, {"f7", VK_F7},
             {"esc", VK_ESCAPE}, {"up", VK_UP}, {"down", VK_DOWN}, {"left", VK_LEFT},
             {"right", VK_RIGHT}, {"enter", VK_RETURN}, {"q", 'Q'}, {"e", 'E'}, {"backspace", VK_BACK}};
         auto it = kKeys.find(k);
@@ -4428,7 +4429,7 @@ static void run_key_script() {
         if (!vk) continue;
         bool was = g_wp_headless != 0;
         g_wp_headless = 0;  // the handler ignores a headless window's keys
-        settings_ui_message(nullptr, WM_KEYDOWN, (uintptr_t)vk, 1);
+        menu_window_message(nullptr, WM_KEYDOWN, (uintptr_t)vk, 1);  // as the window gets it (F7 too)
         g_wp_headless = was;
     }
 }

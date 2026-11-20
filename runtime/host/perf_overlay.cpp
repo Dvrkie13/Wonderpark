@@ -16,11 +16,12 @@
 //
 // Status colour: green at the target (95% of it or more), yellow a little
 // under (80%), red below. The target is the Frame rate setting, or the
-// screen's refresh rate if that's lower (no more is ever shown).
+// screen's refresh rate if that's lower (no more is ever shown); 30 while a movie
+// plays (movies always play at 30).
 //
 // Costs the game almost nothing: the renderer only notes each frame's time
 // (perf_overlay_frame) and lays the finished picture over the window
-// (gl_backend.c draw_fps); the picture is drawn on a thread of its own with
+// (gl_backend.c draw_fps, premultiplied, its texture reused); the picture is drawn on a thread of its own, below the game's priority, with
 // software Direct2D, 8 times a second (Compact 4), at the UI's scale, so it
 // stays crisp at 1440p and 4K. The PC's numbers come from Windows itself
 // (GetSystemTimes; the "GPU Engine" and "GPU Process Memory" performance
@@ -47,6 +48,7 @@
 #include <atomic>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 #include <cwchar>
 #include <mutex>
 #include <string>
@@ -57,6 +59,7 @@ extern "C" {
 #include "host_settings.h"
 #include "wp_stats.h"
 double win_display_hz(void);
+const char* wp_movie_playing(void); /* dvd.c */
 int settings_ui_is_open(void);
 extern int g_wp_headless;
 }
@@ -103,6 +106,8 @@ struct Picture {
 };
 std::mutex gPic;
 Picture gFront, gBack;
+std::atomic<double> gRenderMs{0};  // the render thread's time on it (gl_backend.c draw_fps), for the log
+std::atomic<int> gRenderN{0};
 unsigned gSerial;
 std::atomic<bool> gStarted{false};
 
@@ -129,7 +134,8 @@ public:
                     vramTotal = std::max(vramTotal, (double)d.DedicatedVideoMemory);
             }
         }
-        if (PdhOpenQueryW(nullptr, 0, &query) == ERROR_SUCCESS) {
+        const char* nopdh = getenv("WONDERPARK_OVERLAY_NOPDH");  // tests: without the performance counters
+        if (!(nopdh && *nopdh == '1') && PdhOpenQueryW(nullptr, 0, &query) == ERROR_SUCCESS) {
             wchar_t path[128];
             if (PdhAddEnglishCounterW(query, L"\\GPU Engine(*engtype_3D)\\Utilization Percentage", 0, &gpuCounter) != ERROR_SUCCESS)
                 gpuCounter = nullptr;
@@ -640,22 +646,28 @@ private:
         BYTE* px = nullptr;
         lock->GetDataPointer(&size, &px);
         lock->GetStride(&stride);
+        // Kept premultiplied (the renderer blends it that way); the Opacity
+        // setting scales all four channels.
         unsigned op = (unsigned)std::lround(opacity * 256);
         for (int y = 0; y < p.h; y++) {
             const uint32_t* src = (const uint32_t*)(px + (size_t)y * stride);
+            uint32_t* dst = &p.px[(size_t)y * p.w];
+            if (op >= 256) {
+                std::memcpy(dst, src, (size_t)p.w * 4);
+                continue;
+            }
             for (int x = 0; x < p.w; x++) {
-                uint32_t c = src[x], a = c >> 24;
-                if (a && a != 255)
-                    c = a << 24 | std::min(255u, ((c >> 16 & 255) * 255 + a / 2) / a) << 16 |
-                        std::min(255u, ((c >> 8 & 255) * 255 + a / 2) / a) << 8 | std::min(255u, ((c & 255) * 255 + a / 2) / a);
-                if (op < 256) c = (c & 0xffffff) | ((c >> 24) * op >> 8) << 24;
-                p.px[(size_t)y * p.w + x] = c;
+                uint32_t c = src[x];
+                dst[x] = ((c >> 24) * op >> 8) << 24 | ((c >> 16 & 255) * op >> 8) << 16 | ((c >> 8 & 255) * op >> 8) << 8 |
+                         ((c & 255) * op >> 8);
             }
         }
     }
 };
 
 double target_fps() {
+    // Movies always play at 30 (hle_frame.c): that's on target too.
+    if (wp_movie_playing()) return 30;
     double hz = win_display_hz(), t = g_settings.frame_rate > 0 ? g_settings.frame_rate : 30;
     if (hz >= 30 && hz + 0.5 < t) t = std::floor(hz + 0.5);
     return t;
@@ -673,6 +685,12 @@ void worker() {
     PcStats pc;
     double nextPc = 0;
     std::vector<Frame> frames;
+    // Below the game's threads: it never takes a core from them.
+    SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_BELOW_NORMAL);
+    const char* lg = getenv("WONDERPARK_LOG");
+    bool log = lg && std::strstr(lg, "overlay");
+    double logAt = now_s() + 5, paintMs = 0, pcMs = 0;
+    int paints = 0, pcs = 0;
     for (;;) {
         int mode = g_x[X_SHOW_FPS], wh = gWinH.load();
         if (!mode || wh <= 0 || settings_ui_is_open()) {
@@ -683,7 +701,9 @@ void worker() {
         if (mode == 2 && t >= nextPc) {
             reader.read(pc);
             nextPc = t + 0.5;
+            pcMs += (now_s() - t) * 1000, pcs++;
         }
+        double tp = now_s();
         {
             std::lock_guard<std::mutex> lk(gData);
             frames.clear();
@@ -696,6 +716,15 @@ void worker() {
             std::lock_guard<std::mutex> lk(gPic);
             std::swap(gFront, gBack);
             gSerial++;
+        }
+        paintMs += (now_s() - tp) * 1000, paints++;
+        if (log && now_s() >= logAt) {
+            // WONDERPARK_LOG=overlay: what it costs, every 5 s.
+            double r = gRenderMs.exchange(0);
+            int rn = gRenderN.exchange(0);
+            std::fprintf(stderr, "[overlay] 5 s: %d pictures, %.2f ms each; PC numbers %.2f ms each; render thread %.3f ms a frame\n",
+                         paints, paints ? paintMs / paints : 0, pcs ? pcMs / pcs : 0, rn ? r / rn : 0);
+            paintMs = pcMs = 0, paints = pcs = 0, logAt += 5;
         }
         double wait = (mode == 2 ? 0.125 : 0.25) - (now_s() - t);
         if (wait > 0) Sleep((DWORD)(wait * 1000));
@@ -740,6 +769,12 @@ extern "C" const uint32_t* perf_overlay_lock(int win_w, int win_h, int* bw, int*
 }
 
 extern "C" void perf_overlay_unlock(void) { gPic.unlock(); }
+
+extern "C" void perf_overlay_render_time(double ms) {
+    double v = gRenderMs.load();
+    while (!gRenderMs.compare_exchange_weak(v, v + ms)) {}
+    gRenderN++;
+}
 
 // F7 (the overlay's key) during play: Off, Compact, Detailed, Off.
 extern "C" void perf_overlay_cycle(void) { settings_set_x(X_SHOW_FPS, (g_x[X_SHOW_FPS] + 1) % 3); }
