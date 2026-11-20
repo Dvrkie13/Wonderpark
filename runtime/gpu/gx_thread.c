@@ -45,11 +45,11 @@ static uint8_t* sRing;
 /* Bytes written (published) and read so far, each on a cache line of its
  * own: the game thread publishes what it wrote in batches, as one store
  * per write had the two cores trade the line millions of times a second. */
-static __declspec(align(64)) volatile size_t sW;
-static __declspec(align(64)) volatile size_t sR;
-static __declspec(align(64)) volatile LONG sSleeping;
+static _Alignas(64) volatile size_t sW;
+static _Alignas(64) volatile size_t sR;
+static _Alignas(64) volatile LONG sSleeping;
 /* The game thread's own: written so far, and sR as last seen. */
-static __declspec(align(64)) size_t sWLocal;
+static _Alignas(64) size_t sWLocal;
 static size_t sReadSeen;
 static volatile LONG sStop, sWaitingForSpace;
 static HANDLE sData, sSpace, sThread;

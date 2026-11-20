@@ -96,5 +96,14 @@ if(MSVC)
     target_compile_definitions(wp_dolrecomp_cpu PRIVATE _CRT_SECURE_NO_WARNINGS)
     target_compile_definitions(Wonderpark PRIVATE _CRT_SECURE_NO_WARNINGS)
 else()
+    # MinGW (llvm-mingw's clang): what players build with, needing no Visual
+    # Studio. Same optimisation level as clang-cl's /O2.
     target_compile_options(wp_generated PRIVATE -w)
+    if(WIN32)
+        target_compile_definitions(Wonderpark PRIVATE _WIN32_WINNT=0x0A00 WINVER=0x0A00 _CRT_SECURE_NO_WARNINGS)
+        # The #pragma comment(lib) ones, named here too for MinGW's linker.
+        target_link_libraries(Wonderpark PRIVATE dbghelp d3d11 dxgi dxguid setupapi pdh psapi)
+        # One self-contained exe: no libc++ or winpthread DLLs beside it.
+        target_link_options(Wonderpark PRIVATE -static)
+    endif()
 endif()

@@ -292,8 +292,8 @@ static int file_read(HANDLE h, uint64_t pos, uint8_t* out, uint32_t len) {
     {
         /* Unbuffered: whole aligned sectors into an aligned buffer (one a
          * thread: the IOS thread's and the preloader's). */
-        static __declspec(thread) uint8_t* buf;
-        static __declspec(thread) uint32_t cap;
+        static _Thread_local uint8_t* buf;
+        static _Thread_local uint32_t cap;
         uint64_t a = pos & ~4095ull, b = (pos + len + 4095) & ~4095ull;
         LARGE_INTEGER p;
         if (b - a > cap) {
