@@ -150,6 +150,29 @@ static void setup_low_memory(void) {
     ST32(0x80003188, 0x00090204); /* IOS version the apploader saw */
 }
 
+/* This program's version and when its .exe was made (its file's time, read
+ * once at start, before the game runs): the log's first lines and F1 >
+ * Display's footer show it, so it's clear which build is running. */
+static char sBuildInfo[96];
+static char sExePath[1024];
+const char* wp_build_info(void) { return sBuildInfo; }
+
+static void read_build_info(void) {
+    snprintf(sBuildInfo, sizeof(sBuildInfo), "Wonderpark %s", WONDERPARK_VERSION);
+#ifdef _WIN32
+    {
+        WIN32_FILE_ATTRIBUTE_DATA a;
+        FILETIME local;
+        SYSTEMTIME t;
+        DWORD n = GetModuleFileNameA(NULL, sExePath, sizeof(sExePath));
+        if (n && n < sizeof(sExePath) && GetFileAttributesExA(sExePath, GetFileExInfoStandard, &a) &&
+            FileTimeToLocalFileTime(&a.ftLastWriteTime, &local) && FileTimeToSystemTime(&local, &t))
+            snprintf(sBuildInfo, sizeof(sBuildInfo), "Wonderpark %s, built %04d-%02d-%02d %02d:%02d", WONDERPARK_VERSION,
+                     t.wYear, t.wMonth, t.wDay, t.wHour, t.wMinute);
+    }
+#endif
+}
+
 int main(int argc, char** argv) {
     static CPUState cpu;
     const char* dol = DEFAULT_DOL;
@@ -158,7 +181,9 @@ int main(int argc, char** argv) {
     uint32_t entry = 0;
     const char* env;
     int i;
+    read_build_info();
     fprintf(stderr, "wonderpark %s\n", WONDERPARK_VERSION);
+    fprintf(stderr, "wonderpark: %s (%s)\n", sBuildInfo, sExePath[0] ? sExePath : argv[0]);
 
     wp_logpipe_start(); /* log lines never block the game (logpipe.c) */
 #ifdef WP_PGO_GENERATE
@@ -208,6 +233,8 @@ int main(int argc, char** argv) {
         if (g_wp_exit_after <= 0) g_wp_exit_after = 8;
     }
     if ((env = getenv("WONDERPARK_MAX_SLICES")) != NULL) max_slices = strtoull(env, NULL, 10);
+    /* As --exit-after, for a game started by the launcher's Play (tests). */
+    if (g_wp_exit_after <= 0 && (env = getenv("WONDERPARK_EXIT_AFTER")) != NULL) g_wp_exit_after = atof(env);
     if (g_wp_headless) fprintf(stderr, "wonderpark: headless\n");
 
 #ifdef _WIN32
@@ -265,6 +292,10 @@ int main(int argc, char** argv) {
         snprintf(nand, sizeof(nand), "%s/nandtmp", wp_cache_dir());
         hle_nand_set_tmp_root(nand);
         fprintf(stderr, "wonderpark: saves and settings in %s\n", wp_data_dir());
+        {
+            extern const char* settings_file_path(void);
+            fprintf(stderr, "wonderpark: settings file %s\n", settings_file_path());
+        }
     }
 
     cpu.pc = entry;

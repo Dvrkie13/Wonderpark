@@ -67,7 +67,17 @@ executable can ship in a release.
   of it). Each build's output goes to `build/logs/build-<date>-<time>.log`
   ("Show log" after an error opens it).
 - At start it asks `pipeline.py --status`: a current build shows Play, an
-  out-of-date one (the sources changed) Rebuild, none Place ISO.
+  out-of-date one (the sources changed) Rebuild, none Place ISO. Play
+  starts the optimised build (`build/game-opt`) only when it was made from
+  the same sources and is no older than the quick one (`build/game`), so a
+  newer quick build is never passed over.
+- Play writes the game's log to `build/logs/game-<date>-<time>.log` (the
+  newest 10 kept). Its first lines name the program that ran, when it was
+  built, and the settings file it used; F1 > Display shows the same two
+  things small at the bottom. There is one settings file, `settings.ini` in
+  the data folder (`%APPDATA%\Wonderpark`); it's written by a thread of its
+  own the moment a setting changes (a temporary file, then renamed over
+  it), so F1 never waits for the drive.
 - The disc check on "Verifying…" (game ID S2LE01, revision 0) is done by
   the launcher itself from the image's header; the full image hash is
   part of the build's first stage.
@@ -264,7 +274,7 @@ also `WONDERPARK_<KEY>`, key in capitals, for example `WONDERPARK_WINDOW_MODE=1`
 | `[input] button_icons` (`WONDERPARK_BUTTON_ICONS`) | 0 auto, 1 Xbox, 2 PlayStation, 3 Nintendo, 4 keyboard only | works: the button icons in F1's Controls (pad columns), the game's prompts and the launcher. Auto: the pad's own type from SDL3 (`pad_sdl_type`), or without one, from the game controllers Windows lists (HID) by maker (Sony: PlayStation; Nintendo, and Hori/PowerA/PDP Switch pads: Nintendo; else Xbox); a PlayStation or Switch pad behind a mapper (Steam Input, DS4Windows) still lists itself. Looked at again when a pad connects or goes away. Face buttons go by position (the bottom one is A: a cross, or a Nintendo pad's B). The game's prompts show the device used last (any pad button or the stick past half; a bound key or mouse button), key caps for the keyboard; 4 never shows a pad's (`runtime/host/pad_icons.cpp`, `pad_icons_core.cpp`, `runtime/hle/hle_prompts.c`). The log says what was found ("pad icons: ...") |
 | `[input] keyboard_player` | 0 shared, 1 keyboard alone | works: local multiplayer. Wii Remotes 2-4 connect while players 2-4 have a controller (SDL3, in the order they connected) and go away with it, told to the game through its connect callback (`hle_wpad.c` report()); each gets its own buttons (player 1's bindings), rumble, pointer (its right stick, at Aim speed) and Flight of Fancy tilt. 0: the keyboard and controller 1 are player 1, controller 2 player 2; 1: the keyboard alone is player 1, controller 1 player 2. In the game: Multiplayer Attractions > Add Wii Remote Controllers (its Add Wii Remotes screen lights each connected remote) > Done (+), then Two to Four Players opens. Checked to Pick an Attraction with a scripted player 2; a whole two-player attraction not yet |
 | `[audio] volume_master` | 0-100 % | works |
-| `[audio] audio_latency` | 0 low, 1 normal, 2 safe | works: 48, 84 (as before) or 132 ms queued before playback starts; lower at once, higher from the next refill (`runtime/host/audio_win32.c`) |
+| `[audio] audio_latency` | 0 low, 1 normal, 2 safe | works: about 40, 75 or 140 ms from the game to the speakers (the sound thread's ring kept at 20 / 45 / 80 ms, the device's buffer 20 / 30 / 60 ms ahead), at once (`runtime/host/audio_win32.c`). Sound plays on a thread of its own through WASAPI, by the device's clock; the game only copies its 32 kHz mix into a ring, and the ring's level steers a windowed-sinc resampler (±0.5%, 3% after a loading burst) so nothing is dropped or repeated. 45 s at 60 fps in Cove Town, each setting: 0 underruns and 0 device gaps after start-up, 48,000 Hz out, 32,000 in |
 | `[audio] volume_music`, `volume_sfx`, `volume_voices` | 0-100 % | work, at once, through the game's own CRI categories (`runtime/hle/hle_volume.c`): music is BGM and JGL (jingles), voices PK_VOICE and PC_VOICE, effects the other five. The game's own category changes are kept and multiplied. Movies (the title's too) play their sound outside CRI and aren't affected |
 | `[audio] voice_language` | 0 English, 1 Japanese | works, from the next start: with 1, the Japanese disc's voice banks in `game/voices/ja/Sound/` (copied once by `tools/extract_voices.py <Japanese disc>`, or by dropping that disc on the launcher) take the place of the US files the way a mod's do (they have other sizes, so the FST the game reads at boot is changed: `runtime/ios/dvd.c` voice_file; settings are now read before the disc opens, `main.c`). Copied: the 28 banks that differ from the US ones but have the same cue names, indexes and IDs (the starters' voices, the area and story banks), each with its `_streamfiles.awb`; the other Pokémon's shared bank `S_POKE_VOICE` stays English (its cues differ). The F1 row is greyed ("Needs your Japanese disc") until `voices/ja/voices.txt` exists. `WONDERPARK_LOG=mods` logs each Japanese file read. Checked: in Cove Town the game reads the Japanese `S_Fd0102`, `S_DEMO_COMMON` and the starters' voice banks |
 | `[audio] mute_background` | 0, 1 | works: silent while another window is in front |
@@ -390,6 +400,7 @@ animation reaches that frame (`runtime/host/gallery3d.cpp`).
 | `WONDERPARK_MOVE=<s>:<x>,<y>,<z>:<x>,<y>,<z>[,<facing>];<s>::<x>,<y>,<z>[,<facing>];...` | tests: moves the object whose position record is nearest the first point (within 20; the player at its spawn point) to the second, and later entries move it again; facing in degrees, atan2(dx, dz). Works for the player in Cove Town (spawn after loading the 100% save, slot 1: -226.6, 0, 148.7); at Seasong Beach which record is the player isn't known yet (`runtime/hle/hle_poke.c`) |
 | `WONDERPARK_LOG` | debug log categories, comma-separated (below) |
 | `WONDERPARK_MAX_SLICES` | stop after N dispatcher slices, printing where |
+| `WONDERPARK_EXIT_AFTER=N` | tests: as `--exit-after N`, for a game started by the launcher's Play |
 | `WONDERPARK_PEEK=addr,len` | with `WONDERPARK_MAX_SLICES`: dump guest memory at the stop |
 | `WONDERPARK_NO_IDLE_SLEEP` | don't sleep in the game's idle loop |
 | `WONDERPARK_RENDER_THREAD=1` | decode GX and draw on a render thread beside the game (`runtime/gpu/gx_thread.c`; off by default until measured) |
@@ -405,7 +416,7 @@ animation reaches that frame (`runtime/host/gallery3d.cpp`).
 | `WONDERPARK_WATCH=lo-hi` | physical range for `memcpywatch`, or the load and store watch: a build made with `python tools/build_game.py --build-dir game-watch --no-lto --no-pgo --watch` reports each guest block that loads from or stores into the range, once, with the value and the caller |
 | `WONDERPARK_AUDIO_DUMP=file.wav` | also write the sound output to a file |
 | `WONDERPARK_AX_NOAUX`, `WONDERPARK_AX_SNAP`, `WONDERPARK_AX_WB` | AX mixer debugging |
-| `RECOMP_FPS=1` | print fps, the overlay's numbers (`stats:`), disc reads and how many came from RAM (`disc:`), the GPU's own time from timer queries and the share of draws by specialised shaders (`gputime:`) and GL timings every second |
+| `RECOMP_FPS=1` | print fps (`fps:` frames shown, the slowest, how busy the game thread was, the game's own frames, the 60 Hz retraces its logic steps by, and the cap: the Frame rate setting, or the screen's refresh rate if lower), the overlay's numbers (`stats:`), disc reads and how many came from RAM (`disc:`), the GPU's own time from timer queries and the share of draws by specialised shaders (`gputime:`) and GL timings every second |
 | `RECOMP_AUDIO=0` | no sound |
 | `RECOMP_GX_HIDDEN=1` | hidden window (`--headless` does this too) |
 | `RECOMP_GX_DUMP=dir`, `RECOMP_GX_DUMP_EVERY=N`, `RECOMP_GX_DUMP_FROM=N` | save presented frames as BMPs |
@@ -427,12 +438,12 @@ animation reaches that frame (`runtime/host/gallery3d.cpp`).
 
 ### `WONDERPARK_LOG` categories
 
-`adxcheck audioq audiostats axramp balance bloom camera dance framerate wpadflags axvoice axvoices dec dsp efbcopy exc gxhw gxirq hook gxpe hostprof hwmisc idle ios ipc irq kpad memcpywatch mmio mmiostat modifiers mods movie mqwatch nandio pi pointer prof prompts scene stalls steps threads voicepitch volume waits wpad wpadbtn`
+`adxcheck audiostats axramp balance bloom camera dance framerate wpadflags axvoice axvoices dec dsp efbcopy exc gxhw gxirq hook gxpe hostprof hwmisc idle ios ipc irq kpad memcpywatch mmio mmiostat modifiers mods movie mqwatch nandio pi pointer prof prompts scene stalls steps threads voicepitch volume waits wpad wpadbtn`
 
 The most useful: `waits` (where threads block), `steps` (the game's logic
 steps per tick), `idle`, `efbcopy`, `gxirq`, `mmiostat` (slow memory
 accesses), `axvoices`, `pointer`, `hostprof` (host profiler; see
-`tools/analysis/hostprof.py`), `audioq` (the sound output queue's depth at each block, and dropped blocks), `stalls` (the game thread during any frame over 250 ms: its most common
+`tools/analysis/hostprof.py`), `audiostats` (every 5 s: underruns, device gaps, input dropped, the ring's level, the resampler's rate, the sample rates in and out), `framerate` (Frame rate 60 falling back to 30), `stalls` (the game thread during any frame over 250 ms: its most common
 host stacks, the host functions and source lines the time went to, and
 the guest link registers, which name the game functions since the
 generated chunks have no line info), `prof` (where slices end).

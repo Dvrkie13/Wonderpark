@@ -107,8 +107,13 @@ def read_stamp(path: Path) -> dict:
 
 
 def opt_current(sources: str) -> bool:
-    """The optimised build is there and made from the same sources."""
-    return bool(find_exe(OPT)) and read_stamp(OPT_STAMP).get("sources") == sources
+    """The optimised build is there, made from the same sources, and no older
+    than the quick build (a quick build made since, by hand or by Rebuild, is
+    the one to play)."""
+    opt, quick = find_exe(OPT), find_exe()
+    if not opt or read_stamp(OPT_STAMP).get("sources") != sources:
+        return False
+    return not quick or opt.stat().st_mtime >= quick.stat().st_mtime
 
 
 def status() -> int:

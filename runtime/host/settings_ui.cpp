@@ -280,6 +280,20 @@ void build_rows() {
         c.rows.push_back(xrow(CHOICE, X_SHOW_FPS, L"Show FPS", L"The frames shown each second, in a corner: green at your frame rate, yellow a little under, red well under.",
                               {L"Off", L"Top left", L"Top right"}));
         c.rows.push_back(xslider(X_BRIGHTNESS, L"Brightness", nullptr, 50, 150, 5, L"%", false));
+        {
+            // Small, at the bottom: which build this is and the one settings
+            // file it reads and writes (paths are in the system's code page).
+            auto acp = [](const char* s) {
+                int n = MultiByteToWideChar(CP_ACP, 0, s, -1, nullptr, 0);
+                std::wstring w(n > 1 ? n - 1 : 0, L'\0');
+                if (n > 1) MultiByteToWideChar(CP_ACP, 0, s, -1, &w[0], n);
+                return w;
+            };
+            std::wstring info = acp(wp_build_info()) + L"\nSettings: " + acp(settings_file_path());
+            for (auto& ch : info)
+                if (ch == L'/') ch = L'\\';
+            c.rows.push_back(note(info.c_str()));
+        }
         g_cats.push_back(c);
     }
     // Graphics

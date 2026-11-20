@@ -104,6 +104,7 @@ unsigned gxb_game_frames(void) { return sGameFrames; }
 
 /* Frames per second and the longest frame of the last second, in the
  * window title and, with RECOMP_FPS=1, on stderr. */
+static double output_rate(void); /* below */
 static void report(void) {
     static LARGE_INTEGER freq, since, last;
     static unsigned frames;
@@ -134,9 +135,16 @@ static void report(void) {
         snprintf(title, sizeof(title), "Wonderpark - %.2f fps, slowest frame %.1f ms, busy %.0f%%", fps,
                  worst, busy);
         win_set_title(title);
-        if (e && *e == '1')
-            fprintf(stderr, "fps: %.2f, slowest frame %.1f ms, busy %.0f%%, game %u, left out %u\n", fps, worst, busy,
-                    sGameFrames - lastGameFrames, sPresentsDropped - lastDropped);
+        if (e && *e == '1') {
+            /* retraces: the emulated 60 Hz video retraces this second, the
+             * clock the game steps its logic by (one step a retrace). */
+            extern unsigned g_vi_retraces;
+            static unsigned lastRetraces;
+            fprintf(stderr, "fps: %.2f, slowest frame %.1f ms, busy %.0f%%, game %u, left out %u, retraces %u, cap %.0f\n",
+                    fps, worst, busy, sGameFrames - lastGameFrames, sPresentsDropped - lastDropped,
+                    g_vi_retraces - lastRetraces, output_rate());
+            lastRetraces = g_vi_retraces;
+        }
         {
             /* The debug overlay's numbers (overlay_win32.c). */
             extern uint64_t g_wait_ticks;

@@ -115,7 +115,15 @@ int settings_x_overridden(int which);
 void settings_apply_window(void); /* window_win32.c */
 
 void settings_load(void);
+/* Saves both files: the text is made here, a thread of its own writes it
+ * (never waits for the drive). settings_flush() waits for it (at exit). */
 void settings_save(void);
+void settings_flush(void);
+/* Where settings.ini is (the data folder, or WONDERPARK_SETTINGS). */
+const char* settings_file_path(void);
+/* "Wonderpark 0.1.1-beta, built 2026-11-19 14:02": this program's version
+ * and when its .exe was made (read once, at start). */
+const char* wp_build_info(void);
 void settings_default_controls(void);
 
 /* The name of the first key (or, with controller, controller button)

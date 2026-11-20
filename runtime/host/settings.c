@@ -322,13 +322,99 @@ static uint32_t sSaves;
 
 uint32_t settings_generation(void) { return sSaves; }
 
-/* Writes text to path, replacing each overridden option's value with the
- * file's own (or leaving its line out if the file had none). */
-static void write_file(const char* path, const char* text) {
+/* Saving never waits for the drive (it may be a spinning disk, and F1 runs
+ * on the render thread): settings_save() only makes the files' text, and a
+ * thread of its own writes it, the newest text of each file only, to a
+ * temporary file that then replaces the real one (never half written).
+ * settings_flush() (at exit) waits up to 2 s for a write still pending. */
+#ifdef _WIN32
+static CRITICAL_SECTION sWriteLock;
+static HANDLE sWriteWake, sWriteIdle, sWriter;
+static char* sPending[2];          /* settings.ini's, bindings.ini's text to write; NULL none */
+static const char* sPendingPath[2];
+static int sWriting;
+
+static void write_now(const char* path, const char* text) {
+    char tmp[1100];
+    FILE* f;
+    snprintf(tmp, sizeof(tmp), "%s.tmp", path);
+    if (!(f = fopen(tmp, "wb"))) {
+        fprintf(stderr, "settings: couldn't write %s\n", tmp);
+        return;
+    }
+    fputs(text, f);
+    if (fclose(f) != 0 || !MoveFileExA(tmp, path, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+        fprintf(stderr, "settings: couldn't replace %s\n", path);
+        DeleteFileA(tmp);
+    }
+}
+
+static DWORD WINAPI writer(LPVOID arg) {
+    (void)arg;
+    for (;;) {
+        char* text[2];
+        const char* path[2];
+        int i;
+        WaitForSingleObject(sWriteWake, INFINITE);
+        EnterCriticalSection(&sWriteLock);
+        for (i = 0; i < 2; i++) text[i] = sPending[i], path[i] = sPendingPath[i], sPending[i] = NULL;
+        sWriting = text[0] || text[1];
+        LeaveCriticalSection(&sWriteLock);
+        for (i = 0; i < 2; i++)
+            if (text[i]) write_now(path[i], text[i]), free(text[i]);
+        EnterCriticalSection(&sWriteLock);
+        sWriting = 0;
+        if (!sPending[0] && !sPending[1]) SetEvent(sWriteIdle);
+        LeaveCriticalSection(&sWriteLock);
+    }
+}
+
+void settings_flush(void) {
+    if (sWriter) WaitForSingleObject(sWriteIdle, 2000);
+}
+
+static void queue_write(int which, const char* path, char* text) {
+    if (!sWriter) {
+        InitializeCriticalSection(&sWriteLock);
+        sWriteWake = CreateEventA(NULL, FALSE, FALSE, NULL);
+        sWriteIdle = CreateEventA(NULL, TRUE, TRUE, NULL);
+        sWriter = CreateThread(NULL, 0, writer, NULL, 0, NULL);
+        if (!sWriter) {  /* no thread: written here instead */
+            write_now(path, text);
+            free(text);
+            return;
+        }
+        SetThreadPriority(sWriter, THREAD_PRIORITY_BELOW_NORMAL);
+        atexit(settings_flush);
+    }
+    EnterCriticalSection(&sWriteLock);
+    free(sPending[which]); /* an older text not written yet: the newest wins */
+    sPending[which] = text;
+    sPendingPath[which] = path;
+    ResetEvent(sWriteIdle);
+    LeaveCriticalSection(&sWriteLock);
+    SetEvent(sWriteWake);
+}
+#else
+void settings_flush(void) {}
+static void queue_write(int which, const char* path, char* text) {
     FILE* f = fopen(path, "w");
+    (void)which;
+    if (f) fputs(text, f), fclose(f);
+    free(text);
+}
+#endif
+
+/* Saves text to path (queue_write), replacing each overridden option's value
+ * with the file's own (or leaving its line out if the file had none). */
+static void write_file(const char* path, const char* text) {
+    size_t cap = strlen(text) + 4096, used = 0;
+    char* out = (char*)malloc(cap);
     char section[32] = "";
     const char* line = text;
-    if (!f) return;
+    if (!out) return;
+    out[0] = 0;
+#define OUT(...) (used += (size_t)snprintf(out + used, used < cap ? cap - used : 0, __VA_ARGS__))
     while (*line) {
         const char* end = strchr(line, '\n');
         size_t len = end ? (size_t)(end - line + 1) : strlen(line);
@@ -338,17 +424,25 @@ static void write_file(const char* path, const char* text) {
         int x = -1;
         if (buf[0] == '[') sscanf(buf, "[%31[^]]", section);
         else if (sscanf(buf, "%31[a-z_0-9] =", key) == 1) i = option_index(section, key), x = x_index(section, key);
+        if (used + sizeof(buf) + 128 > cap) {
+            char* grown = (char*)realloc(out, cap * 2);
+            if (!grown) break;
+            out = grown, cap *= 2;
+        }
         if (i >= 0 && sOverridden[i]) {
-            if (sFileValue[i][0]) fprintf(f, "%s = %s\n", key, sFileValue[i]);
+            if (sFileValue[i][0]) OUT("%s = %s\n", key, sFileValue[i]);
         } else if (x >= 0 && sXOverridden[x]) {
-            if (sXFileValue[x][0]) fprintf(f, "%s = %s\n", key, sXFileValue[x]);
+            if (sXFileValue[x][0]) OUT("%s = %s\n", key, sXFileValue[x]);
         } else {
-            fputs(buf, f);
+            OUT("%s", buf);
         }
         line += len;
     }
-    fclose(f);
+#undef OUT
+    queue_write(path == sBindPath ? 1 : 0, path, out);
 }
+
+const char* settings_file_path(void) { return settings_path(); }
 
 /* A growing text buffer for the files' contents. */
 typedef struct { char* p; size_t len, cap; } Text;

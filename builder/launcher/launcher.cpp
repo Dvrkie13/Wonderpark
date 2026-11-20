@@ -3065,7 +3065,45 @@ static void launch_game(const std::wstring& exe) {
     std::wstring cmd = L"\"" + exe + L"\"";
     std::vector<wchar_t> buf(cmd.begin(), cmd.end());
     buf.push_back(0);
-    if (CreateProcessW(exe.c_str(), buf.data(), nullptr, nullptr, FALSE, 0, nullptr, g_root.c_str(), &si, &pi)) {
+    // The game's log (what it prints) goes to build\logs\game-<time>.log, the
+    // newest 10 kept: the first lines say which build ran and which settings
+    // file it used. (The game writes it from a thread of its own, logpipe.c.)
+    HANDLE log = INVALID_HANDLE_VALUE;
+    {
+        std::wstring logdir = g_root + L"\\build\\logs";
+        SHCreateDirectoryExW(nullptr, logdir.c_str(), nullptr);
+        std::vector<std::wstring> old;
+        WIN32_FIND_DATAW fd;
+        HANDLE f = FindFirstFileW((logdir + L"\\game-*.log").c_str(), &fd);
+        if (f != INVALID_HANDLE_VALUE) {
+            do old.push_back(fd.cFileName);
+            while (FindNextFileW(f, &fd));
+            FindClose(f);
+        }
+        std::sort(old.begin(), old.end());  // game-YYYYMMDD-HHMMSS: oldest first
+        for (size_t i = 0; i + 9 < old.size(); i++) DeleteFileW((logdir + L"\\" + old[i]).c_str());
+        SYSTEMTIME st;
+        GetLocalTime(&st);
+        wchar_t name[64];
+        swprintf(name, 64, L"\\game-%04d%02d%02d-%02d%02d%02d.log", st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute,
+                 st.wSecond);
+        SECURITY_ATTRIBUTES sa = {sizeof(sa), nullptr, TRUE};
+        log = CreateFileW((logdir + name).c_str(), GENERIC_WRITE, FILE_SHARE_READ, &sa, CREATE_ALWAYS,
+                          FILE_ATTRIBUTE_NORMAL, nullptr);
+        if (log != INVALID_HANDLE_VALUE) {
+            std::string line = "launcher: Play started " + narrow(exe) + "\r\n";
+            DWORD n;
+            WriteFile(log, line.data(), (DWORD)line.size(), &n, nullptr);
+            si.dwFlags |= STARTF_USESTDHANDLES;
+            si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
+            si.hStdOutput = log;
+            si.hStdError = log;
+        }
+    }
+    BOOL started = CreateProcessW(exe.c_str(), buf.data(), nullptr, nullptr, log != INVALID_HANDLE_VALUE, 0, nullptr,
+                                  g_root.c_str(), &si, &pi);
+    if (log != INVALID_HANDLE_VALUE) CloseHandle(log);
+    if (started) {
         CloseHandle(pi.hThread);
         CloseHandle(pi.hProcess);
         V.toast_t = now_s();
