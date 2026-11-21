@@ -84,7 +84,7 @@ WP_HOOK(0x8000F190, frame_timers) {
         sHoldUntil = wp_wall_seconds() + HOLD_SECONDS;
         WP_LOG("framerate", "%.1f s: frames late at 60; 30 for %.0f s", wp_wall_seconds(), HOLD_SECONDS);
     }
-    want = g_settings.frame_rate >= 60 && sGameAsked == PERIOD_30 && !wp_movie_playing() &&
+    want = settings_frame_rate() >= 60 && sGameAsked == PERIOD_30 && !wp_movie_playing() &&
                    wp_wall_seconds() >= sHoldUntil
                ? PERIOD_60
                : sGameAsked;

@@ -60,9 +60,43 @@ static void apply_gameplay(void) {
 #define FOV_MIN 70
 #define FOV_MAX 150
 
+/* Battery saver: whether the PC runs on battery, asked at most every 2 s
+ * (GetSystemPowerStatus: no disk, a few microseconds). */
+static int sOnBattery;
+static int on_battery(void) {
+#ifdef _WIN32
+    static ULONGLONG checked;
+    ULONGLONG now = GetTickCount64();
+    if (!checked || now - checked >= 2000) {
+        SYSTEM_POWER_STATUS ps;
+        const char* fake = getenv("WONDERPARK_FAKE_BATTERY"); /* tests: 1 as if on battery */
+        checked = now;
+        sOnBattery = fake && *fake ? *fake == '1' : GetSystemPowerStatus(&ps) && ps.ACLineStatus == 0;
+    }
+#endif
+    return sOnBattery;
+}
+
+static volatile int sFrameRateNow;
+int settings_frame_rate_now(void) { return sFrameRateNow ? sFrameRateNow : g_settings.frame_rate; }
+
+int settings_frame_rate(void) {
+    static int last;
+    int fps = g_settings.frame_rate;
+    if (g_x[X_BATTERY_SAVER] && on_battery() && fps > 30) fps = 30;
+    if (last && fps != last) {
+        /* Plugged in or out: the renderer's cap follows. */
+        fprintf(stderr, "settings: frame rate %d (%s)\n", fps, fps < g_settings.frame_rate ? "on battery" : "plugged in");
+        gxb_set_output_rate(fps);
+    }
+    last = fps;
+    sFrameRateNow = fps;
+    return fps;
+}
+
 static void apply_frame_rate(void) {
-    hle_set_frame_rate(g_settings.frame_rate);
-    gxb_set_output_rate(g_settings.frame_rate);
+    hle_set_frame_rate(settings_frame_rate());
+    gxb_set_output_rate(settings_frame_rate());
 }
 /* For the F1 notebook's Frame rate row (settings_ui.cpp): at once, not
  * at the next start. */
@@ -151,6 +185,7 @@ static const struct {
     {"gameplay", "hud_size", 100, 50, 150, "not yet"},
     {"gameplay", "hud_opacity", 100, 0, 100, "not yet"},
     {"gameplay", "hud_key", 0x75, 0, 255, "the key that hides and shows the HUD (a Windows virtual-key code; 0x75 is F6)"},
+    {"display", "battery_saver", 1, 0, 1, "1: 30 fps while the PC runs on battery"},
 };
 int g_x[X_COUNT];
 static int sXOverridden[X_COUNT];
@@ -172,6 +207,7 @@ static void preset_fields(int p); /* below */
 static void apply_x(int which) {
     switch (which) {
     case X_GRAPHICS_PRESET: preset_fields(g_x[X_GRAPHICS_PRESET]); break;
+    case X_BATTERY_SAVER: apply_frame_rate(); break;
     case X_WINDOW_MODE: g_settings.fullscreen = g_x[X_WINDOW_MODE] != 0; /* fall through */
     case X_MONITOR:
     case X_REFRESH_RATE:

@@ -134,8 +134,14 @@ enum {
     X_AUTO_ADVANCE,     /* not yet */
     X_HUD_SIZE, X_HUD_OPACITY, /* not yet */
     X_HUD_KEY,          /* the key that hides and shows the HUD (VK code; F6; gx_fifo.c) */
+    X_BATTERY_SAVER,    /* [display] 1: 30 fps while the PC runs on battery (settings_frame_rate) */
     X_COUNT
 };
+/* The frame rate in effect: the setting, or 30 on battery with Battery
+ * saver on (checked every 2 s; the renderer's cap follows a change). */
+int settings_frame_rate(void);
+/* The same, as last worked out (for other threads: changes nothing). */
+int settings_frame_rate_now(void);
 enum { PRESET_POTATO, PRESET_LOW, PRESET_MEDIUM, PRESET_HIGH, PRESET_ULTRA, PRESET_CUSTOM };
 /* Sets the graphics settings a preset covers (internal resolution, frame
  * rate, anti-aliasing, texture filtering, per-pixel lighting, bloom,

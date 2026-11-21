@@ -673,7 +673,7 @@ private:
 double target_fps() {
     // Movies always play at 30 (hle_frame.c): that's on target too.
     if (wp_movie_playing()) return 30;
-    double hz = win_display_hz(), t = g_settings.frame_rate > 0 ? g_settings.frame_rate : 30;
+    double hz = win_display_hz(), t = settings_frame_rate_now() > 0 ? settings_frame_rate_now() : 30;
     if (hz >= 30 && hz + 0.5 < t) t = std::floor(hz + 0.5);
     return t;
 }

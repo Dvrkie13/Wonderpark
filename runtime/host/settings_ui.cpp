@@ -313,6 +313,8 @@ void build_rows() {
                          {L"30 (original)", L"60", L"120", L"144", L"240"}, {30, 60, 120, 144, 240}, &g_settings.frame_rate, 30,
                          settings_apply_frame_rate);  // at once (the renderer's own rate too), not at the next start
         c.rows.push_back(fr);
+        c.rows.push_back(xrow(TOGGLE, X_BATTERY_SAVER, L"Battery saver",
+                              L"30 fps while your laptop runs on battery, for longer play; back to your frame rate when it's plugged in."));
         c.rows.push_back(xrow(TOGGLE, X_VSYNC, L"V-Sync", L"Stops the picture from tearing in fullscreen. A window never tears."));
         Row rd;
         rd.kind = CHOICE;
