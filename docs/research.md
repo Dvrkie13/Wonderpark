@@ -667,3 +667,14 @@ at 30 fps and 10.5 at 60 (two cores 14.9 and 13.2); GPU 6.2 ms at 2x
 for GPU (`builder/pipeline.py`). With them this PC is suggested High (it
 holds 60 at 3x), and two of its cores High as well (13.2 ms of the 13.3
 allowed; measured 79% busy at 60).
+
+GPU time, what it is (2026-11-21, profile-guided build, Wish Park hub,
+60 fps, RX 9060 XT): at native 4.75-4.83 ms a frame; with a trivial
+fragment shader (`RECOMP_GL_SIMPLE_FS`) 2.61, so the TEV ubershader is
+about 45% of it; the specialised shaders (Fast) 3.27 (-31%; at 3x 8.57 ->
+5.42, -37%); a 1280x720 window 4.67 and bloom off 4.85 (no difference).
+Tried and dropped: a "light" mode compiling the ubershader also for a
+fixed 1-4 stages (the loop's length a constant): 4.97 at native, 8.44 at
+3x, no gain. The cost is the per-stage selection of inputs and operations,
+which only the fully specialised programs fold away. So the weak-PC
+presets (Potato, Low) use Fast.
