@@ -84,8 +84,12 @@ void* win_handle(void);
 int win_screen_count(void);              /* window_win32.c: the screens */
 int win_refresh_rates(int w, int h, int* out, int max); /* and the chosen one's refresh rates */
 int audio_device_list(int* hashes, wchar_t (*names)[48], int max); /* audio_win32.c */
+#include "host_audio.h"                  /* audio_play_sound: the sticker chime, cries */
+int hle_scene(void);                     /* hle_scene.c: 0 the park */
+int hle_event_running(void);
 }
 #include "gallery3d.h"  // the Gallery's 3D view (C++ and C both)
+#include "cries.h"      // and its cries
 
 using Microsoft::WRL::ComPtr;
 using D2D1::ColorF;
@@ -145,7 +149,7 @@ bool reduced_motion() {
 // place), CARDS (up to three Pokémon cards; items: indices in g_friends),
 // TIP (a sticky note).
 enum Kind { HEAD, NOTE, CHOICE, TOGGLE, SLIDER, TEXTBOX, BINDHEAD, BIND, FIXEDBIND, PLAYERS, FBTOP, PLACES, PLACEHEAD, CARDS, TIP,
-           STATS, WEEK, ACARD, MILESTONE, SOONBOX, GCARDS, NOWPLAY, TRACK };  // the Journal, Jukebox and Gallery books
+           STATS, WEEK, ACARD, MILESTONE, SOONBOX, GCARDS, NOWPLAY, TRACK, STICKERS };  // the Journal, Jukebox and Gallery books
 
 struct Row {
     Kind kind = HEAD;
@@ -1031,6 +1035,10 @@ void draw_icon(const std::wstring& id, float x, float y, float size, D2D1_COLOR_
         {L"bolt", {"M13 2L4 14h7l-1 8 9-12h-7Z"}},
         {L"jump", {"M12 20V9", "M7 13l5-5 5 5", "M5 4h14"}},
         {L"tent", {"M3 20L12 4l9 16Z", "M12 4v16"}},
+        {L"sticker", {"M21 12a9 9 0 1 1-9-9", "M12 3v6a3 3 0 0 0 3 3h6Z"}},
+        {L"moon", {"M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5Z"}},
+        {L"sun", {"M16 12a4 4 0 1 1-8 0a4 4 0 1 1 8 0Z",
+                  "M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"}},
     };
     auto it = paths.find(id);
     if (it == paths.end()) return;
@@ -1349,6 +1357,13 @@ void place_rows() {
             }
             break;
         case TRACK: p.h = 40; break;
+        case STICKERS:  // the Journal's stickers: three to a line
+            p.h = 8 + 176;
+            for (size_t k = 0; k < r.items.size(); k++) {
+                float sw = ROW_W / 3, x = ROW_X + k * sw;
+                p.parts.push_back(RectF(x, y + 8, x + sw, y + 8 + 176));
+            }
+            break;
         case GCARDS:  // the Gallery: four to a line
             p.h = 12 + 116 + 8;
             for (size_t k = 0; k < r.items.size(); k++) {
@@ -1792,9 +1807,11 @@ struct Hits {
     D2D1_RECT_F anim[4]{};   // ... its animations (G3_ANIMS)
     D2D1_RECT_F stage{};     // ... and its stage (drag to turn the 3D view)
     D2D1_RECT_F save{};      // ... and Save a picture
+    D2D1_RECT_F cry{};       // ... and Play cry
     float tabX = 0, k = 1;  // window = (tab coordinates + (tabX, 10)) * k
 } H;
 
+void play_viewer_cry();     // the Gallery viewer's Play cry (below)
 void draw_sheet(float t);   // the hint card (below, with the friends list)
 void draw_viewer(float t);  // the Gallery's viewer (below)
 
@@ -1841,15 +1858,16 @@ struct TabInfo {
 };
 // (NTABS is the Friend Book's zones; the settings book has as many as g_cats.)
 int ntabs() {
-    return U.view == BK_JOURNAL ? 3 : U.view == BK_JUKEBOX ? 5 : U.view == BK_SETTINGS ? (int)g_cats.size() : NTABS;
+    return U.view == BK_JOURNAL ? 4 : U.view == BK_JUKEBOX ? 5 : U.view == BK_SETTINGS ? (int)g_cats.size() : NTABS;
 }
 int& cur_tab() {
     return U.view == BK_FRIENDS ? U.zone : U.view == BK_JOURNAL ? U.jtab : U.view == BK_JUKEBOX ? U.ktab : U.view == BK_GALLERY ? U.gzone : U.tab;
 }
 TabInfo tab_info(int i) {
-    static const TabInfo journal[3] = {{L"Overview", L"chart", 0xf39a2b, 0x1b2440},
+    static const TabInfo journal[4] = {{L"Overview", L"chart", 0xf39a2b, 0x1b2440},
                                        {L"Attractions", L"star", 0xe2457f, 0xffffff},
-                                       {L"Milestones", L"flag", 0x5bc26a, 0x1b2440}};
+                                       {L"Milestones", L"flag", 0x5bc26a, 0x1b2440},
+                                       {L"Stickers", L"sticker", 0x8b5bd2, 0xffffff}};
     static const TabInfo jukebox[5] = {{L"All", L"music", 0x8b5bd2, 0xffffff}, {L"Park", L"tree", 0x5bc26a, 0x1b2440},
                                        {L"Wish Park", L"star", 0xe2457f, 0xffffff}, {L"Attractions", L"target", 0xf39a2b, 0x1b2440},
                                        {L"Story", L"journal", 0x4a7fe0, 0xffffff}};
@@ -2513,6 +2531,7 @@ Hit hit_test(int px, int py) {
             for (int b = 0; b < G3_ANIMS; b++)
                 if (in(H.anim[b])) return {11, -1, b};
             if (in(H.save)) return {13};
+            if (in(H.cry)) return {14};
             if (gallery3d_state() == 2 && in(H.stage)) return {12};
         }
         if (in(H.sheet)) return {8};
@@ -2953,6 +2972,7 @@ struct Friend {
     int pokemon = 0;
     std::wstring name;
     std::string character;  // its internal name (Ic<character>.tpl; its model <character>.brres)
+    int charIndex = -1;     // that character's number (its cry: cries.cpp)
     Img icon;
     std::wstring want, then, about;  // the Pad's notes: FL_<NAME>_020, _040, _100
 };
@@ -3097,6 +3117,8 @@ void load_friends() {
             Friend f;
             f.pokemon = p;
             f.character = best;
+            for (size_t c = 0; c < chars.size() && f.charIndex < 0; c++)
+                if (!best.empty() && chars[c] == best) f.charIndex = (int)c;
             auto nm = names.find(label);
             f.name = nm != names.end() && !nm->second.empty() ? nm->second : widen(best.empty() ? inner : best.c_str());
             if (!best.empty()) tpl(files["Ic" + best + ".tpl"], f.icon);
@@ -3613,11 +3635,156 @@ std::wstring day_text(const char* day) {
 }
 const wchar_t* const kAttractionNames[4] = {L"Cake Contraption", L"Dance Inferno", L"Power Bash", L"Flight of Fancy"};
 
+// ---- Stickers: the Journal's achievements (its fourth tab), our own
+// wording. Earned ones are kept per save file in journal.json with their
+// day (hle_journal_earn) and show in Milestones too; earned while playing,
+// one slides in at the top of the screen for 3 s with a soft chime of our
+// own (sticker_toast_draw). Worked out here, about once a second, from what
+// the Journal already knows: friends (the save), berries (the save),
+// Thunderbolts and days played (counted), songs heard (the Jukebox). Gold
+// medals, photos and distance aren't found in the game yet: their stickers
+// say "Coming soon" and can't be earned. Local only.
+enum StickerKind { SK_PLACE, SK_AREA, SK_FRIENDS, SK_GOLD, SK_BERRIES, SK_PHOTOS, SK_RUN, SK_BOLTS, SK_DAYS, SK_SONGS, SK_NIGHT, SK_EARLY };
+struct StickerDef {
+    int kind, arg;
+    const wchar_t* icon;
+    uint32_t color;  // 0: the place's or area's own
+    bool secret, soon;
+};
+// By number: journal.json keeps the numbers, so never reorder, only add.
+const StickerDef kStickers[] = {
+    {SK_PLACE, 0, L"pin", 0},  {SK_PLACE, 1, L"pin", 0},  {SK_PLACE, 2, L"pin", 0},  {SK_PLACE, 3, L"pin", 0},
+    {SK_PLACE, 4, L"pin", 0},  {SK_PLACE, 5, L"pin", 0},  {SK_PLACE, 6, L"pin", 0},  {SK_PLACE, 7, L"pin", 0},
+    {SK_PLACE, 8, L"pin", 0},  {SK_PLACE, 9, L"pin", 0},                                          // 0-9 the places
+    {SK_AREA, 1, L"flag", 0},  {SK_AREA, 2, L"flag", 0},  {SK_AREA, 3, L"flag", 0},  {SK_AREA, 4, L"flag", 0},
+    {SK_AREA, 6, L"flag", 0},                                                                    // 10-14 the areas
+    {SK_FRIENDS, 50, L"heart", 0xe2457f}, {SK_FRIENDS, 100, L"heart", 0xe2457f},
+    {SK_FRIENDS, 150, L"heart", 0xe2457f}, {SK_FRIENDS, 194, L"heart", 0xe2457f},             // 15-18
+    {SK_GOLD, 0, L"star", 0xf3cf6b, false, true}, {SK_GOLD, 1, L"star", 0xf3cf6b, false, true},
+    {SK_GOLD, 2, L"star", 0xf3cf6b, false, true}, {SK_GOLD, 3, L"star", 0xf3cf6b, false, true},
+    {SK_GOLD, -1, L"star", 0xf3cf6b, false, true},                                               // 19-23
+    {SK_BERRIES, 10000, L"berry", 0x8b5bd2}, {SK_BERRIES, 100000, L"berry", 0x8b5bd2},          // 24-25
+    {SK_PHOTOS, 100, L"camera", 0x3fb6c8, false, true}, {SK_RUN, 42, L"foot", 0x5bc26a, false, true},  // 26-27
+    {SK_BOLTS, 1000, L"bolt", 0xf6d44a}, {SK_DAYS, 7, L"clock", 0x4a7fe0}, {SK_SONGS, 0, L"music", 0x8b5bd2},  // 28-30
+    {SK_NIGHT, 0, L"moon", 0x4a5fb0, true}, {SK_EARLY, 0, L"sun", 0xf39a2b, true},              // 31-32
+};
+const int NSTICKERS = (int)(sizeof(kStickers) / sizeof(kStickers[0]));
+static_assert(sizeof(kStickers) / sizeof(kStickers[0]) <= JOURNAL_STICKERS, "journal.json keeps 64");
+
+uint32_t sticker_color(int id) {
+    const StickerDef& s = kStickers[id];
+    if (s.color) return s.color;
+    return s.kind == SK_PLACE ? kPlaces[s.arg].color : kZoneTabs[s.arg].gem;
+}
+std::wstring sticker_title(int id) {
+    const StickerDef& s = kStickers[id];
+    switch (s.kind) {
+    case SK_PLACE: { std::wstring n = place_name(s.arg); return n.empty() ? L"A place" : n; }
+    case SK_AREA: return zone_name(s.arg);
+    case SK_FRIENDS: return s.arg == 194 ? L"Everyone's friend" : std::to_wstring(s.arg) + L" friends";
+    case SK_GOLD: return s.arg < 0 ? L"Gold rush" : std::wstring(kAttractionNames[s.arg]) + L" gold";
+    case SK_BERRIES: return s.arg >= 100000 ? L"Berry hoard" : L"Berry jar";
+    case SK_PHOTOS: return L"Photographer";
+    case SK_RUN: return L"Marathon";
+    case SK_BOLTS: return L"Power surge";
+    case SK_DAYS: return L"Regular visitor";
+    case SK_SONGS: return L"Music lover";
+    case SK_NIGHT: return L"Night owl";
+    default: return L"Early bird";
+    }
+}
+std::wstring sticker_goal(int id) {
+    const StickerDef& s = kStickers[id];
+    switch (s.kind) {
+    case SK_PLACE: case SK_AREA: return L"Befriend everyone in " + sticker_title(id);
+    case SK_FRIENDS: return s.arg == 194 ? L"Befriend all 194 Pokémon (fills the Gallery too)" : L"Make " + std::to_wstring(s.arg) + L" friends";
+    case SK_GOLD: return s.arg < 0 ? L"Win gold in all four attractions" : L"Win gold in " + std::wstring(kAttractionNames[s.arg]);
+    case SK_BERRIES: return L"Collect " + thousands(s.arg) + L" berries";
+    case SK_PHOTOS: return L"Take 100 photos";
+    case SK_RUN: return L"Run 42 km in the park";
+    case SK_BOLTS: return L"Use Thunderbolt 1,000 times";
+    case SK_DAYS: return L"Play on 7 different days";
+    case SK_SONGS: return L"Hear every song in the Jukebox";
+    case SK_NIGHT: return L"Play in the park after midnight";
+    default: return L"Play in the park before 6 in the morning";
+    }
+}
+// Whether sticker id's goal is met now (not the "Coming soon" ones).
+bool sticker_met(int id, const JournalSlot& j) {
+    const StickerDef& s = kStickers[id];
+    if (s.soon) return false;
+    switch (s.kind) {
+    case SK_PLACE:
+    case SK_AREA: {
+        int all = 0, made = 0;
+        for (auto& f : *g_friends)
+            if (s.kind == SK_PLACE ? place_of(f.pokemon) == s.arg : zone_of(f.pokemon) == s.arg) all++, made += fstate(f) == 2;
+        return all > 0 && made == all;
+    }
+    case SK_FRIENDS: return friends_made() >= (s.arg == 194 ? std::max(1, friends_total()) : s.arg);
+    case SK_BERRIES: return hle_journal_save_value(1) >= s.arg;
+    case SK_BOLTS: return j.thunderbolts >= s.arg;
+    case SK_DAYS: {
+        int n = 0;
+        for (int k = 0; k < j.day_count; k++) n += j.days[k].seconds > 0;
+        return n >= s.arg;
+    }
+    case SK_SONGS: {
+        if (jukebox_state() != 2) return false;
+        for (int i = 0; i < jukebox_count(); i++) {
+            JukeboxTrack t;
+            if (jukebox_track(i, &t) && !t.heard) return false;
+        }
+        return jukebox_count() > 0;
+    }
+    case SK_NIGHT:
+    case SK_EARLY: {
+        if (hle_scene() != 0 || hle_event_running()) return false;
+        time_t now = time(nullptr);
+        struct tm lt;
+        localtime_s(&lt, &now);
+        return s.kind == SK_NIGHT ? lt.tm_hour < 4 : lt.tm_hour >= 4 && lt.tm_hour < 6;
+    }
+    }
+    return false;
+}
+
+// Stickers waiting to slide in, and the one showing (sticker_toast_draw).
+std::vector<int> g_toastQueue;
+
+// About once a second while the game runs (the renderer's thread, as the
+// notebook's drawing): stickers newly met are earned. The first look at a
+// save file in a run takes what it already has quietly (no slide-in, no
+// milestone), as the Journal takes friends a save already had; the clock's
+// secret ones are always "now".
+void stickers_check() {
+    static double last;
+    static bool looked[JOURNAL_SLOTS];
+    double now = now_s();
+    if (now - last < 1) return;
+    last = now;
+    load_friends();
+    jukebox_scan_start();  // (a thread of its own; a few small reads, once)
+    int slot = hle_journal_slot();
+    if (slot < 0 || !save_loaded()) return;
+    JournalSlot* j = new JournalSlot;
+    if (hle_journal_copy(slot, j) && j->seen) {
+        bool first = !looked[slot];
+        looked[slot] = true;
+        for (int id = 0; id < NSTICKERS; id++) {
+            if (j->stickers[id][0] || !sticker_met(id, *j)) continue;
+            bool quiet = first && kStickers[id].kind != SK_NIGHT && kStickers[id].kind != SK_EARLY;
+            if (hle_journal_earn(slot, id, !quiet) && !quiet) g_toastQueue.push_back(id);
+        }
+    }
+    delete j;
+}
+
 void build_journal_rows() {
     Category& c = g_fb;
-    static const wchar_t* names[3] = {L"Your adventure", L"Attractions", L"Milestones"};
-    static const wchar_t* descs[3] = {L"Everything you've done in the park", L"Times played, counted since Wonderpark was installed",
-                                      L"Big moments, in order"};
+    static const wchar_t* names[4] = {L"Your adventure", L"Attractions", L"Milestones", L"Stickers"};
+    static const wchar_t* descs[4] = {L"Everything you've done in the park", L"Times played, counted since Wonderpark was installed",
+                                      L"Big moments, in order", L"Goals to reach, and the day you reached them"};
     TabInfo ti = tab_info(U.jtab);
     c.id = L"journal";
     c.name = names[U.jtab];
@@ -3654,6 +3821,23 @@ void build_journal_rows() {
             c.rows.push_back(r);
         }
         c.rows.push_back(note(L"Best scores and medals are coming soon: where the game keeps them hasn't been found yet."));
+    } else if (U.jtab == 3) {
+        int got = 0;
+        for (int id = 0; id < NSTICKERS; id++) got += g_journal.stickers[id][0] != 0;
+        c.rows.push_back(note((std::to_wstring(got) + L" of " + std::to_wstring(NSTICKERS) +
+                               L" stickers. They're earned as you play, and stay with this save file.").c_str()));
+        struct Group { const wchar_t* title; int from, to; };
+        static const Group groups[] = {{L"Places", 0, 9}, {L"Areas", 10, 14}, {L"Friends", 15, 18},
+                                       {L"Attractions", 19, 23}, {L"Collector", 24, 30}, {L"Secrets", 31, 32}};
+        for (auto& g : groups) {
+            c.rows.push_back(head(g.title));
+            for (int id = g.from; id <= g.to; id += 3) {
+                Row r;
+                r.kind = STICKERS;
+                for (int k = id; k <= g.to && k < id + 3; k++) r.items.push_back(k);
+                c.rows.push_back(r);
+            }
+        }
     } else {
         for (int m = 0; m < g_journal.milestone_count; m++) {
             Row r;
@@ -3663,8 +3847,8 @@ void build_journal_rows() {
         }
         Row t;
         t.kind = TIP;
-        t.desc = g_journal.milestone_count ? L"Counted since Wonderpark was installed: your first friend, each area you reach, and 50, 100, 150 and 194 friends."
-                                           : L"No milestones yet. From now on Wonderpark notes your first friend, each area you reach, and 50, 100, 150 and 194 friends, with the day.";
+        t.desc = g_journal.milestone_count ? L"Counted since Wonderpark was installed: your first friend, each area you reach, 50, 100, 150 and 194 friends, and each sticker you earn."
+                                           : L"No milestones yet. From now on Wonderpark notes your first friend, each area you reach, 50, 100, 150 and 194 friends, and each sticker you earn, with the day.";
         c.rows.push_back(t);
     }
 }
@@ -3800,9 +3984,51 @@ void soon_tag(float x, float cy) {
     text_c(L"SOON", f, x, cy, w, rgb(0xe0533f), CENTER, .9f);
 }
 
+// A round sticker, radius rad at (cx, cy): earned in full colour (a hard
+// shadow, ink outline, a white ring, its icon); locked a dashed outline (a
+// "?" for a secret one).
+void draw_sticker_badge(float cx, float cy, float rad, int id, bool earned) {
+    const StickerDef& s = kStickers[id];
+    Rot rot(id % 3 == 0 ? -5.f : id % 3 == 1 ? 4.f : -2.f, cx, cy);
+    if (earned) {
+        circle(cx + 3, cy + 3, rad, rgb(INK));
+        circle(cx, cy, rad, rgb(sticker_color(id)), 3);
+        G.rt->DrawEllipse(D2D1::Ellipse(Point2F(cx, cy), rad - 8, rad - 8), brush(ColorF(1, 1, 1, .75f)), 2.5f);
+        float is = rad * .9f;
+        D2D1_COLOR_F white = ColorF(1, 1, 1);
+        draw_icon(s.icon, cx - is / 2, cy - is / 2, is, rgb(INK), &white);
+    } else {
+        circle(cx, cy, rad, rgb(0xffe2b4, .06f), 2.5f, rgb(0xffe2b4, .6f), true);
+        if (s.secret) text_c(L"?", fmt(L"Fredoka", 700, rad * .9f), cx - rad, cy, 2 * rad, rgb(0xffe2b4, .6f), CENTER);
+        else draw_icon(s.icon, cx - rad * .4f, cy - rad * .4f, rad * .8f, rgb(0xffe2b4, .45f));
+    }
+}
+
 void draw_book_row(int i, const Row& r, const Placed& p, float y0, float dy, bool focused) {
     const Category& c = cur();
     const D2D1_COLOR_F soft = rgb(0x6b5a45);
+    if (r.kind == STICKERS) {
+        for (size_t k = 0; k < r.items.size(); k++) {
+            int id = r.items[k];
+            D2D1_RECT_F b = shift(p.parts[k], 0, dy);
+            float w = b.right - b.left, cx = (b.left + b.right) / 2;
+            const char* day = g_journalOk ? g_journal.stickers[id] : "";
+            bool earned = day[0] != 0, secret = kStickers[id].secret && !earned;
+            draw_sticker_badge(cx, b.top + 50, 40, id, earned);
+            std::wstring title = secret ? L"???" : sticker_title(id);
+            text_fit(title, fmt(L"Fredoka", 600, 15), b.left + 6, b.top + 100, w - 12, earned ? rgb(PAGE_TEXT) : rgb(PAGE_SOFT), CENTER);
+            if (earned) {
+                text_c(day_text(day), fmt(L"Nunito", 800, 12), b.left, b.top + 132, w, rgb(GOLD), CENTER);
+            } else {
+                std::wstring goal = secret ? L"A secret sticker" : sticker_goal(id);
+                text(goal, fmt(L"Nunito", 700, 11.5f), b.left + 8, b.top + 122, w - 16, rgb(PAGE_SOFT, .85f), CENTER);
+                if (kStickers[id].soon) soon_tag(cx + 26, b.top + 50 - 34);
+            }
+        }
+        if (focused && !p.parts.empty())
+            draw_focus(RectF(ROW_X - 6, p.parts[0].top + dy - 2, ROW_X + ROW_W + 6, p.parts[0].bottom + dy + 2), 14);
+        return;
+    }
     if (r.kind == STATS) {
         struct S { const wchar_t *icon, *label; uint32_t color; };
         static const S kS[8] = {{L"clock", L"Play time", 0x4a7fe0}, {L"berry", L"Berries collected", 0x8b5bd2},
@@ -3905,6 +4131,8 @@ void draw_book_row(int i, const Row& r, const Placed& p, float y0, float dy, boo
             std::wstring place = disc_text(label, L"");
             if (place.empty()) snprintf(label, sizeof(label), "Fd%02d", m.value >> 8), place = disc_text(label, L"a new place");
             title = L"Reached " + place;
+        } else if (m.kind == JOURNAL_STICKER) {
+            title = m.value >= 0 && m.value < NSTICKERS ? L"Sticker: " + sticker_title(m.value) : L"A sticker";
         } else {
             title = std::to_wstring(m.value) + L" friends!";
         }
@@ -4032,6 +4260,9 @@ void draw_book_row(int i, const Row& r, const Placed& p, float y0, float dy, boo
 // renderer; drag to turn it), its icon while that loads or if there's none.
 bool g_viewerDrawn;  // drawn this time (else the 3D view is hidden)
 int g_viewerState;   // the 3D view's state it was drawn with
+void play_viewer_cry() {
+    if (g_friendsState == 2 && U.sheet >= 0 && U.sheet < (int)g_friends->size()) cry_play((*g_friends)[U.sheet].charIndex);
+}
 void draw_viewer(float t) {
     (void)t;
     if (g_friendsState != 2 || U.sheet < 0 || U.sheet >= (int)g_friends->size()) return;
@@ -4172,6 +4403,22 @@ void draw_viewer(float t) {
         text_c(label, pill_font(false), pb.left, y + 18, sw2, rgb(INK), CENTER);
         H.save = ready ? RectF(PANEL_X + pb.left, PANEL_Y + pb.top, PANEL_X + pb.right, PANEL_Y + pb.bottom) : RectF(0, 0, 0, 0);
         if (g_pictureAt) changed();  // (to put the label back)
+    }
+    {
+        // Play cry: its own cry from the disc (cries.cpp); no button for a
+        // Pokémon without one.
+        cries_load();
+        H.cry = RectF(0, 0, 0, 0);
+        if (cry_available(f.charIndex)) {
+            float cw2 = pill_w(L"Play cry") + 26;
+            D2D1_RECT_F pb = RectF(x0, y, x0 + cw2, y + 36);
+            sticker(pb, 11, U.hoverBtn == 14 ? rgb(0xfff3cf) : ColorF(1, 1, 1), 2);
+            draw_icon(L"audio", pb.left + 12, y + 8, 20, rgb(INK));
+            text_c(L"Play cry", pill_font(false), pb.left + 26, y + 18, cw2 - 26, rgb(INK), CENTER);
+            H.cry = RectF(PANEL_X + pb.left, PANEL_Y + pb.top, PANEL_X + pb.right, PANEL_Y + pb.bottom);
+        } else if (cry_state_pending()) {
+            changed();  // (the button once the cries are read)
+        }
     }
 }
 
@@ -4415,17 +4662,19 @@ extern "C" int settings_ui_wants_pause(void) {
 
 // The drawn image to straight alpha in G.image, as the overlay is blended
 // (gl_backend.c).
-static void copy_out(int w, int h) {
-    WICRect r = {0, 0, w, h};
+// The drawing's part (x, y, w, h) into out (a window-sized image, row
+// width stride), premultiplied alpha undone.
+static void copy_rect(int x0, int y0, int w, int h, uint32_t* out, int outW) {
+    WICRect r = {x0, y0, w, h};
     ComPtr<IWICBitmapLock> lock;
-    if (FAILED(G.bmp->Lock(&r, WICBitmapLockRead, &lock))) return;
+    if (w <= 0 || h <= 0 || FAILED(G.bmp->Lock(&r, WICBitmapLockRead, &lock))) return;
     UINT size = 0, stride = 0;
     BYTE* px = nullptr;
     lock->GetDataPointer(&size, &px);
     lock->GetStride(&stride);
     for (int y = 0; y < h; y++) {
         const uint32_t* src = (const uint32_t*)(px + (size_t)y * stride);
-        uint32_t* dst = &G.image[(size_t)y * w];
+        uint32_t* dst = &out[(size_t)(y0 + y) * outW + x0];
         for (int x = 0; x < w; x++) {
             uint32_t c = src[x], a = c >> 24;
             if (a == 0 || a == 255) dst[x] = c;
@@ -4436,6 +4685,103 @@ static void copy_out(int w, int h) {
             }
         }
     }
+}
+static void copy_out(int w, int h) { copy_rect(0, 0, w, h, G.image.data(), w); }
+
+// The sticker chime: two soft bell notes (E6, then B6), made here, at the
+// Sound effects volume.
+static void play_chime() {
+    static std::vector<int16_t> pcm;
+    const int R = 32000;
+    if (pcm.empty()) {
+        pcm.resize(R * 7 / 10);
+        const double PI2 = 6.283185307179586;
+        for (size_t i = 0; i < pcm.size(); i++) {
+            double t = (double)i / R, v = 0;
+            auto bell = [&](double t0, double f, double a) {
+                double u = t - t0;
+                if (u < 0) return;
+                double env = (u < .004 ? u / .004 : 1) * exp(-u / .16);
+                v += a * env * (sin(PI2 * f * u) + .18 * sin(PI2 * 2 * f * u));
+            };
+            bell(0, 1318.5, .45);
+            bell(.09, 1975.5, .4);
+            pcm[i] = (int16_t)(v * 14000);
+        }
+    }
+    int vol = g_x[X_VOLUME_SFX];
+    audio_play_sound(pcm.data(), (int)pcm.size(), R, vol * vol / 10000.f);
+}
+
+// A sticker earned while playing: a card that slides down at the top of
+// the screen for 3 s (overlay_win32.c menu_draw, when neither the notebook
+// nor the Options rows show). Drawn into its own window-sized image, only
+// its strip at the top drawn and copied, and only while it moves.
+// (Tests: WONDERPARK_STICKER_TEST=<sticker> shows that one 3 s after start.)
+static unsigned g_toastGen;
+extern "C" unsigned sticker_toast_generation(void) { return g_toastGen; }
+extern "C" const uint32_t* sticker_toast_draw(int w, int h) {
+    static std::vector<uint32_t> img;
+    static int iw, ih, showing = -1;
+    static double at, start = now_s();
+    static float drawnK = -1;
+    if (w <= 0 || h <= 0 || U.open || g_wp_headless) return nullptr;
+    stickers_check();
+    {
+        // "<sticker>" or "<sticker>@<seconds>" (3 s by default).
+        static int test = -2;
+        static double testAt = 3;
+        if (test == -2) {
+            const char* e = getenv("WONDERPARK_STICKER_TEST");
+            test = e && *e ? atoi(e) : -1;
+            if (e && strchr(e, '@')) testAt = atof(strchr(e, '@') + 1);
+        }
+        if (test >= 0 && test < NSTICKERS && now_s() - start > testAt) g_toastQueue.push_back(test), test = -1;
+    }
+    double now = now_s();
+    if (showing >= 0 && now - at > 3.0) showing = -1;
+    if (showing < 0) {
+        if (g_toastQueue.empty()) return nullptr;
+        showing = g_toastQueue.front();
+        g_toastQueue.erase(g_toastQueue.begin());
+        at = now;
+        drawnK = -1;
+        play_chime();
+    }
+    if (!ensure_target(w, h)) return nullptr;
+    if (iw != w || ih != h) img.assign((size_t)w * h, 0), iw = w, ih = h, drawnK = -1;
+    // Slides in for 0.35 s, stays, slides out for the last 0.35 s.
+    double t = now - at;
+    float k = t < .35 ? (float)(t / .35) : t > 2.65 ? (float)((3 - t) / .35) : 1.f;
+    k = std::max(0.f, std::min(1.f, k));
+    k = 1 - (1 - k) * (1 - k) * (1 - k);  // eased
+    if (k == drawnK) return img.data();
+    drawnK = k;
+    float s = std::max(.75f, h / 720.f), cw = 420, chh = 86;
+    float bx = (w / s - cw) / 2, by = -chh - 12 + k * (chh + 12 + 18);
+    int x0 = std::max(0, (int)((bx - 16) * s)), x1 = std::min(w, (int)((bx + cw + 16) * s) + 1);
+    int y1 = std::min(h, (int)((18 + chh + 14) * s) + 1);
+    G.rt->BeginDraw();
+    G.rt->SetTransform(Matrix3x2F::Identity());
+    G.rt->PushAxisAlignedClip(RectF((float)x0, 0, (float)x1, (float)y1), D2D1_ANTIALIAS_MODE_ALIASED);
+    G.rt->Clear(ColorF(0, 0, 0, 0));
+    G.rt->SetTransform(Matrix3x2F::Scale(s, s));
+    {
+        Rot rot(-1.2f, bx + cw / 2, by + chh / 2);
+        sticker(RectF(bx, by, bx + cw, by + chh), 18, rgb(0xfff8e6), 4, 3);
+        draw_sticker_badge(bx + 52, by + chh / 2, 30, showing, true);
+        float tx = bx + 98, tw = cw - 98 - 18;
+        text_c(L"Sticker earned!", fmt(L"Nunito", 800, 13), tx, by + 28, tw, rgb(0x8b5bd2));
+        text_fit(sticker_title(showing), fmt(L"Fredoka", 700, 21), tx, by + 38, tw, rgb(INK), LEFT);
+        text_fit(sticker_goal(showing), fmt(L"Nunito", 700, 12), tx, by + 64, tw, rgb(0x6b5a45), LEFT);
+    }
+    G.rt->SetTransform(Matrix3x2F::Identity());
+    G.rt->PopAxisAlignedClip();
+    G.rt->EndDraw();
+    copy_rect(x0, 0, x1 - x0, y1, img.data(), w);
+    g_toastGen++;
+    U.gen++;  // (the notebook and the Options rows draw again over the same target next time)
+    return img.data();
 }
 
 // The Options page's PC rows over the game's frame, when it shows them
@@ -4541,13 +4887,15 @@ extern "C" const uint32_t* settings_ui_draw(int w, int h) {
                     changed();
                     pending = std::to_string(NTABS + 3) + "b-hint";
                 }
-            } else if (s >= 2 * NTABS + 4 && s <= 2 * NTABS + 9) {
-                // The other books: the Journal's three pages, the Jukebox, the
+            } else if (s >= 2 * NTABS + 4 && s <= 2 * NTABS + 10) {
+                // The other books: the Journal's four pages, the Jukebox, the
                 // Gallery and its viewer (on the first friend).
                 int k = s - (2 * NTABS + 4);
+                if (k > 2) k = k == 3 ? 99 : k - 1;  // (the Stickers page after Milestones)
                 if (k == 0) close_sheet(), set_view(BK_JOURNAL), pending = "11-journal";
                 else if (k == 1) set_tab(1), pending = "11b-journal-attractions";
                 else if (k == 2) set_tab(2), pending = "11c-journal-milestones";
+                else if (k == 99) set_tab(3), pending = "11d-journal-stickers";
                 else if (k == 3) {
                     // The Jukebox: once the disc's songs are read, and one
                     // heard is playing.
@@ -4648,6 +4996,10 @@ static void run_key_script() {
         }
         if (k == "pic") {  // the Gallery viewer's Save a picture
             save_picture();
+            continue;
+        }
+        if (k == "cry") {  // and its Play cry
+            play_viewer_cry();
             continue;
         }
         if (k.rfind("zoom=", 0) == 0) {  // the viewer's zoom, wheel steps (+ closer)
@@ -4911,6 +5263,7 @@ extern "C" int settings_ui_message(void* hwnd, unsigned msg, uintptr_t wp, intpt
         else if (h.what == 10) U.gbg = h.part;
         else if (h.what == 11) U.ganim = h.part;
         else if (h.what == 13) save_picture();
+        else if (h.what == 14) play_viewer_cry();
         else if (h.what == 12) {  // the 3D view's stage: drag to turn it
             U.dragStage = true;
             U.dragX = GET_X_LPARAM(lp);

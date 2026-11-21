@@ -50,6 +50,42 @@ cue names would need the ACB's cue table). Distance: the follow camera's
 point (`hle_camera.c`) moves with the player, but the game's unit isn't
 known, so no distance is shown.
 
+## A1b. Stickers (built, partly "Coming soon")
+
+The Journal's fourth tab (`runtime/host/settings_ui.cpp`, `kStickers`): 33
+round stickers in our own words, in groups. Places (the ten places with
+their own names from the disc: befriend everyone there), Areas (Cove,
+Arbor, Crag, Tech, Wish Park), Friends (50, 100, 150, all 194), Attractions
+(gold in each, gold in all four), Collector (10,000 and 100,000 berries,
+100 photos, 42 km, 1,000 Thunderbolts, 7 days played, every song in the
+Jukebox), and two secrets ("???" until earned: playing in the park after
+midnight, and before 6 in the morning). Earned: full colour with its day;
+locked: a dashed outline with its goal. The attraction golds, photos and
+the marathon say "Coming soon" and can't be earned (their numbers aren't
+found in the game yet).
+
+Worked out about once a second while the game runs, from what the Journal
+already has (friends and berries from the save, Thunderbolts and days
+counted, songs heard). Kept per save file in `journal.json`
+(`"stickers": [[day, number], ...]`, by number: never renumbered). The
+first look at a save in a run takes what it already has quietly; a sticker
+earned after that slides in at the top of the screen for 3 s ("Sticker
+earned!") with a soft two-note chime made in code (mixed over the game's
+sound, at the Sound effects volume) and is added to Milestones. Checked:
+with 999 Thunderbolts counted, one held press in the park earned "Power
+surge", its card and chime (the chime's note found in the sound output at
+that moment) and its milestone. Local only.
+
+## A2b. Cries in the Gallery (built)
+
+The viewer's "Play cry" plays the Pokémon's own cry from the player's disc
+(`runtime/host/cries.cpp`; the bank is described in `docs/research.md`,
+"Pokémon cries"), at the Pokémon voices volume, over whatever plays. 195
+characters have one; for the others the button isn't shown. The Japanese
+voices don't replace this bank, so it's the same in both languages.
+Checked: the cries decode to sound (Piplup: 0.83 s, RMS about 8,600);
+not yet listened to by a person.
+
 ## A2. Jukebox (built)
 
 `runtime/host/jukebox.cpp`. The music is CRI ADX (type 3, 4-bit, all 32 kHz

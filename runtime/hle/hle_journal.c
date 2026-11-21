@@ -95,7 +95,16 @@ static char* serialize(void) {
         for (k = 0; k < j->friend_count; k++) PUT("%s%d", k ? ", " : "", j->friends[k]);
         PUT("],\n     \"areas\": [");
         for (k = 0; k < j->area_count; k++) PUT("%s%d", k ? ", " : "", j->areas[k]);
-        PUT("],\n     \"moves\": [%d, %d],\n     \"milestones\": [", j->jumps, j->thunderbolts);
+        PUT("],\n     \"moves\": [%d, %d],\n     \"stickers\": [", j->jumps, j->thunderbolts);
+        {
+            int first = 1;
+            for (k = 0; k < JOURNAL_STICKERS; k++)
+                if (j->stickers[k][0]) {
+                    PUT("%s[\"%s\", %d]", first ? "" : ", ", j->stickers[k], k);
+                    first = 0;
+                }
+        }
+        PUT("],\n     \"milestones\": [");
         for (k = 0; k < j->milestone_count; k++)
             PUT("%s[\"%s\", %d, %d]", k ? ", " : "", j->milestones[k].day, j->milestones[k].kind, j->milestones[k].value);
         PUT("]}%s\n", i + 1 < JOURNAL_SLOTS ? "," : "");
@@ -162,6 +171,16 @@ static void parse(const char* s) {
         if ((q = skip_to(p, "\"areas\": [")) && q < end)
             while (j->area_count < JOURNAL_AREAS && (q = next_num(q, &v))) j->areas[j->area_count++] = (unsigned short)v;
         if ((q = skip_to(p, "\"moves\": [")) && q < end && (q = next_num(q, &j->jumps)) != NULL) next_num(q, &j->thunderbolts);
+        if ((q = skip_to(p, "\"stickers\": [")) && q < end)
+            while ((q = next_pair(q)) != NULL) {
+                char day[11];
+                const char* r = next_str(q, day);
+                if (!r || !(r = next_num(r, &v))) break;
+                if (v >= 0 && v < JOURNAL_STICKERS) strcpy(j->stickers[v], day);
+                q = strchr(r, ']');
+                if (!q) break;
+                q++;
+            }
         if ((q = skip_to(p, "\"milestones\": [")) && q < end)
             while (j->milestone_count < JOURNAL_MILESTONES && (q = next_pair(q)) != NULL) {
                 JournalMilestone* m = &j->milestones[j->milestone_count];
@@ -360,6 +379,23 @@ int hle_journal_copy(int slot, JournalSlot* out) {
     LeaveCriticalSection(&sLock);
     return 1;
 }
+int hle_journal_earn(int slot, int id, int milestone) {
+    JournalSlot* j;
+    if (slot < 0 || slot >= JOURNAL_SLOTS || id < 0 || id >= JOURNAL_STICKERS || !sLoaded) return 0;
+    EnterCriticalSection(&sLock);
+    j = &sSlots[slot];
+    if (j->stickers[id][0]) {
+        LeaveCriticalSection(&sLock);
+        return 0;
+    }
+    today(j->stickers[id]);
+    if (milestone) add_milestone(j, JOURNAL_STICKER, id);
+    sDirty = 1;
+    LeaveCriticalSection(&sLock);
+    WP_LOG("journal", "sticker %d earned (slot %d)", id, slot);
+    return 1;
+}
+
 /* From the loaded save: play time (seconds), berries; -1 with none. */
 int hle_journal_save_value(int which) {
     u32 save = LD32(SAVE_PTR);

@@ -178,6 +178,12 @@ const uint32_t* menu_draw(int w, int h) {
         const uint32_t* o = options_rows_draw(w, h);
         if (o) return o;
     }
+    {
+        /* A sticker earned (settings_ui.cpp): it slides in at the top. */
+        extern const uint32_t* sticker_toast_draw(int w, int h);
+        const uint32_t* t = sticker_toast_draw(w, h);
+        if (t) return t;
+    }
     if (!sOpen) return NULL;
     if (w != sW || h != sH) {
         free(sImage);

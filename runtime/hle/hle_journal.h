@@ -10,11 +10,13 @@ extern "C" {
 #define JOURNAL_DAYS 60
 #define JOURNAL_AREAS 64
 #define JOURNAL_MILESTONES 64
+#define JOURNAL_STICKERS 64
 
 enum {
     JOURNAL_FIRST_FRIEND = 1, /* value: the Pokémon (the Pad's number, hle_friends.c) */
     JOURNAL_AREA = 2,         /* value: area << 8 | zone (Cove Town 0x0102) */
     JOURNAL_FRIENDS = 3,      /* value: 50, 100, 150 or 194 */
+    JOURNAL_STICKER = 4,      /* value: the sticker (settings_ui.cpp kStickers) */
 };
 
 typedef struct {
@@ -42,6 +44,9 @@ typedef struct {
      * scenes and talks: jumps (a press of 2) and Thunderbolts (1 held half
      * a second or more, then let go: the charged move). */
     int jumps, thunderbolts;
+    /* Stickers earned (settings_ui.cpp works out which): the day, by the
+     * sticker's number; "" not earned. */
+    char stickers[JOURNAL_STICKERS][11];
 } JournalSlot;
 
 void hle_journal_init(void);   /* main.c, before the game runs: reads journal.json */
@@ -52,6 +57,9 @@ void hle_journal_frame(void);  /* each game frame */
 int hle_journal_slot(void);
 /* A copy of a save file's journal; 0 if none. */
 int hle_journal_copy(int slot, JournalSlot* out);
+/* Sticker id earned today in a save file's journal (and in its Milestones,
+ * when milestone); 1 if it's new, 0 if it already was or can't be. */
+int hle_journal_earn(int slot, int id, int milestone);
 /* From the loaded save: 0 play time (seconds), 1 berries; -1 with none loaded. */
 int hle_journal_save_value(int which);
 

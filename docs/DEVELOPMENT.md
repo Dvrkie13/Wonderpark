@@ -416,10 +416,10 @@ Test hooks: `WONDERPARK_F1_SHOT=<prefix>` opens the tab
 end, or that part of the way with `WONDERPARK_F1_SHOT_SCROLL=<0-1>`) for the six tabs, then the Friend Book (`8-friendbook`, `9-cove`,
 `10-hint` with a hint card open, `10b-hint` after its "show more" when it
 has one), the Journal (`11-journal`, `11b-journal-attractions`,
-`11c-journal-milestones`), `12-jukebox`, the Gallery (`13-gallery`,
+`11c-journal-milestones`, `11d-journal-stickers`), `12-jukebox`, the Gallery (`13-gallery`,
 `13b-gallery-viewer`), then closes it. `WONDERPARK_F1_SCRIPT="<seconds>:<key>,..."` presses
 keys (f1-f5 esc up down left right enter q e backspace, a letter or digit),
-`shot=<file.bmp>`, `anim=<0-3>` (the Gallery viewer's animation), `zoom=<steps>` (its zoom, as wheel steps) or `pic` (its Save a picture), through
+`shot=<file.bmp>`, `anim=<0-3>` (the Gallery viewer's animation), `zoom=<steps>` (its zoom, as wheel steps), `pic` (its Save a picture) or `cry` (its Play cry), through
 the tab's own key handling (headless too). The Gallery's 3D view:
 `WONDERPARK_G3_CHARACTER=<name>,<name>,...` shows those models instead of
 the friend's, a new one every 1.5 s (when the viewer is drawn again);
@@ -458,6 +458,7 @@ animation reaches that frame (`runtime/host/gallery3d.cpp`).
 | `WONDERPARK_WATCH=lo-hi` | physical range for `memcpywatch`, or the load and store watch: a build made with `python tools/build_game.py --build-dir game-watch --no-lto --no-pgo --watch` reports each guest block that loads from or stores into the range, once, with the value and the caller |
 | `WONDERPARK_AUDIO_DUMP=file.wav` | also write the game's own mix (32 kHz, as AX made it) to a file; written on the game thread, so tests only |
 | `WONDERPARK_AUDIO_OUT_DUMP=file.raw` | tests: what the sound device gets (48 kHz stereo 16-bit raw), from the sound thread |
+| `WONDERPARK_STICKER_TEST=<n>[@<seconds>]` | tests: sticker n's "Sticker earned!" card slides in that long after the first frame (default 3 s), with its chime; nothing is earned (the list: `kStickers` in `runtime/host/settings_ui.cpp`) |
 | `WONDERPARK_AX_NOAUX`, `WONDERPARK_AX_SNAP`, `WONDERPARK_AX_WB` | AX mixer debugging |
 | `RECOMP_FPS=1` | print fps (`fps:` frames shown, the slowest, how busy the game thread was, the game's own frames, the 60 Hz retraces its logic steps by, and the cap: the Frame rate setting, or the screen's refresh rate if lower), the overlay's numbers (`stats:`, with the readbacks' count and the time spent waiting for them), disc reads and how many came from RAM (`disc:`), the GPU's own time from timer queries and the share of draws by specialised shaders (`gputime:`) and GL timings every second |
 | `RECOMP_AUDIO=0` | no sound |
