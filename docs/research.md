@@ -691,3 +691,23 @@ set, 1,240 MB private (peak working set 745 MB). Of it, Fast loading's
 below 8 GB of RAM; the rest is the emulated Wii's memory, the vertex arena
 and the graphics driver. No separate Low-memory mode built: little more
 to gain.
+
+Friend Book data, what's known (2026-11-21):
+- The 258-entry table at `0x804141F0` (read by `0x800F87D0`, searched by
+  `0x800F87F0`) maps a character slot to a Pokémon number; it's in
+  national Pokédex order (Victini, Snivy's family...), not by field, so it
+  gives no areas.
+- Each field's data archive (`Field/Fd????Dat.dac`, LZ11 + U8) has a
+  `.txt` listing its parts (`ch_sub: Fd0601ChSub00.bin`, `event_area`,
+  `wp_group`...) and binary `Ch.bin` / `ChSub00.bin` (48-byte records with
+  ids and positions; no Pokémon numbers seen yet), `Ev.bin` (events) and
+  `Data.rlb`. Wish Park is one field (`Fd0601`, plus `Fd0605`), so its four
+  zones are areas inside it. Where each Pokémon is placed, and its
+  befriending challenge, should be in those; not decoded yet.
+- The Pad's notes (`Flavor_Pokemon.msbt`): `_100` (a bio once a friend)
+  for every one; `_020` ("what it wants") only for some (in Cove Area:
+  Patrat, Watchog, Wingull, Pelipper and others), none naming a challenge
+  type. So the two-step hints (`data/friend-hints.json`, our own words)
+  wait for the challenge types from the field and event data, rather than
+  being guessed. The areas stay the table matched to the game's name order
+  and the owner's roster (`settings_ui.cpp` kWhere).
