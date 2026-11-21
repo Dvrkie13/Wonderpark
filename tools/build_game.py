@@ -173,6 +173,11 @@ def write_ninja(a, build: Path, bin_dir: Path, flags: list[str], link_flags: lis
     gen_r, dr = rel(gen), "tools/dolrecomp/src"
     common = " ".join(q(f) for f in flags)
     gen_flags = f"-std=gnu11 -w -I{gen_r} -Iruntime/core -I{dr} -DDOLRECOMP_CPU_HEADER=\\\"wp_cpu_fast.h\\\" -DWPF_FAST_FP"
+    if a.chunk_opt:
+        # The quick first build (and the PGO training build): the recompiled
+        # chunks at -O1 (after the -O2 above, so it wins). Was missing here
+        # until 2026-11-20, so players' quick builds compiled at -O2.
+        gen_flags += f" -O{a.chunk_opt}"
     if a.watch:
         gen_flags += " -DWPF_WATCH"
     if a.debug_info:
