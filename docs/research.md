@@ -603,6 +603,7 @@ pipeline's `-O2` build, same Wish Park spot, 3x:
 | --- | --- | --- |
 | Two cores, 30 fps | game 18.5 ms, 71% busy | game 12.9 ms, 53% busy |
 | Two cores, 60 fps | falls back to 30 (worst second 15) | 59.9 fps, game 10.3 ms, 92% busy |
+| All 16 threads, 60 fps | game 12.5 ms, 96% busy | game 8.3 ms, 70% busy |
 
 The background build takes 24.8 min instead of 10.5. Boot checks: 10 of 10
 hidden boots and 6 of 6 windowed runs into the park, profile-guided; 10 of
