@@ -556,3 +556,38 @@ while the GPU's own time (timer queries) stayed at 6-9 ms. Two causes:
 
 Dev build, turning: time in draw calls 184 -> 32 ms a second, our side
 20.8 -> 4.6 ms a frame, 14 -> 25 fps (the dev build is CPU-bound).
+
+Weak-PC measurements (2026-11-20, Part 6 step 0). The build players get
+(the pipeline's optimised build: llvm-mingw `-O2`, no ThinLTO, no PGO),
+standing in the Wish Park hub after loading slot 1, 20 s each, RX 9060 XT
+with a 16-thread CPU, 2560x1440 window, anti-aliasing off. "Two cores":
+the process limited to CPUs 0-1. Game = the game thread's own work, GX =
+turning GX into OpenGL (same thread), GPU = timer queries, per frame.
+
+| | fps | busy | game | GX | GPU |
+| --- | --- | --- | --- | --- | --- |
+| 30 fps, Native | 30.0 | 59% | 16.1 ms | 3.6 ms | 4.9 ms |
+| 30 fps, 3x | 30.0 | 59% | 16.1 ms | 3.6 ms | 9.0 ms |
+| 60 fps, Native | 59.9 | 96% | 12.5 ms | 3.6 ms | 4.8 ms |
+| 60 fps, 3x | 59.9 | 96% | 12.5 ms | 3.6 ms | 8.6 ms |
+| Two cores, 30 fps, Native | 29.9 | 72% | 18.8 ms | 5.4 ms | 4.8 ms |
+| Two cores, 30 fps, 3x | 30.0 | 71% | 18.5 ms | 5.3 ms | 8.9 ms |
+| Two cores, 60 fps, 3x | 30 (Frame rate fell back; worst second 15) | 72% | 18.6 ms | 5.3 ms | 9.1 ms |
+| ThinLTO + PGO build, 60 fps, 3x | 60.0 | 68% | 7.8 ms | 3.5 ms | 8.7 ms |
+
+(At 30 fps a game frame is two logic steps, hence more game ms than at 60.)
+
+- In every run: 20 EFB copies a frame (19 to textures), **0 readbacks**
+  (Effect copies Accurate), no shader compiles (Smooth shaders), sound
+  thread 0.2-0.27% busy, 0 underruns.
+- The player's build barely holds 60 here (96% busy); PGO takes the game's
+  own work from 12.5 to 7.8 ms (38%). On two of these cores 60 isn't held
+  and 30 is 72% busy: a laptop core about half as fast wouldn't hold 30 in
+  busy areas without a faster build.
+- Frame pacing already sleeps (high-resolution waitable timer in
+  `idle.c`); no busy-waiting to remove.
+- Attractions: `WONDERPARK_ATTRACTION` reaches each lobby, but scripted
+  presses of 2 don't get past "Choose a Pokemon" (probably the pointer),
+  so the attractions themselves aren't measured yet. The lobby: 41-43%
+  busy, game 6 ms, GPU 5.4 ms at 3x.
+- Not measurable on this PC: an Intel integrated GPU.

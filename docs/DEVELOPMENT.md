@@ -454,7 +454,7 @@ animation reaches that frame (`runtime/host/gallery3d.cpp`).
 | `WONDERPARK_AUDIO_DUMP=file.wav` | also write the game's own mix (32 kHz, as AX made it) to a file; written on the game thread, so tests only |
 | `WONDERPARK_AUDIO_OUT_DUMP=file.raw` | tests: what the sound device gets (48 kHz stereo 16-bit raw), from the sound thread |
 | `WONDERPARK_AX_NOAUX`, `WONDERPARK_AX_SNAP`, `WONDERPARK_AX_WB` | AX mixer debugging |
-| `RECOMP_FPS=1` | print fps (`fps:` frames shown, the slowest, how busy the game thread was, the game's own frames, the 60 Hz retraces its logic steps by, and the cap: the Frame rate setting, or the screen's refresh rate if lower), the overlay's numbers (`stats:`), disc reads and how many came from RAM (`disc:`), the GPU's own time from timer queries and the share of draws by specialised shaders (`gputime:`) and GL timings every second |
+| `RECOMP_FPS=1` | print fps (`fps:` frames shown, the slowest, how busy the game thread was, the game's own frames, the 60 Hz retraces its logic steps by, and the cap: the Frame rate setting, or the screen's refresh rate if lower), the overlay's numbers (`stats:`, with the readbacks' count and the time spent waiting for them), disc reads and how many came from RAM (`disc:`), the GPU's own time from timer queries and the share of draws by specialised shaders (`gputime:`) and GL timings every second |
 | `RECOMP_AUDIO=0` | no sound |
 | `RECOMP_GX_HIDDEN=1` | hidden window (`--headless` does this too) |
 | `RECOMP_GX_DUMP=dir`, `RECOMP_GX_DUMP_EVERY=N`, `RECOMP_GX_DUMP_FROM=N` | save presented frames as BMPs |
@@ -481,7 +481,7 @@ animation reaches that frame (`runtime/host/gallery3d.cpp`).
 The most useful: `waits` (where threads block), `steps` (the game's logic
 steps per tick), `idle`, `efbcopy`, `gxirq`, `mmiostat` (slow memory
 accesses), `axvoices`, `pointer`, `hostprof` (host profiler; see
-`tools/analysis/hostprof.py`), `audiostats` (every 5 s: underruns, device gaps, input dropped, the ring's level, the resampler's rate, the sample rates in and out), `framerate` (Frame rate 60 falling back to 30), `stalls` (the game thread during any frame over 250 ms: its most common
+`tools/analysis/hostprof.py`), `audiostats` (every 5 s: underruns, device gaps, input dropped, the ring's level, the resampler's rate, the sample rates in and out, how busy the sound thread was), `framerate` (Frame rate 60 falling back to 30), `stalls` (the game thread during any frame over 250 ms: its most common
 host stacks, the host functions and source lines the time went to, and
 the guest link registers, which name the game functions since the
 generated chunks have no line info), `prof` (where slices end),
