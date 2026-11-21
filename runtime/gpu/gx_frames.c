@@ -94,6 +94,9 @@ static unsigned sPresentsDropped; /* frames left out as the display wasn't ready
 /* Debug overlay counters, reset each second in report() (wp_stats.h). */
 #include "wp_stats.h"
 unsigned g_cnt_shader_compiles, g_cnt_readbacks, g_cnt_vertices, g_cnt_gx_draws, g_cnt_efb_copies, g_cnt_efb_copies_tex;
+/* Time spent reading copies back from the GPU (write_back; RECOMP_FPS's
+ * stats line): reading one waits for the GPU to finish drawing it. */
+double g_readback_ms;
 uint64_t g_gpu_tb;
 
 /* The game's frames so far (--exit-after's summary, the debug overlay). */
@@ -209,10 +212,10 @@ static void report(void) {
             g_wp_stats.serial++;
             if (e && *e == '1' && frames > 0)
                 fprintf(stderr,
-                        "stats: per frame cpu %.1f gpu %.1f wait %.1f ms; tex %u (%.1f ms); readbacks %u; "
+                        "stats: per frame cpu %.1f gpu %.1f wait %.1f ms; tex %u (%.1f ms); readbacks %u (%.1f ms); "
                         "verts %.0f; batches %.0f; gxdraws %.0f; efbcopies %.1f (tex %.1f)\n",
                         g_wp_stats.cpu_ms / frames, gpums / frames, waitms / frames, g_wp_stats.texture_uploads,
-                        g_wp_stats.texture_ms, g_cnt_readbacks, g_cnt_vertices / frames,
+                        g_wp_stats.texture_ms, g_cnt_readbacks, g_readback_ms, g_cnt_vertices / frames,
                         sGlCalls[GLK_DRAW] / frames, g_cnt_gx_draws / frames, g_cnt_efb_copies / frames,
                         g_cnt_efb_copies_tex / frames);
             {
@@ -248,6 +251,7 @@ static void report(void) {
             }
             g_cnt_shader_compiles = g_cnt_readbacks = g_cnt_vertices = g_cnt_gx_draws = 0;
             g_cnt_efb_copies = g_cnt_efb_copies_tex = 0;
+            g_readback_ms = 0;
             lastGpu = g_gpu_tb;
             lastWaitO = g_wait_ticks;
         }
@@ -948,7 +952,13 @@ static int sCopiesMadeCount;
 
 static void write_back(const WriteBack* b, int force) {
     int tw, th, x, y;
-    uint8_t* full = sDev->copy_read ? sDev->copy_read(b->target, &tw, &th) : NULL;
+    LARGE_INTEGER t0, t1, qf;
+    uint8_t* full;
+    QueryPerformanceCounter(&t0);
+    full = sDev->copy_read ? sDev->copy_read(b->target, &tw, &th) : NULL;
+    QueryPerformanceCounter(&t1);
+    QueryPerformanceFrequency(&qf);
+    g_readback_ms += (double)(t1.QuadPart - t0.QuadPart) * 1000.0 / (double)qf.QuadPart;
     uint8_t* px = full ? (uint8_t*)malloc((size_t)b->w * b->h * 4) : NULL;
     if (px) {
         /* Each EFB pixel: the average of those it was drawn as. */

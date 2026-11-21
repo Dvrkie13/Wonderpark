@@ -451,6 +451,8 @@ static int log_on(void) {
     return on;
 }
 
+static double sWorkSec; /* the sound thread's work time, for audiostats */
+
 static DWORD WINAPI sound_thread(LPVOID arg) {
     double next_report = wp_wall_seconds() + 5, retry = 0;
     int started = 0;
@@ -499,10 +501,12 @@ static DWORD WINAPI sound_thread(LPVOID arg) {
         if (want > sBufferFrames) want = sBufferFrames;
         room = want > padding ? want - padding : 0;
         if (room) {
+            double w0 = wp_wall_seconds();
             steer();
             if (SUCCEEDED(IAudioRenderClient_GetBuffer(sRender, room, &buf))) {
                 fill((float*)buf, (int)room);
                 post((float*)buf, (int)room);
+                sWorkSec += wp_wall_seconds() - w0; /* the thread's own work (audiostats) */
                 {
                     /* Tests: WONDERPARK_AUDIO_OUT_DUMP=<file> keeps what the device
                      * gets, 48 kHz stereo 16-bit raw (this thread, never the game's). */
@@ -533,10 +537,11 @@ static DWORD WINAPI sound_thread(LPVOID arg) {
             next_report += 5;
             fprintf(stderr,
                     "[audiostats] 5 s: %ld underruns, %ld device gaps, %ld input frames dropped, ring %.0f ms (target %d), "
-                    "rate %.4f, in %.0f Hz, out %.0f Hz%s\n",
+                    "rate %.4f, in %.0f Hz, out %.0f Hz, sound thread busy %.2f%%%s\n",
                     InterlockedExchange(&sUnderruns, 0), InterlockedExchange(&sDevGaps, 0), InterlockedExchange(&sDrops, 0),
                     sLevel * 1000.0 / IN_RATE, target_ms(), sRate, InterlockedExchange(&sPushedIn, 0) / 5.0,
-                    InterlockedExchange(&sFramesOut, 0) / 5.0, wp_clock_paused() ? ", paused" : "");
+                    InterlockedExchange(&sFramesOut, 0) / 5.0, sWorkSec / 5.0 * 100.0, wp_clock_paused() ? ", paused" : "");
+            sWorkSec = 0;
         }
     }
 }
