@@ -1307,6 +1307,7 @@ static const char* kLookFragmentShader =
     "uniform vec4 u_look2; /* brightness (-0.3 to 0.15), color-blind filter on */\n"
     "uniform vec4 u_cb[6];\n"
     "uniform vec4 u_look3; /* Silly: color filter (0-4), retro look (0-2), block size over the picture's (x, y) */\n"
+    "uniform vec4 u_look4; /* Time of day and the season: the light's tint (rgb) */\n"
     "float bayer4(vec2 p) {\n"
     "    int x = int(mod(p.x, 4.0)), y = int(mod(p.y, 4.0));\n"
     "    int m[16] = int[16](0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5);\n"
@@ -1321,6 +1322,7 @@ static const char* kLookFragmentShader =
     "        uv = (cell + 0.5) * u_look3.zw;\n"
     "    }\n"
     "    vec3 c = texture(u_image, uv).rgb;\n"
+    "    c = clamp(c * u_look4.rgb, 0.0, 1.0);\n"
     "    float l = dot(c, vec3(0.2126, 0.7152, 0.0722));\n"
     "    c = clamp(mix(vec3(l), c, u_look.y), 0.0, 1.0);\n"
     "    c = clamp((c - 0.5) * u_look.z + 0.5, 0.0, 1.0);\n"
@@ -1361,11 +1363,17 @@ static const char* kLookFragmentShader =
     "}\n";
 
 static GLuint sLookProgram;
-static GLint uLook, uLook2, uCb, uLook3;
+static GLint uLook, uLook2, uCb, uLook3, uLook4;
+
+/* Time of day and Seasonal touches (seasons.c): the light's grade, worked
+ * out once a presented frame (it eases, so it's asked every frame). */
+extern int seasons_grade(float rgb[3]);
+static float sGrade[3] = {1, 1, 1};
 
 static int look_needed(void) {
+    int grade = seasons_grade(sGrade);
     return g_x[X_BRIGHTNESS] != 100 || g_x[X_GAMMA] != 100 || g_x[X_COLORBLIND] || g_x[X_COLORS] ||
-           g_x[X_MIRROR_WORLD] || g_x[X_COLOR_FILTER] || g_x[X_RETRO_LOOK];
+           g_x[X_MIRROR_WORLD] || g_x[X_COLOR_FILTER] || g_x[X_RETRO_LOOK] || grade;
 }
 
 /* The color-blind filter's matrices (rows), per kind: deuteranopia,
@@ -1398,6 +1406,7 @@ static void build_look_program(void) {
     uLook2 = p_glGetUniformLocation(sLookProgram, "u_look2");
     uCb = p_glGetUniformLocation(sLookProgram, "u_cb");
     uLook3 = p_glGetUniformLocation(sLookProgram, "u_look3");
+    uLook4 = p_glGetUniformLocation(sLookProgram, "u_look4");
     p_glUseProgram(sProgram);
 }
 
@@ -2896,6 +2905,10 @@ static void draw_look(int w, int h) {
             float look3[4] = {(float)g_x[X_COLOR_FILTER], (float)g_x[X_RETRO_LOOK], w > 0 ? block / w : 0, h > 0 ? block / h : 0};
             p_glUniform4fv(uLook3, 1, look3);
         }
+        {
+            float look4[4] = {sGrade[0], sGrade[1], sGrade[2], 0};
+            p_glUniform4fv(uLook4, 1, look4);
+        }
         if (cb >= 1 && cb <= 3) {
             float m[6][4];
             memcpy(m, kCbSim[cb - 1], sizeof(kCbSim[0]));
@@ -3275,6 +3288,30 @@ static int gl_gpu_busy(void) {
 static int finish_present(int w, int h, int may_drop) {
     int dropped;
     draw_fps(w, h);
+    {
+        /* Seasonal touches (seasons.c): snow, leaves or petals, as small
+         * filled rectangles over the picture. */
+        extern int seasons_pieces(float* x, float* y, float* pw, float* ph, uint32_t* rgb, int max);
+        enum { MAX_FLAKES = 160 };
+        static float sx[MAX_FLAKES], sy[MAX_FLAKES], sw[MAX_FLAKES], shh[MAX_FLAKES];
+        static uint32_t sc[MAX_FLAKES];
+        int n = seasons_pieces(sx, sy, sw, shh, sc, MAX_FLAKES), i;
+        if (n > 0) {
+            p_glBindFramebuffer(GL_FRAMEBUFFER, sWinFbo);
+            glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+            glEnable(GL_SCISSOR_TEST);
+            for (i = 0; i < n; i++) {
+                int pw = (int)(sw[i] * h) + 1, ph = (int)(shh[i] * h) + 1;
+                int px = (int)(sx[i] * w) - pw / 2, py = h - (int)(sy[i] * h) - ph / 2;
+                if (px + pw < 0 || py + ph < 0 || px >= w || py >= h) continue;
+                glScissor(px, py, pw, ph);
+                glClearColor((sc[i] >> 16 & 255) / 255.0f, (sc[i] >> 8 & 255) / 255.0f, (sc[i] & 255) / 255.0f, 1);
+                glClear(GL_COLOR_BUFFER_BIT);
+            }
+            glDisable(GL_SCISSOR_TEST);
+            gl_forget();
+        }
+    }
     {
         /* Victory confetti (confetti.c): its pieces as small filled
          * rectangles over the picture, under the overlay. */

@@ -669,6 +669,19 @@ void build_rows() {
         c.rows.push_back(xrow(CHOICE, X_SPEED_TOGGLE, L"Speed-up key", nullptr, {L"Hold", L"Toggle"}));
         c.rows.push_back(xrow(TOGGLE, X_SAVE_BACKUPS, L"Save backups",
                               L"Keeps a copy of your slot before each save (the last 10), in the backups folder."));
+        c.rows.push_back(head(L"The park's light"));
+        c.rows.push_back(xrow(CHOICE, X_TIME_OF_DAY, L"Time of day",
+                              L"Follow my clock: the park's light follows your PC's time, a golden evening and a soft blue night. "
+                              L"Only in the park, changing slowly; the game plays the same.",
+                              {L"Game", L"Follow my clock"}));
+        {
+            Row st = xrow(TOGGLE, X_SEASONAL, L"Seasonal touches",
+                          L"By your PC's date: snow in December, a spooky light and falling leaves from 20 October, petals in spring. "
+                          L"Only in the park; off on the Potato preset.");
+            st.off = [] { return g_x[X_GRAPHICS_PRESET] == 0; };
+            st.tag = L"Off on Potato";
+            c.rows.push_back(st);
+        }
         c.rows.push_back(head(L"HUD"));
         {
             // Hidden by its key too (Controls > Buttons > Hide HUD; gx_fifo.c).

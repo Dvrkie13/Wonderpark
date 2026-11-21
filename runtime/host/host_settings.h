@@ -139,6 +139,8 @@ enum {
     X_PAPER_POKEMON,    /* 1: the park's Pokémon flat as paper (hle_size.c) */
     X_COLOR_FILTER,     /* 0 off, 1 old photo, 2 night, 3 pocket, 4 candy (gl_backend.c look pass) */
     X_RETRO_LOOK,       /* 0 off, 1 pixel, 2 pixel + dither */
+    X_TIME_OF_DAY,      /* [gameplay] 0 the game's, 1 follow my clock (seasons.c) */
+    X_SEASONAL,         /* [gameplay] 1: seasonal touches (seasons.c) */
     X_COUNT
 };
 /* The frame rate in effect: the setting, or 30 on battery with Battery

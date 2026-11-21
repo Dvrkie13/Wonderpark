@@ -10,6 +10,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include "host_settings.h"
 
@@ -189,7 +190,37 @@ static const struct {
     {"silly", "paper_pokemon", 0, 0, 1, "1: the park's Pokemon flat as paper, for looks"},
     {"silly", "color_filter", 0, 0, 4, "0 off, 1 old photo, 2 night, 3 pocket, 4 candy"},
     {"silly", "retro_look", 0, 0, 2, "0 off, 1 pixel, 2 pixel + dither"},
+    {"gameplay", "time_of_day", 0, 0, 1, "0 as the game made it, 1 follow my clock (the park's light: golden evening, blue night)"},
+    {"gameplay", "seasonal_touches", 1, 0, 1, "1: snow in December, spooky late October, petals in spring (in the park; not on Potato)"},
 };
+
+/* The PC's local time, for Time of day and Seasonal touches (seasons.c).
+ * Tests: WONDERPARK_FAKE_TIME="YYYY-MM-DD HH:MM" as if it were then (the
+ * minutes going on from there). */
+void settings_local_time(struct tm* out) {
+    static int parsed = -1;
+    static time_t offset;
+    time_t now = time(NULL);
+    if (parsed < 0) {
+        const char* e = getenv("WONDERPARK_FAKE_TIME");
+        struct tm f;
+        memset(&f, 0, sizeof(f));
+        parsed = 0;
+        if (e && sscanf(e, "%d-%d-%d %d:%d", &f.tm_year, &f.tm_mon, &f.tm_mday, &f.tm_hour, &f.tm_min) == 5) {
+            f.tm_year -= 1900;
+            f.tm_mon -= 1;
+            f.tm_isdst = -1;
+            offset = mktime(&f) - now;
+            parsed = 1;
+        }
+    }
+    now += offset;
+#ifdef _WIN32
+    localtime_s(out, &now);
+#else
+    localtime_r(&now, out);
+#endif
+}
 int g_x[X_COUNT];
 static int sXOverridden[X_COUNT];
 static char sXFileValue[X_COUNT][32];
