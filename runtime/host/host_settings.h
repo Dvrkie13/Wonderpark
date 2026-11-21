@@ -113,8 +113,8 @@ enum {
     /* [graphics] */
     X_GRAPHICS_PRESET,  /* PRESET_*: Potato to Ultra, or Custom (settings_apply_preset) */
     X_EFFECT_COPIES,    /* 0 fast (kept on the graphics card unless the game asks for one), 1 accurate (gx_frames.c) */
-    X_DYNAMIC_RES,      /* not yet */
-    X_DYNAMIC_RES_TARGET, /* not yet: the frame rate it keeps, 30 or 60 */
+    X_DYNAMIC_RES,      /* the internal resolution lowered while the GPU can't keep up (gx_frames.c dynres_tick) */
+    X_DYNAMIC_RES_TARGET, /* the frame rate it keeps, 30 or 60 */
     /* [display] */
     X_MONITOR,          /* 0 the window's own screen, else that screen (1 the main one; window_win32.c) */
     X_REFRESH_RATE,     /* fullscreen's refresh rate in Hz; 0 the screen's own */

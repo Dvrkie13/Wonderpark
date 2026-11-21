@@ -97,6 +97,7 @@ unsigned g_cnt_shader_compiles, g_cnt_readbacks, g_cnt_vertices, g_cnt_gx_draws,
 /* Time spent reading copies back from the GPU (write_back; RECOMP_FPS's
  * stats line): reading one waits for the GPU to finish drawing it. */
 double g_readback_ms;
+static void dynres_tick(double gpu_ms_per_present); /* dynamic resolution, below */
 uint64_t g_gpu_tb;
 
 /* The game's frames so far (--exit-after's summary, the debug overlay). */
@@ -258,6 +259,7 @@ static void report(void) {
                 extern unsigned g_spec_draws, g_uber_draws, g_spec_compiled, g_spec_loaded, g_spec_waiting;
                 g_wp_stats.gpu_present_ms = g_gl_gpu_n ? g_gl_gpu_ms / g_gl_gpu_n : -1;
                 perf_test_add(busyms, frames, g_gl_gpu_ms, g_gl_gpu_n);
+                dynres_tick(g_gl_gpu_n ? g_gl_gpu_ms / g_gl_gpu_n : 0);
                 if (e && *e == '1' && g_gl_gpu_n && frames > 0) {
                     double per = g_gl_gpu_ms / g_gl_gpu_n;
                     unsigned draws = g_spec_draws + g_uber_draws;
@@ -839,6 +841,10 @@ void gxb_init(void) {
     g_host_frame_render = frame_render;
 }
 
+/* Dynamic resolution (Graphics > Dynamic resolution): the internal
+ * resolution as low as dynres_tick has brought it (0: not lowered). */
+static int sDynCap, sDynWant;
+
 int gx_wanted_scale(int h) {
     const char* v = getenv("RECOMP_GX_SCALE");
     int s = v && atoi(v) > 0 ? atoi(v) : g_settings.scale;
@@ -850,7 +856,57 @@ int gx_wanted_scale(int h) {
          * Higher is still there to choose. */
         if (s > 4) s = 4;
     }
-    return s < 1 ? 1 : s > 8 ? 8 : s;
+    s = s < 1 ? 1 : s > 8 ? 8 : s;
+    sDynWant = s;
+    if (g_x[X_DYNAMIC_RES] && sDynCap && s > sDynCap) s = sDynCap;
+    return s;
+}
+
+/* Once a second, with the GPU's time per frame shown: while it stays over
+ * 90% of the target frame's time for 2 s, one step lower; while the step up
+ * would stay under 70% (estimated as the speed test does: pipeline.py
+ * gpu_scale) for 5 s, one step back, never above the setting. Only the GPU's
+ * own time counts, so a PC held back by its CPU keeps its resolution.
+ * Applied between frames (apply_settings): the EFB is made again, and copies
+ * kept in it are lost until the game makes them again (it remakes most every
+ * frame). WONDERPARK_DYNRES_BUDGET_MS (tests) sets the frame's time. */
+static void dynres_tick(double gpu_ms_per_present) {
+    static int hi, lo;
+    double budget, step_up;
+    int target, cur;
+    const char* b = getenv("WONDERPARK_DYNRES_BUDGET_MS");
+    if (!g_x[X_DYNAMIC_RES] || gpu_ms_per_present <= 0) {
+        if (sDynCap) sDynCap = 0;
+        hi = lo = 0;
+        return;
+    }
+    target = g_x[X_DYNAMIC_RES_TARGET] >= 60 ? 60 : 30;
+    if (settings_frame_rate_now() < target) target = settings_frame_rate_now();
+    budget = b && atof(b) > 0 ? atof(b) : 1000.0 / (target > 0 ? target : 30);
+    cur = sDev->scale();
+    if (gpu_ms_per_present > 0.9 * budget) {
+        lo = 0;
+        if (++hi >= 2 && cur > 1) {
+            sDynCap = cur - 1;
+            hi = 0;
+            fprintf(stderr, "[dynres] GPU %.1f ms a frame of %.1f: internal resolution %dx\n", gpu_ms_per_present, budget,
+                    sDynCap);
+        }
+        return;
+    }
+    hi = 0;
+    if (!sDynCap || cur >= sDynWant) return;
+    step_up = gpu_ms_per_present * (0.5 + 0.125 * (cur + 1) * (cur + 1)) / (0.5 + 0.125 * cur * cur);
+    if (step_up < 0.7 * budget) {
+        if (++lo >= 5) {
+            sDynCap = cur + 1 >= sDynWant ? 0 : cur + 1;
+            lo = 0;
+            fprintf(stderr, "[dynres] GPU %.1f ms a frame of %.1f: internal resolution %dx\n", gpu_ms_per_present, budget,
+                    cur + 1);
+        }
+    } else {
+        lo = 0;
+    }
 }
 
 int display_scale(void) { return sDev->scale(); }

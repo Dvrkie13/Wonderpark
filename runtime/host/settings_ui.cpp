@@ -435,11 +435,14 @@ void build_rows() {
                               L"The game copies the picture for some effects. Fast keeps the copies on the graphics card; Accurate also hands each to the game, as a Wii does, which waits for the card. If an effect looks wrong on Fast, try Accurate.",
                               {L"Fast", L"Accurate"}));
         c.rows.push_back(xrow(TOGGLE, X_DYNAMIC_RES, L"Dynamic resolution",
-                              L"Lowers the internal resolution for a moment when the frame rate drops, to keep it steady.", {}, true));
+                              L"Lowers the internal resolution a step while the graphics card can't keep up, and raises it again when it can. Never above the resolution you chose."));
         {
             Row dt = xrow(CHOICE, X_DYNAMIC_RES_TARGET, L"Target frame rate", L"The frame rate dynamic resolution keeps.",
-                          {L"30", L"60"}, true);
+                          {L"30", L"60"});
             dt.get = [] { return g_x[X_DYNAMIC_RES_TARGET] >= 60 ? 1 : 0; };
+            dt.set = [](int v) { settings_set_x(X_DYNAMIC_RES_TARGET, v ? 60 : 30); };
+            dt.off = [] { return !g_x[X_DYNAMIC_RES]; };
+            dt.tag = L"Turn it on first";
             c.rows.push_back(dt);
         }
         g_cats.push_back(c);
