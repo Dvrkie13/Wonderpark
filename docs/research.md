@@ -651,3 +651,19 @@ doesn't carry over and `g_gx_copy_sync` is never called. Not tested: slot
 taken (the camera may not be unlocked there). To do: with a save where
 photos work, find the encoder (`WONDERPARK_WATCH` on `008B0D00` reads) and
 hook it.
+
+Speed test (2026-11-21). The old test (the boot at x10, everything from
+the third second on averaged) read 0.5 to 4.4 ms of CPU a frame on the same
+PC, depending on how many of the boot screens' cheap frames (hundreds a
+second at x10) fell in its window; with the title alone at x10 it read
+20 ms (each frame catching up several steps); on two cores the x10 boot
+stayed on the wrist strap screen for 40 s. Now: Skip startup logos for the
+boot, then 5 s of the title at the game's own speed (30 fps). The quick
+first build (`-O1`, no profile), 3 runs each: all cores 15.8-17.2 ms, two
+cores 16.8-18.4 ms; GPU 1.6-1.8 ms at 2x; about 16 s a run. The park in
+the profile-guided build (Wish Park hub, 2x, game + GX per frame): 12.9 ms
+at 30 fps and 10.5 at 60 (two cores 14.9 and 13.2); GPU 6.2 ms at 2x
+(8.5 at 3x). Hence factors 0.85 (30 fps) and 0.75 (60 fps) for CPU and 3.8
+for GPU (`builder/pipeline.py`). With them this PC is suggested High (it
+holds 60 at 3x), and two of its cores High as well (13.2 ms of the 13.3
+allowed; measured 79% busy at 60).
