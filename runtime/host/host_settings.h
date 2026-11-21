@@ -135,6 +135,10 @@ enum {
     X_HUD_SIZE, X_HUD_OPACITY, /* not yet */
     X_HUD_KEY,          /* the key that hides and shows the HUD (VK code; F6; gx_fifo.c) */
     X_BATTERY_SAVER,    /* [display] 1: 30 fps while the PC runs on battery (settings_frame_rate) */
+    /* [silly] (Part 7) */
+    X_PAPER_POKEMON,    /* 1: the park's Pokémon flat as paper (hle_size.c) */
+    X_COLOR_FILTER,     /* 0 off, 1 old photo, 2 night, 3 pocket, 4 candy (gl_backend.c look pass) */
+    X_RETRO_LOOK,       /* 0 off, 1 pixel, 2 pixel + dither */
     X_COUNT
 };
 /* The frame rate in effect: the setting, or 30 on battery with Battery

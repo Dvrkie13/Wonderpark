@@ -32,7 +32,7 @@ static int plausible_scale(u32 a) {
         u32 w = LD32(a + POSTURE_SCALE + 4 * i);
         float f;
         memcpy(&f, &w, 4);
-        if (!(f > 0.05f && f < 20.0f)) return 0;
+        if (!(f > 0.02f && f < 20.0f)) return 0; /* (Mini and Paper: 0.04) */
     }
     return 1;
 }
@@ -54,30 +54,39 @@ static void scan(void) {
     WP_LOG("scene", "pokemon size: %d characters found", sCount);
 }
 
-static void set_all(float s) {
-    u32 w;
-    int i, k;
+/* Each record's scale: s across and up, s * depth front to back (Paper
+ * Pokémon: the model's own z, the way it faces). */
+static void set_all(float s, float depth) {
+    u32 w, wz;
+    int i;
+    float z = s * depth;
     memcpy(&w, &s, 4);
+    memcpy(&wz, &z, 4);
     for (i = 0; i < sCount; i++) {
         u32 a = sPosture[i];
         if (LD32(a) != POSTURE_A || LD32(a + 4) != POSTURE_B || !plausible_scale(a)) continue; /* gone */
-        for (k = 0; k < 3; k++) ST32(a + POSTURE_SCALE + 4 * k, w);
+        ST32(a + POSTURE_SCALE, w);
+        ST32(a + POSTURE_SCALE + 4, w);
+        ST32(a + POSTURE_SCALE + 8, wz);
     }
 }
 
-/* Each frame (hle_scene.c, SceneManager_RunBegin). */
+/* Each frame (hle_scene.c, SceneManager_RunBegin). Paper Pokémon (Silly;
+ * [silly] paper_pokemon) flattens the same records to 8% front to back:
+ * flat cut-outs that turn edge-on as they turn. */
 void hle_size_frame(void) {
     static const float kScale[3] = {0.5f, 1.0f, 2.0f};
     static unsigned seenScene = ~0u;
-    static int frames, applied = 1;
-    int want = g_x[X_POKEMON_SIZE];
+    static int frames, applied = 1 * 2;
+    int want = g_x[X_POKEMON_SIZE], paper = g_x[X_PAPER_POKEMON] != 0, state;
     if (want < 0 || want > 2) want = 1;
-    if (want == 1 && applied == 1) return;
+    state = want * 2 + paper;
+    if (state == 1 * 2 && applied == 1 * 2) return; /* normal, and already put back */
     if (hle_scene_changes() != seenScene || ++frames >= 300) {
         seenScene = hle_scene_changes();
         frames = 0;
         scan();
     }
-    set_all(kScale[want]);
-    applied = want;
+    set_all(kScale[want], paper ? 0.08f : 1.0f);
+    applied = state;
 }

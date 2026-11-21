@@ -1305,8 +1305,20 @@ static const char* kLookFragmentShader =
     "uniform vec4 u_look; /* gamma, saturation, contrast, mirror */\n"
     "uniform vec4 u_look2; /* brightness (-0.3 to 0.15), color-blind filter on */\n"
     "uniform vec4 u_cb[6];\n"
+    "uniform vec4 u_look3; /* Silly: color filter (0-4), retro look (0-2), block size over the picture's (x, y) */\n"
+    "float bayer4(vec2 p) {\n"
+    "    int x = int(mod(p.x, 4.0)), y = int(mod(p.y, 4.0));\n"
+    "    int m[16] = int[16](0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5);\n"
+    "    return (float(m[y * 4 + x]) + 0.5) / 16.0;\n"
+    "}\n"
     "void main() {\n"
     "    vec2 uv = vec2(u_look.w != 0.0 ? 1.0 - v_uv.x : v_uv.x, 1.0 - v_uv.y);\n"
+    "    vec2 cell = vec2(0.0);\n"
+    "    if (u_look3.y != 0.0) {\n"
+    "        /* Retro look: big square pixels, each sampled at its middle. */\n"
+    "        cell = floor(uv / u_look3.zw);\n"
+    "        uv = (cell + 0.5) * u_look3.zw;\n"
+    "    }\n"
     "    vec3 c = texture(u_image, uv).rgb;\n"
     "    float l = dot(c, vec3(0.2126, 0.7152, 0.0722));\n"
     "    c = clamp(mix(vec3(l), c, u_look.y), 0.0, 1.0);\n"
@@ -1320,15 +1332,39 @@ static const char* kLookFragmentShader =
     "        lin = clamp(lin + vec3(dot(u_cb[3].xyz, e), dot(u_cb[4].xyz, e), dot(u_cb[5].xyz, e)), 0.0, 1.0);\n"
     "        c = pow(lin, vec3(1.0 / 2.2));\n"
     "    }\n"
+    "    int filt = int(u_look3.x + 0.5);\n"
+    "    float y = dot(c, vec3(0.299, 0.587, 0.114));\n"
+    "    if (filt == 1) {\n"
+    "        /* Old photo: sepia, faded, darker at the edges. */\n"
+    "        vec3 s = vec3(y * 1.07, y * 0.87, y * 0.66) + vec3(0.06, 0.04, 0.02);\n"
+    "        vec2 d = v_uv - 0.5;\n"
+    "        c = clamp(s * (1.0 - 0.55 * dot(d, d)), 0.0, 1.0);\n"
+    "    } else if (filt == 2) {\n"
+    "        /* Night: dark and blue. */\n"
+    "        c = clamp(mix(vec3(y), c, 0.55) * vec3(0.48, 0.58, 0.95) + vec3(0.0, 0.01, 0.05), 0.0, 1.0);\n"
+    "    } else if (filt == 3) {\n"
+    "        /* Pocket: four shades of green (dithered with Retro look's). */\n"
+    "        float l = y + (u_look3.y > 1.5 ? (bayer4(cell) - 0.5) / 4.0 : 0.0);\n"
+    "        float k = clamp(floor(l * 4.0), 0.0, 3.0);\n"
+    "        c = k < 0.5 ? vec3(0.06, 0.22, 0.06) : k < 1.5 ? vec3(0.19, 0.38, 0.19) : k < 2.5 ? vec3(0.55, 0.67, 0.06) : vec3(0.61, 0.74, 0.06);\n"
+    "    } else if (filt == 4) {\n"
+    "        /* Candy: brighter colors, a pink glow. */\n"
+    "        c = clamp(mix(vec3(y), c, 1.55), 0.0, 1.0);\n"
+    "        c = mix(c, vec3(1.0, 0.72, 0.88), 0.16);\n"
+    "    }\n"
+    "    if (u_look3.y > 1.5 && filt != 3) {\n"
+    "        /* Pixel + dither: 5 levels a channel, ordered dithering. */\n"
+    "        c = floor(c * 4.0 + bayer4(cell)) / 4.0;\n"
+    "    }\n"
     "    o_color = vec4(c, 1.0);\n"
     "}\n";
 
 static GLuint sLookProgram;
-static GLint uLook, uLook2, uCb;
+static GLint uLook, uLook2, uCb, uLook3;
 
 static int look_needed(void) {
     return g_x[X_BRIGHTNESS] != 100 || g_x[X_GAMMA] != 100 || g_x[X_COLORBLIND] || g_x[X_COLORS] ||
-           g_x[X_MIRROR_WORLD];
+           g_x[X_MIRROR_WORLD] || g_x[X_COLOR_FILTER] || g_x[X_RETRO_LOOK];
 }
 
 /* The color-blind filter's matrices (rows), per kind: deuteranopia,
@@ -1360,6 +1396,7 @@ static void build_look_program(void) {
     uLook = p_glGetUniformLocation(sLookProgram, "u_look");
     uLook2 = p_glGetUniformLocation(sLookProgram, "u_look2");
     uCb = p_glGetUniformLocation(sLookProgram, "u_cb");
+    uLook3 = p_glGetUniformLocation(sLookProgram, "u_look3");
     p_glUseProgram(sProgram);
 }
 
@@ -2707,6 +2744,12 @@ static void draw_look(int w, int h) {
         float look2[4] = {b >= 0 ? b * 0.3f : b * 0.6f, cb >= 1 && cb <= 3 ? 1.0f : 0.0f, 0, 0};
         p_glUniform4fv(uLook, 1, look);
         p_glUniform4fv(uLook2, 1, look2);
+        {
+            /* Retro look: square pixels about 240 to the picture's height. */
+            float block = h > 240 ? (float)h / 240.0f : 1;
+            float look3[4] = {(float)g_x[X_COLOR_FILTER], (float)g_x[X_RETRO_LOOK], w > 0 ? block / w : 0, h > 0 ? block / h : 0};
+            p_glUniform4fv(uLook3, 1, look3);
+        }
         if (cb >= 1 && cb <= 3) {
             float m[6][4];
             memcpy(m, kCbSim[cb - 1], sizeof(kCbSim[0]));

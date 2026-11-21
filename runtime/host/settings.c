@@ -186,6 +186,9 @@ static const struct {
     {"gameplay", "hud_opacity", 100, 0, 100, "not yet"},
     {"gameplay", "hud_key", 0x75, 0, 255, "the key that hides and shows the HUD (a Windows virtual-key code; 0x75 is F6)"},
     {"display", "battery_saver", 1, 0, 1, "1: 30 fps while the PC runs on battery"},
+    {"silly", "paper_pokemon", 0, 0, 1, "1: the park's Pokemon flat as paper, for looks"},
+    {"silly", "color_filter", 0, 0, 4, "0 off, 1 old photo, 2 night, 3 pocket, 4 candy"},
+    {"silly", "retro_look", 0, 0, 2, "0 off, 1 pixel, 2 pixel + dither"},
 };
 int g_x[X_COUNT];
 static int sXOverridden[X_COUNT];

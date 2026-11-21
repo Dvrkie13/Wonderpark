@@ -716,10 +716,32 @@ void build_rows() {
     // Silly
     {
         Category c{L"silly", L"Silly", L"Just for fun", 0xe2457f, 0xf27aa5, 0xffffff, {}};
+        // The design's four sections (SILLY-PROMPT, the mockup's Silly tab).
+        // Partner colors, Shiny park, Big heads, Moon jump and Rainbow dash
+        // need the game's textures, bones and jump code found first.
+        c.rows.push_back(head(L"Partner colors", true));
+        {
+            const std::vector<std::wstring> swatches = {L"Original", L"Shiny", L"Rose", L"Mint", L"Sky", L"Violet", L"Shadow"};
+            for (const wchar_t* who : {L"Pikachu", L"Oshawott", L"Snivy", L"Tepig"})
+                c.rows.push_back(soon_row(CHOICE, who, nullptr, swatches, 0));
+        }
+        c.rows.push_back(soon_row(TOGGLE, L"Shiny park", L"Every Pokémon in the park in its shiny colors."));
+        c.rows.push_back(head(L"Pokémon"));
         c.rows.push_back(xrow(CHOICE, X_POKEMON_SIZE, L"Pokémon size", L"The park's Pokémon at half or twice their size. Just for looks: they bump into things as before.",
                               {L"Mini", L"Normal", L"Giant"}));
+        c.rows.push_back(soon_row(TOGGLE, L"Big heads", L"Everyone's head three times the size."));
+        c.rows.push_back(xrow(TOGGLE, X_PAPER_POKEMON, L"Paper Pokémon",
+                              L"The park's Pokémon flat as paper cut-outs: watch them turn edge-on. Just for looks."));
         c.rows.push_back(xslider(X_VOICE_PITCH, L"Voice pitch", L"From deep and grumbly to tiny and squeaky. Changes the next thing a Pokémon says.", -50, 50, 5, L"%", false, true));
+        c.rows.push_back(head(L"World"));
+        c.rows.push_back(soon_row(TOGGLE, L"Moon jump", L"Floaty jumps, as if on the moon. Off in attractions."));
         c.rows.push_back(xrow(TOGGLE, X_MIRROR_WORLD, L"Mirror world", L"Flips the whole park left to right. Left and right swap too."));
+        c.rows.push_back(xrow(CHOICE, X_COLOR_FILTER, L"Color filter", L"Old photo: sepia. Night: dark and blue. Pocket: four greens, like an old handheld. Candy: bright and pink.",
+                              {L"Off", L"Old photo", L"Night", L"Pocket", L"Candy"}));
+        c.rows.push_back(xrow(CHOICE, X_RETRO_LOOK, L"Retro look", L"Big square pixels; with dither, few colors mixed in a pattern.",
+                              {L"Off", L"Pixel", L"Pixel + dither"}));
+        c.rows.push_back(head(L"Fun"));
+        c.rows.push_back(soon_row(TOGGLE, L"Rainbow dash", L"A rainbow trail behind you while you dash."));
         c.rows.push_back(xrow(TOGGLE, X_VICTORY_CONFETTI, L"Victory confetti", L"A burst of confetti when you clear an attraction."));
         g_cats.push_back(c);
     }
