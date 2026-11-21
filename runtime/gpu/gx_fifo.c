@@ -677,6 +677,10 @@ int gx_register_copy(uint32_t addr, uint32_t handle, int width, int height, int 
  * It stays the copy for draws. */
 void gx_copy_write_back(uint32_t addr, int fmt, int intensity, int w, int h, int stride, const uint8_t* rgba, int force) {
     int i;
+    /* Never over the OS's globals and the exception handlers at the start
+     * of memory: a copy "to 0" comes from commands read wrong (a display
+     * list the game had rewritten), and wrote white pixels over them. */
+    if ((addr & 0x3FFFFFFFu) < 0x4000u) return;
     for (i = 0; i < sCopyCount && sCopies[i].addr != addr; i++) {}
     if (!force) {
         if (i == sCopyCount || sCopies[i].bytes <= 0) return;
@@ -1894,9 +1898,9 @@ static void efb_copy(uint32_t exec) {
     g_cnt_efb_copies++;
     if (!to_xfb) g_cnt_efb_copies_tex++;
     if (wp_log_on("efbcopy"))
-        fprintf(stderr, "[efbcopy] %.2f frame %llu: %dx%d at (%d,%d) to %s %08X, clear %d, %u draws\n",
+        fprintf(stderr, "[efbcopy] %.2f frame %llu: %dx%d at (%d,%d) to %s %08X, clear %d, %u draws, display list %08X\n",
                 (double)wp_host_time() / 60750.0, (unsigned long long)sFrame, w, h, x, y,
-                to_xfb ? "XFB" : "texture", dst, clear, sDrawCount);
+                to_xfb ? "XFB" : "texture", dst, clear, sDrawCount, (unsigned)sDisplayList);
     if (to_xfb) {
         LOG("frame %llu: copy to XFB %dx%d at (%d,%d), %u draws, %u vertices", (unsigned long long)sFrame, w, h, x, y,
             sDrawCount, sVertexCount);

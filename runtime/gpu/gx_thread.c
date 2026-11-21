@@ -58,12 +58,61 @@ static HGLRC sRC;
 
 #define PUBLISH_EVERY 16384
 
+/* How far behind the render thread may fall. The game was made for a GPU
+ * that is never more than moments behind: it reuses memory an EFB copy
+ * will write (a capture buffer freed at boot, then loaded over from disc),
+ * and rewrites display lists, without waiting for the GPU. With the render
+ * thread seconds behind (setting up at boot) a late copy overwrote what
+ * the game had put there since (crashes at boot and in the park,
+ * 2026-11-21: docs/research.md). So once something sent more than this
+ * long ago hasn't been taken, the game thread waits for it (as the
+ * single-threaded renderer always does): about a frame of overlap.
+ * WONDERPARK_RT_LAG_MS sets it (tests). */
+#define MAX_LAG_MS 20
+static double sMaxLagTicks;
+/* What was published when (game thread only): a small queue of batches. */
+#define BATCHES 512
+static struct {
+    size_t end;
+    LONGLONG at;
+} sBatch[BATCHES];
+static unsigned sBatchHead, sBatchTail;
+
 /* Hands what was written to the render thread, waking it if it sleeps. */
 static void publish(void) {
     _WriteBarrier();
     sW = sWLocal;
     MemoryBarrier(); /* the store before reading sSleeping */
     if (sSleeping) SetEvent(sData);
+    if (sBatchTail - sBatchHead < BATCHES) {
+        LARGE_INTEGER now;
+        QueryPerformanceCounter(&now);
+        sBatch[sBatchTail % BATCHES].end = sWLocal;
+        sBatch[sBatchTail % BATCHES].at = now.QuadPart;
+        sBatchTail++;
+    }
+}
+
+/* Waits while the render thread is more than MAX_LAG_MS behind. */
+static void bound_lag(void) {
+    LARGE_INTEGER now;
+    if (sBatchHead == sBatchTail) return;
+    QueryPerformanceCounter(&now);
+    while (sBatchHead != sBatchTail) {
+        size_t r = sR;
+        if (r >= sBatch[sBatchHead % BATCHES].end) { /* taken */
+            sBatchHead++;
+            continue;
+        }
+        if ((double)(now.QuadPart - sBatch[sBatchHead % BATCHES].at) < sMaxLagTicks) return;
+        /* Too far behind: wait (window messages still handled). */
+        InterlockedExchange(&sWaitingForSpace, 1);
+        while (sR < sBatch[sBatchHead % BATCHES].end && !sStop) {
+            win_pump();
+            WaitForSingleObject(sSpace, 1);
+        }
+        InterlockedExchange(&sWaitingForSpace, 0);
+    }
 }
 
 /* The ring is full: the render thread is a long way behind. Window
@@ -147,6 +196,7 @@ static void game_tick(void) {
     static unsigned calls;
     static ULONGLONG last;
     if (sWLocal != sW) publish();
+    bound_lag();
     if (++calls & 63) return;
     {
         ULONGLONG now = GetTickCount64();
@@ -164,6 +214,12 @@ int gxt_start(void) {
     sDC = wglGetCurrentDC();
     sRC = wglGetCurrentContext();
     if (!sDC || !sRC) return 0; /* not OpenGL */
+    {
+        LARGE_INTEGER f;
+        const char* l = getenv("WONDERPARK_RT_LAG_MS");
+        QueryPerformanceFrequency(&f);
+        sMaxLagTicks = (double)f.QuadPart * (l && *l ? atof(l) : MAX_LAG_MS) / 1000.0;
+    }
     sRing = (uint8_t*)malloc(RING);
     sData = CreateEventA(NULL, FALSE, FALSE, NULL);
     sSpace = CreateEventA(NULL, FALSE, FALSE, NULL);
