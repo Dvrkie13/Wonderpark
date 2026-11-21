@@ -129,7 +129,7 @@ static const struct {
     {"silly", "mirror_world", 0, 0, 1, "the picture flipped left to right (and left and right swapped)"},
     {"silly", "victory_confetti", 0, 0, 1, "1: a burst of confetti when an attraction is cleared"},
     {"graphics", "preset", PRESET_CUSTOM, 0, PRESET_CUSTOM,
-     "0 potato, 1 low, 2 medium, 3 high, 4 ultra, 5 custom: sets scale, frame_rate, msaa, aniso, per_pixel_lighting, bloom, effect_copies"},
+     "0 potato, 1 low, 2 medium, 3 high, 4 ultra, 5 custom: sets scale, frame_rate, msaa, aniso, per_pixel_lighting, bloom, effect_copies, shader_mode"},
     {"graphics", "effect_copies", 1, 0, 1, "0 fast (copies of the picture stay on the graphics card unless the game asks), 1 accurate"},
     {"graphics", "dynamic_resolution", 0, 0, 1, "not yet"},
     {"graphics", "dynamic_resolution_target", 60, 30, 60, "not yet: the frame rate it keeps, 30 or 60"},
@@ -357,15 +357,20 @@ static int option_index(const char* section, const char* key) {
  * effect copies. The build's speed test (builder/pipeline.py) suggests one,
  * which the very first start uses. */
 
+/* shaders: Shader compilation, 0 Smooth, 1 Fast. Fast takes about a third
+ * off the GPU's time (Wish Park, 2026-11-21: 4.83 -> 3.27 ms at native,
+ * 8.57 -> 5.42 at 3x) at the price of a short pause the first time each new
+ * look is drawn (AMD; the programs are kept on disk after), so the presets
+ * for weak PCs use it. */
 static const struct {
     const char* name;
-    int scale, frame_rate, msaa, aniso, ppl, bloom, copies;
+    int scale, frame_rate, msaa, aniso, ppl, bloom, copies, shaders;
 } kPresets[PRESET_CUSTOM] = {
-    {"Potato", 1, 30, 1, 1, 0, 0, 0},
-    {"Low", 1, 30, 1, 1, 0, 1, 1},
-    {"Medium", 2, 60, 1, 4, 0, 1, 1},
-    {"High", 3, 60, 2, 16, 1, 1, 1},
-    {"Ultra", 4, 60, 4, 16, 1, 1, 1},
+    {"Potato", 1, 30, 1, 1, 0, 0, 0, 1},
+    {"Low", 1, 30, 1, 1, 0, 1, 1, 1},
+    {"Medium", 2, 60, 1, 4, 0, 1, 1, 0},
+    {"High", 3, 60, 2, 16, 1, 1, 1, 0},
+    {"Ultra", 4, 60, 4, 16, 1, 1, 1, 0},
 };
 
 static void preset_fields(int p) {
@@ -377,6 +382,7 @@ static void preset_fields(int p) {
     g_x[X_PER_PIXEL_LIGHTING] = kPresets[p].ppl;
     g_x[X_BLOOM] = kPresets[p].bloom;
     g_x[X_EFFECT_COPIES] = kPresets[p].copies;
+    g_x[X_SHADER_MODE] = kPresets[p].shaders;
     apply_frame_rate();
 }
 
@@ -384,7 +390,8 @@ static int preset_matches(int p) {
     return p >= 0 && p < PRESET_CUSTOM && g_settings.scale == kPresets[p].scale &&
            g_settings.frame_rate == kPresets[p].frame_rate && g_settings.msaa == kPresets[p].msaa &&
            g_settings.aniso == kPresets[p].aniso && g_x[X_PER_PIXEL_LIGHTING] == kPresets[p].ppl &&
-           g_x[X_BLOOM] == kPresets[p].bloom && g_x[X_EFFECT_COPIES] == kPresets[p].copies;
+           g_x[X_BLOOM] == kPresets[p].bloom && g_x[X_EFFECT_COPIES] == kPresets[p].copies &&
+           (g_x[X_SHADER_MODE] != 0) == (kPresets[p].shaders != 0);
 }
 
 /* Whether the environment sets any of them (a test run): then the preset
@@ -396,7 +403,8 @@ static int preset_overridden(void) {
         int i = option_index("display", kKeys[k]);
         if (i >= 0 && sOverridden[i]) return 1;
     }
-    return sXOverridden[X_PER_PIXEL_LIGHTING] || sXOverridden[X_BLOOM] || sXOverridden[X_EFFECT_COPIES];
+    return sXOverridden[X_PER_PIXEL_LIGHTING] || sXOverridden[X_BLOOM] || sXOverridden[X_EFFECT_COPIES] ||
+           sXOverridden[X_SHADER_MODE];
 }
 
 void settings_apply_preset(int preset) { settings_set_x(X_GRAPHICS_PRESET, preset); }

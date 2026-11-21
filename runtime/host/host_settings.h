@@ -139,7 +139,7 @@ enum {
 enum { PRESET_POTATO, PRESET_LOW, PRESET_MEDIUM, PRESET_HIGH, PRESET_ULTRA, PRESET_CUSTOM };
 /* Sets the graphics settings a preset covers (internal resolution, frame
  * rate, anti-aliasing, texture filtering, per-pixel lighting, bloom,
- * effect copies) and saves; PRESET_CUSTOM leaves them. Changing any of
+ * effect copies, shader compilation) and saves; PRESET_CUSTOM leaves them. Changing any of
  * them by hand makes the preset Custom (at the next save). */
 void settings_apply_preset(int preset);
 /* What the build's speed test suggested ("High"), or "" (read at start). */

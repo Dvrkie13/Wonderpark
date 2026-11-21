@@ -367,7 +367,7 @@ void build_rows() {
             // The presets (settings.c): set the settings below together;
             // changing one of them by hand makes it Custom.
             std::wstring desc =
-                L"Sets internal resolution, frame rate, anti-aliasing, texture filtering, per-pixel lighting, bloom and effect copies together. Change any of them and it's Custom.";
+                L"Sets internal resolution, frame rate, anti-aliasing, texture filtering, per-pixel lighting, bloom, effect copies and shader compilation together (Potato and Low use Fast shaders, from the next start). Change any of them and it's Custom.";
             const char* s = settings_suggested_preset();
             if (s && *s) desc += L" The speed test after your build suggested " + std::wstring(s, s + strlen(s)) + L".";
             Row pr = xrow(CHOICE, X_GRAPHICS_PRESET, L"Preset", desc.c_str(),
