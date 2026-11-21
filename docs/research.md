@@ -684,3 +684,10 @@ build again with `-march=x86-64-v3` (AVX2, FMA, BMI), Wish Park, 60 fps,
 2x, two runs each: game 7.1-7.3 ms plain vs 7.8-7.9 with it (all cores),
 8.7-8.8 vs 9.2-9.3 (two cores). Slower, not faster (as /arch:AVX2 with
 clang-cl showed no gain, 2026-11-10); players' builds stay generic x86-64.
+
+Memory (2026-11-21, profile-guided build, Wish Park, 2x): 681 MB working
+set, 1,240 MB private (peak working set 745 MB). Of it, Fast loading's
+284 MB is the biggest part the game can let go, and it's now left off
+below 8 GB of RAM; the rest is the emulated Wii's memory, the vertex arena
+and the graphics driver. No separate Low-memory mode built: little more
+to gain.
