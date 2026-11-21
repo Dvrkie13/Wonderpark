@@ -635,3 +635,19 @@ Render thread, third look (2026-11-21; `WONDERPARK_RENDER_THREAD=1`).
   OpenGL 4.7 -> 10.7 ms, readbacks 187 ms a second). On the weak PCs it was
   meant for it halves the frame rate, and single-threaded already holds 60
   on two cores with the profile-guided build. Left off; not worth finishing.
+
+Photos (2026-11-21). The game takes a Photo of the current screen with −
+(Fd0102.msbt: "Press <icon 5> to take Photos"; icon 5 of the d-pad, A, B,
+HOME, +, −, 1, 2 set is −; taught at Misdreavus's Photo Studio, up to 72
+kept). The JPEG encoder reads the screen's EFB copy (640x456 at
+`008B0D00`), which the game makes every frame, so it is never written back
+by itself (Effect copies Fast or Accurate alike). The reference project
+(MildRain479/PokePark-2-Wiicompiled, `recomp/patches/hle_gx.c`) hooks its
+"JPEG encoder" at `0x8028EF88` and calls `g_gx_copy_sync(r4)` first; in
+this build `0x8028EF88` is inside an OS routine that installs an exception
+handler (after `__OSException`'s `rfi`; nothing calls it), so that address
+doesn't carry over and `g_gx_copy_sync` is never called. Not tested: slot
+1 of the test save (Wish Park) got − (WPAD 0x1000) 22 times with no photo
+taken (the camera may not be unlocked there). To do: with a save where
+photos work, find the encoder (`WONDERPARK_WATCH` on `008B0D00` reads) and
+hook it.
