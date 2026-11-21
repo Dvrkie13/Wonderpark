@@ -352,10 +352,59 @@ int audio_device_list(int* hashes, wchar_t (*names)[48], int max) {
     return n;
 }
 
+/* ---- A short sound of our own over everything (a Pokémon's cry in the
+ * Gallery, the sticker chime): mono samples, mixed in here by the sound
+ * thread, so it never waits behind the game's sound or the Jukebox's song
+ * in the ring. One at a time: a new one replaces the one playing. */
+static CRITICAL_SECTION sFxLock;
+static float* sFx;      /* the sound, at its own rate, gain applied */
+static int sFxLen;
+static double sFxPos, sFxStep; /* where it's at, in its samples; its samples per output sample */
+static int sFxReady;           /* (no sound at all: RECOMP_AUDIO=0) */
+
+void audio_play_sound(const int16_t* pcm, int frames, int rate, float gain) {
+    float* f = NULL;
+    int i;
+    if (!sFxReady) return;
+    if (pcm && frames > 0 && rate > 0 && (f = (float*)malloc((size_t)frames * sizeof(float))) != NULL)
+        for (i = 0; i < frames; i++) f[i] = pcm[i] * (gain / 32768.0f);
+    EnterCriticalSection(&sFxLock);
+    free(sFx);
+    sFx = f;
+    sFxLen = f ? frames : 0;
+    sFxPos = 0;
+    sFxStep = rate > 0 ? (double)rate / OUT_RATE : 1;
+    LeaveCriticalSection(&sFxLock);
+}
+/* Whether one is still playing. */
+int audio_sound_playing(void) { return sFx != NULL; }
+
+static void mix_sound(float* buf, int frames) {
+    int i, vol = g_x[X_VOLUME_MASTER];
+    float g = vol * vol / 10000.0f;
+    if (!sFx) return;
+    EnterCriticalSection(&sFxLock);
+    for (i = 0; sFx && i < frames; i++) {
+        int k = (int)sFxPos;
+        float t = (float)(sFxPos - k), v;
+        if (k + 1 >= sFxLen) {
+            free(sFx);
+            sFx = NULL;
+            break;
+        }
+        v = (sFx[k] + (sFx[k + 1] - sFx[k]) * t) * g;
+        buf[2 * i] += v;
+        buf[2 * i + 1] += v;
+        sFxPos += sFxStep;
+    }
+    LeaveCriticalSection(&sFxLock);
+}
+
 /* ---- After mixing: Mono and Night mode, on the device's 48 kHz float. */
 static void post(float* buf, int frames) {
     static float env; /* Night mode's level follower */
     int i, mono = g_x[X_MONO], night = g_x[X_NIGHT_MODE];
+    mix_sound(buf, frames);
     if (!mono && !night) {
         env = 0;
         return;
@@ -552,6 +601,8 @@ void audio_init(void) {
     kernel_init();
     InitializeCriticalSection(&sPushLock);
     InitializeCriticalSection(&sDevLock);
+    InitializeCriticalSection(&sFxLock);
+    sFxReady = 1;
     sWake = CreateEventA(NULL, FALSE, FALSE, NULL);
     g_host_audio_push = push;
     if (!CreateThread(NULL, 0, sound_thread, NULL, 0, NULL)) {
