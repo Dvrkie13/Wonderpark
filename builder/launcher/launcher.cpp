@@ -46,6 +46,7 @@
 #define WONDERPARK_WIDEN(s) WONDERPARK_WIDEN2(s)
 #define WONDERPARK_VERSION_W WONDERPARK_WIDEN(WONDERPARK_VERSION)
 #include "mods.h"
+#include "music.h"
 #include "saves.h"
 #include "../../runtime/host/pad_icons.h"  // controller icons (pad_icons_core.cpp, shared with the game)
 #include "../../runtime/host/pad_sdl.h"    // controllers through SDL3 (pad_sdl.c, shared with the game)
@@ -1462,6 +1463,7 @@ struct View {
     double fast_until = 3;     // 60 fps until then (the intro, then after input)
     D2D1_RECT_F button = {}, log_link = {};
     D2D1_RECT_F cancel = {};   // the build screen's Cancel (scene units; hover 8)
+    D2D1_RECT_F mute_b = {}, skip_b = {};  // the music's line: mute (hover 12), next song (13)
     double eta_shown_t = 0;    // the time left, settled: updated every few seconds, not every frame
     double eta_shown = -1;
     // The Mods page
@@ -3017,6 +3019,48 @@ static void render(double t, const Shared& s) {
     // with the launcher closed, a tip (our own words), and Cancel.
     V.cancel = {};
     if (s.state == S_BUILDING) render_build_panel(t, s, R);
+    // ---- The music's line, bottom centre, while a song plays (music.cpp: only
+    // once the build has finished): mute, the song's title, the next song.
+    V.mute_b = V.skip_b = {};
+    {
+        std::wstring now = music_now_playing();
+        if (!now.empty() && !V.mods) {
+            dc->SetTransform(R);
+            float bh = 40, y = H - 30 - bh, tw = 0;
+            std::wstring line = (music_muted() ? L"Muted · " : L"♪ ") + now;
+            float th = text_height(line, G.tfLegal.Get(), 1000, &tw);
+            tw = std::min(tw + 2, 300.f);
+            float w = 6 + 30 + 10 + tw + 10 + 30 + 6, x = W / 2 - w / 2;  // bottom centre, under the emblem
+            dc->FillRoundedRectangle(D2D1::RoundedRect(RectF(x, y, x + w, y + bh), 20, 20), brush(rgb(0x121b3a, .78f)).Get());
+            dc->DrawRoundedRectangle(D2D1::RoundedRect(RectF(x + .5f, y + .5f, x + w - .5f, y + bh - .5f), 19.5f, 19.5f),
+                                     brush(rgb(0xf3cf6b, .45f)).Get(), 1);
+            // Mute: a speaker, waves or a cross.
+            float mx = x + 6 + 15, my = y + bh / 2;
+            D2D1_COLOR_F ink = rgb(V.hover == 12 ? 0xffffff : 0xffe7a3);
+            if (V.hover == 12) dc->FillEllipse(D2D1::Ellipse(Point2F(mx, my), 15, 15), brush(rgb(0xffffff, .12f)).Get());
+            auto spk = polygon({{mx - 8, my - 3}, {mx - 4, my - 3}, {mx + 1, my - 8}, {mx + 1, my + 8}, {mx - 4, my + 3}, {mx - 8, my + 3}});
+            dc->FillGeometry(spk.Get(), brush(ink).Get());
+            if (music_muted()) {
+                dc->DrawLine(Point2F(mx + 4, my - 4), Point2F(mx + 10, my + 4), brush(ink).Get(), 2, G.round.Get());
+                dc->DrawLine(Point2F(mx + 10, my - 4), Point2F(mx + 4, my + 4), brush(ink).Get(), 2, G.round.Get());
+            } else {
+                dc->DrawLine(Point2F(mx + 5, my - 3), Point2F(mx + 5, my + 3), brush(ink).Get(), 2, G.round.Get());
+                dc->DrawLine(Point2F(mx + 9, my - 6), Point2F(mx + 9, my + 6), brush(ink).Get(), 2, G.round.Get());
+            }
+            V.mute_b = RectF(x + 6, y + 5, x + 6 + 30, y + 35);
+            if (V.focus == -3 && !V.mods) focus_ring(V.mute_b, 15);
+            draw_text(line, G.tfLegal.Get(), x + 6 + 30 + 10, my - th / 2, tw, th + 2, rgb(0xeef2fb), DWRITE_TEXT_ALIGNMENT_LEADING);
+            // Next song: two small triangles and a bar.
+            float sx = x + w - 6 - 15;
+            D2D1_COLOR_F ink2 = rgb(V.hover == 13 ? 0xffffff : 0xffe7a3);
+            if (V.hover == 13) dc->FillEllipse(D2D1::Ellipse(Point2F(sx, my), 15, 15), brush(rgb(0xffffff, .12f)).Get());
+            dc->FillGeometry(polygon({{sx - 8, my - 6}, {sx - 1, my}, {sx - 8, my + 6}}).Get(), brush(ink2).Get());
+            dc->FillGeometry(polygon({{sx - 1, my - 6}, {sx + 6, my}, {sx - 1, my + 6}}).Get(), brush(ink2).Get());
+            dc->DrawLine(Point2F(sx + 8, my - 6), Point2F(sx + 8, my + 6), brush(ink2).Get(), 2, G.round.Get());
+            V.skip_b = RectF(x + w - 36, y + 5, x + w - 6, y + 35);
+            if (V.focus == -4 && !V.mods) focus_ring(V.skip_b, 15);
+        }
+    }
     // Legal line, bottom right.
     {
         dc->SetTransform(R);
@@ -3436,6 +3480,7 @@ static void launch_game(const std::wstring& exe) {
     if (started) {
         CloseHandle(pi.hThread);
         CloseHandle(pi.hProcess);
+        music_stop_for_play();  // the game's own sound from here
         V.toast_t = now_s();
         fast(3);
     } else {
@@ -3582,6 +3627,8 @@ static int hit(int x, int y) {
             if (ins(it.first)) return it.second;
         return 0;
     }
+    if (ins(V.mute_b)) return 12;
+    if (ins(V.skip_b)) return 13;
     if (ins(V.tab)) return 5;
     if (in(V.log_link)) return 4;
     if (ins(V.cancel)) return 8;
@@ -3596,7 +3643,9 @@ static void click(int h) {
         if (current_state() == S_BUILDING && ask_cancel()) cancel_build();
         return;
     }
-    if (h == 1) open_menu();
+    if (h == 12) music_set_muted(!music_muted()), fast(.5);
+    else if (h == 13) music_skip(), fast(.5);
+    else if (h == 1) open_menu();
     else if (h == 5) open_mods();
     else if (h == 6) close_mods();
     else if (h == 7) pick_zip();
@@ -3722,6 +3771,9 @@ static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
         case WM_SETTINGCHANGE:
             V.reduced = reduced_motion();
             return 0;
+        case WM_ACTIVATEAPP:
+            music_active(wp != 0);  // the music pauses while the launcher is in the background
+            break;
         case WM_CLOSE:
             // A build carries on with the launcher closed (it says so on the
             // build screen); the next start shows it again.
@@ -3823,6 +3875,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show) {
         }
     }
     g_root = find_root(root);
+    music_init(g_root, mods_data_dir());
     find_python();
     g_job = CreateJobObjectW(nullptr, nullptr);
     JOBOBJECT_EXTENDED_LIMIT_INFORMATION jl = {};
@@ -3891,6 +3944,9 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show) {
         double t = now_s();
         run_script(t - V.start);
         poll_controller();
+        // The music: only once the build from the player's disc has
+        // finished (Play); silent in every other state (music.cpp).
+        music_allow(current_state() == S_DONE);
         Shared s;
         {
             std::lock_guard<std::mutex> lk(g.m);
@@ -3996,6 +4052,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show) {
     g_unfollow = true;  // a build carries on; stop following it
     join_worker();
     mods_install_join();
+    music_shutdown();
     OleUninitialize();
     return 0;
 }

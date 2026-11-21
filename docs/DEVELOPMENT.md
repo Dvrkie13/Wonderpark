@@ -110,6 +110,22 @@ executable can ship in a release.
   the top-right corner as that pad's own icons (`runtime/host/pad_icons_core.cpp`,
   shared with the game; the icons are built in from `runtime/host/pad_icons.rc`).
   `WONDERPARK_TEST_PAD=1` (tests) shows them without a pad.
+- **Music** (`builder/launcher/music.cpp`), only in the Play state: the
+  pipeline says the build from the verified disc is current, or a build
+  just finished. In every other state (no disc, verifying, building, a
+  failed, stopped or missing build) the launcher is silent. It plays songs
+  the player has heard in the game (`jukebox_heard.ini` in the data folder,
+  written by the game): the Jukebox's "♥ Launcher" songs if any are marked
+  (`jukebox_launcher.ini`), else every song heard, shuffled, read from the
+  player's own `game/files/Sound` (ADX, decoded as the Jukebox does) and
+  played through waveOut on a thread of its own. Nothing heard yet: silent.
+  30% volume, faded in over about 2 s, paused while the launcher is in the
+  background, stopped for good when Play starts the game. A line at the
+  bottom centre shows the song's title (from `jukebox_titles.ini`, which the
+  game writes once a run from its Jukebox; "A song from the park" before
+  that), a speaker button that mutes it (`launcher.ini`, `[music] muted`)
+  and a next-song button. Checked with a test data folder (two songs heard,
+  one marked): the line, mute and next.
 
 ### The Mods page
 

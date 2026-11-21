@@ -393,6 +393,61 @@ double jukebox_position(void) {
     double s = (double)g_done / g_tracks[i].rate - (g_paused ? 0 : audio_queued_ms() / 1000.0);
     return s < 0 ? 0 : s;
 }
+// ---- For the launcher: "♥ Launcher" songs and the titles.
+
+static std::mutex g_favM;
+static std::set<std::string> g_fav;
+static int g_favLoaded;
+
+static std::string song_key(int i) { return std::string(g_tracks[i].t.bank) + ":" + std::to_string(g_tracks[i].t.index); }
+static std::string fav_path() { return std::string(wp_data_dir()) + "/jukebox_launcher.ini"; }
+static void write_later(const std::string& path, const std::string& s) {
+    std::thread([path, s] {
+        std::string tmp = path + ".new";
+        if (FILE* f = fopen(tmp.c_str(), "wb")) {
+            bool ok = fwrite(s.data(), 1, s.size(), f) == s.size();
+            if (fclose(f) == 0 && ok) MoveFileExA(tmp.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING);
+        }
+    }).detach();
+}
+static void load_fav() {
+    if (g_favLoaded) return;
+    g_favLoaded = 1;
+    // (Read when the Jukebox page first shows: a small file, the notebook's thread.)
+    if (FILE* f = fopen(fav_path().c_str(), "rb")) {
+        char line[256];
+        while (fgets(line, sizeof(line), f)) {
+            std::string s(line);
+            while (!s.empty() && (s.back() == '\n' || s.back() == '\r')) s.pop_back();
+            if (!s.empty() && s[0] != ';' && s[0] != '[') g_fav.insert(s);
+        }
+        fclose(f);
+    }
+}
+
+int jukebox_launcher(int i) {
+    if (g_state != 2 || i < 0 || i >= (int)g_tracks.size()) return 0;
+    std::lock_guard<std::mutex> lk(g_favM);
+    load_fav();
+    return g_fav.count(song_key(i)) != 0;
+}
+void jukebox_set_launcher(int i, int on) {
+    if (g_state != 2 || i < 0 || i >= (int)g_tracks.size()) return;
+    std::string s = "; The launcher plays these songs (the Jukebox's \xE2\x99\xA5 Launcher); none: every song heard.\n[launcher]\n";
+    {
+        std::lock_guard<std::mutex> lk(g_favM);
+        load_fav();
+        if (on) g_fav.insert(song_key(i));
+        else g_fav.erase(song_key(i));
+        for (auto& k : g_fav) s += k + "\n";
+    }
+    write_later(fav_path(), s);
+}
+void jukebox_save_titles(const char* utf8) {
+    write_later(std::string(wp_data_dir()) + "/jukebox_titles.ini",
+                std::string("; The Jukebox's titles, for the launcher's music (written by the game).\n[titles]\n") + utf8);
+}
+
 int jukebox_shuffle(void) { return g_shuffle; }
 int jukebox_repeat(void) { return g_repeat; }
 void jukebox_set_shuffle(int on) { g_shuffle = on; }

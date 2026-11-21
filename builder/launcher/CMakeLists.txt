@@ -27,7 +27,7 @@ add_subdirectory(../../tools/sdl3 sdl3 EXCLUDE_FROM_ALL)
 
 # The controller icons (CC BY-SA 4.0), the pad's type and the pads
 # themselves, shared with the game.
-add_executable(WonderparkLauncher WIN32 launcher.cpp mods.cpp saves.cpp wii_save.c hdpack.cpp launcher.rc
+add_executable(WonderparkLauncher WIN32 launcher.cpp mods.cpp music.cpp saves.cpp wii_save.c hdpack.cpp launcher.rc
                ../../runtime/host/pad_icons_core.cpp ../../runtime/host/pad_icons.rc
                ../../runtime/host/pad_sdl.c ../../runtime/gpu/gx_texture.c)
 # The HD Pack decodes the disc's textures with the game's own decoders
@@ -40,4 +40,4 @@ if(MSVC)
   target_compile_options(WonderparkLauncher PRIVATE $<$<COMPILE_LANGUAGE:CXX>:/W3> /utf-8)
 endif()
 target_link_libraries(WonderparkLauncher PRIVATE SDL3::SDL3-static d2d1 dwrite d3d11 dxgi dxguid windowscodecs ole32 shell32
-                      shlwapi uuid setupapi bcrypt urlmon)
+                      shlwapi uuid setupapi bcrypt urlmon winmm)

@@ -2436,7 +2436,8 @@ void activate() {
     else if (r->kind == PLAYERS) {
         if (U.focusSlot < 2) choose(*r, !r->get());
     } else if (r->kind == TRACK) {
-        if (r->step) jukebox_play(r->act), changed();
+        if (r->step && U.focusSlot == 1) jukebox_set_launcher(r->act, !jukebox_launcher(r->act)), changed();
+        else if (r->step) jukebox_play(r->act), changed();
     } else if (r->kind == NOWPLAY) {
         int s = U.focusSlot;
         if (s == 0) jukebox_step(-1);
@@ -2465,6 +2466,7 @@ int parts_on_line(const Row* r) {
     if (r->kind == BIND || r->kind == PLAYERS) return 4;
     if (r->kind == CARDS || r->kind == PLACES || r->kind == GCARDS) return (int)r->items.size();
     if (r->kind == NOWPLAY) return 5;
+    if (r->kind == TRACK && r->step) return 2;  // the song, its "♥ Launcher"
     return 0;
 }
 void nav(Nav n) {
@@ -2560,7 +2562,9 @@ Hit hit_test(int px, int py) {
         const Placed& p = g_placed[i];
         if (listY < p.y || listY > p.y + p.h) continue;
         const Row& r = c.rows[i];
-        if (r.kind == STATS) return h;  // (nothing to press)
+        if (r.kind == STATS || r.kind == STICKERS) return h;  // (nothing to press)
+        if (r.kind == TRACK && r.step && lx >= ROW_X + ROW_W - 222 && lx <= ROW_X + ROW_W - 190)
+            return Hit{4, (int)i, 1};  // its "♥ Launcher"
         if (!p.parts.empty()) {
             for (size_t s = 0; s < p.parts.size(); s++) {
                 const D2D1_RECT_F& b = p.parts[s];
@@ -3770,14 +3774,33 @@ std::vector<int> g_toastQueue;
 // save file in a run takes what it already has quietly (no slide-in, no
 // milestone), as the Journal takes friends a save already had; the clock's
 // secret ones are always "now".
+std::wstring song_title(const JukeboxTrack& t, int countInBank);  // the Jukebox, below
+std::string utf8(const std::wstring& w) {
+    std::string s(WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), nullptr, 0, nullptr, nullptr), 0);
+    WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), &s[0], (int)s.size(), nullptr, nullptr);
+    return s;
+}
 void stickers_check() {
     static double last;
-    static bool looked[JOURNAL_SLOTS];
+    static bool looked[JOURNAL_SLOTS], titlesSaved;
     double now = now_s();
     if (now - last < 1) return;
     last = now;
     load_friends();
     jukebox_scan_start();  // (a thread of its own; a few small reads, once)
+    if (!titlesSaved && jukebox_state() == 2 && g_friendsState == 2) {
+        // The songs' titles as the Jukebox shows them, for the launcher's
+        // music (jukebox_titles.ini; written on a thread of its own).
+        titlesSaved = true;
+        std::map<std::string, int> perBank;
+        JukeboxTrack t;
+        for (int i = 0; i < jukebox_count(); i++)
+            if (jukebox_track(i, &t)) perBank[t.bank]++;
+        std::string s;
+        for (int i = 0; i < jukebox_count(); i++)
+            if (jukebox_track(i, &t)) s += std::string(t.bank) + ":" + std::to_string(t.index) + "=" + utf8(song_title(t, perBank[t.bank])) + "\n";
+        jukebox_save_titles(s.c_str());
+    }
     int slot = hle_journal_slot();
     if (slot < 0 || !save_loaded()) return;
     JournalSlot* j = new JournalSlot;
@@ -3940,7 +3963,8 @@ void build_jukebox_rows() {
         tracks.push_back(r);
     }
     c.rows.push_back(note((std::to_wstring(heard) + L" of " + std::to_wstring(all) +
-                           L" songs heard. Songs you haven't heard yet unlock when they play in the game.").c_str()));
+                           L" songs heard. Songs you haven't heard yet unlock when they play in the game. "
+                           L"Tap a song's ♥ to have the launcher play it.").c_str()));
     for (auto& r : tracks) c.rows.push_back(r);
 }
 bool gallery_card_ok(int idx) {
@@ -4236,11 +4260,19 @@ void draw_book_row(int i, const Row& r, const Placed& p, float y0, float dy, boo
         D2D1_COLOR_F tc = heard ? (playing ? rgb(GOLD) : rgb(PAGE_TEXT)) : rgb(0xffeccd, .55f);
         if (playing) draw_icon(L"music", ROW_X, cy - 9, 18, rgb(GOLD));
         else text_c(std::to_wstring(r.max), fmt(L"Fredoka", 600, 15), ROW_X, cy, 26, rgb(PAGE_SOFT), CENTER);
-        text_fit(heard ? r.label : std::wstring(L"???"), fmt(L"Fredoka", 600, 16), ROW_X + 40, cy - 11, ROW_W - 40 - 190, tc, LEFT);
+        text_fit(heard ? r.label : std::wstring(L"???"), fmt(L"Fredoka", 600, 16), ROW_X + 40, cy - 11, ROW_W - 40 - 226, tc, LEFT);
         text_c(r.desc, fmt(L"Nunito", 800, 12), ROW_X + ROW_W - 190, cy, 140, heard ? rgb(PAGE_SOFT) : rgb(0xffeccd, .5f), RIGHT);
         text_c(heard ? mmss(r.min) : L"–:––", fmt(L"Nunito", 800, 12), ROW_X + ROW_W - 44, cy, 44, heard ? rgb(PAGE_SOFT) : rgb(0xffeccd, .5f), RIGHT);
+        D2D1_RECT_F heart = RectF(ROW_X + ROW_W - 220, cy - 13, ROW_X + ROW_W - 194, cy + 13);
+        if (heard) {
+            // "♥ Launcher": the launcher plays this one (only the marked ones, once any are).
+            bool on = jukebox_launcher(r.act) != 0;
+            D2D1_COLOR_F pink = rgb(PINK);
+            draw_icon(L"heart", heart.left + 2, heart.top + 2, 22, on ? pink : rgb(PAGE_SOFT, .55f), on ? &pink : nullptr);
+        }
         G.rt->DrawLine(Point2F(ROW_X, y0 + p.h - 1), Point2F(ROW_X + ROW_W, y0 + p.h - 1), brush(line_color()), 2, G.dashed.Get());
-        if (focused) draw_focus(RectF(ROW_X - 8, y0 + 2, ROW_X + ROW_W + 8, y0 + p.h - 2), 10);
+        if (focused && U.focusSlot == 1 && heard) draw_focus(RectF(heart.left - 4, heart.top - 4, heart.right + 4, heart.bottom + 4), 8);
+        else if (focused) draw_focus(RectF(ROW_X - 8, y0 + 2, ROW_X + ROW_W + 8, y0 + p.h - 2), 10);
         return;
     }
 

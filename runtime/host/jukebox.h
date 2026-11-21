@@ -37,6 +37,14 @@ int jukebox_repeat(void);
 void jukebox_set_shuffle(int on);
 void jukebox_set_repeat(int on);
 
+/* For the launcher's music (builder/launcher/music.cpp), in the data folder:
+ * "♥ Launcher" songs (jukebox_launcher.ini) and the songs' titles as the
+ * Jukebox shows them (jukebox_titles.ini, written once a run). Songs are
+ * named <bank>:<index>. */
+int jukebox_launcher(int i);
+void jukebox_set_launcher(int i, int on);
+void jukebox_save_titles(const char* utf8); /* "<bank>:<index>=<title>\n"... */
+
 #ifdef __cplusplus
 }
 #endif

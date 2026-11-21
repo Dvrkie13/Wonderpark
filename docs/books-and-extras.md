@@ -118,6 +118,12 @@ apart yet). No titles from soundtrack sites. Tabs: All, Park, Wish Park
 Controls: previous, play / pause, next (among heard songs), shuffle, repeat
 (round again from the song's own loop start).
 
+"♥ Launcher" (2026-11-21): each heard song has a heart (click it, or Right
+then Enter on the song's line); marked songs are the only ones the
+launcher's music plays (`jukebox_launcher.ini`, songs as `<bank>:<index>`).
+The game also writes the songs' titles once a run to `jukebox_titles.ini`
+for the launcher's "now playing" line. Both in the data folder.
+
 ## A3. Gallery (built, with the 3D view)
 
 A grid of every befriendable Pokémon per area; one not befriended is a
