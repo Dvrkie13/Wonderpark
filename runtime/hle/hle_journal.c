@@ -17,8 +17,12 @@
  * the game opened (ios/nand.c, g_nand_last_slot), a save written being
  * certain.
  *
- * Not counted yet (shown "Coming soon"): jumps, Thunderbolts, photos,
- * distance, attraction scores and medals: their hooks aren't found yet.
+ *   - jumps and Thunderbolts, from the Wii Remote buttons the game gets in
+ *     the park outside story scenes and talks: a press of 2, and 1 held
+ *     half a second or more then let go (the charged move). Counted as
+ *     pressed: a jump the game refused (mid-air) still counts.
+ * Not counted yet (shown "Coming soon"): photos, distance, attraction
+ * scores and medals: their hooks aren't found yet.
  *
  * The file is read once at start (main.c, before the game runs) and written
  * on a thread of its own (never the game's), at most every 20 s and when
@@ -36,6 +40,7 @@
 
 #include "hle.h"
 #include "hle_journal.h"
+#include "host_input.h" /* HOST_PAD_* */
 
 #define SAVE_PTR 0x804BA694u
 #define SAVE_SIZE 5344u
@@ -90,7 +95,7 @@ static char* serialize(void) {
         for (k = 0; k < j->friend_count; k++) PUT("%s%d", k ? ", " : "", j->friends[k]);
         PUT("],\n     \"areas\": [");
         for (k = 0; k < j->area_count; k++) PUT("%s%d", k ? ", " : "", j->areas[k]);
-        PUT("],\n     \"milestones\": [");
+        PUT("],\n     \"moves\": [%d, %d],\n     \"milestones\": [", j->jumps, j->thunderbolts);
         for (k = 0; k < j->milestone_count; k++)
             PUT("%s[\"%s\", %d, %d]", k ? ", " : "", j->milestones[k].day, j->milestones[k].kind, j->milestones[k].value);
         PUT("]}%s\n", i + 1 < JOURNAL_SLOTS ? "," : "");
@@ -156,6 +161,7 @@ static void parse(const char* s) {
             while (j->friend_count < POKEMON && (q = next_num(q, &v))) j->friends[j->friend_count++] = (unsigned char)v;
         if ((q = skip_to(p, "\"areas\": [")) && q < end)
             while (j->area_count < JOURNAL_AREAS && (q = next_num(q, &v))) j->areas[j->area_count++] = (unsigned short)v;
+        if ((q = skip_to(p, "\"moves\": [")) && q < end && (q = next_num(q, &j->jumps)) != NULL) next_num(q, &j->thunderbolts);
         if ((q = skip_to(p, "\"milestones\": [")) && q < end)
             while (j->milestone_count < JOURNAL_MILESTONES && (q = next_pair(q)) != NULL) {
                 JournalMilestone* m = &j->milestones[j->milestone_count];
@@ -295,6 +301,24 @@ void hle_journal_frame(void) {
     if (scene == 4 && sLastScene != 4) {
         int a = hle_minigame();
         if (a >= 1 && a <= 4) j->attractions[a - 1]++, sDirty = 1;
+    }
+    {
+        /* Jumps and Thunderbolts, from the buttons the game gets (hle_wpad.c),
+         * in the park outside story scenes and talks (where 2 moves text on). */
+        extern uint32_t g_wpad_held;
+        extern int hle_event_running(void);
+        static uint32_t was;
+        static double oneSince;
+        uint32_t held = g_wpad_held;
+        int free_play = scene == 0 && !hle_event_running();
+        if (free_play && (held & ~was & HOST_PAD_2)) j->jumps++, sDirty = 1;
+        if ((held ^ was) & HOST_PAD_1)
+            WP_LOG("journal", "1 %s at %.2f s (scene %d, %s)", held & HOST_PAD_1 ? "down" : "up", now, scene,
+                   free_play ? "free play" : "event");
+        if ((held & ~was & HOST_PAD_1)) oneSince = now;
+        if (free_play && (was & ~held & HOST_PAD_1) && oneSince > 0 && now - oneSince >= 0.5) j->thunderbolts++, sDirty = 1;
+        if (!(held & HOST_PAD_1)) oneSince = 0;
+        was = held;
     }
     sLastScene = scene;
     if (now - sLastScan >= 1) {

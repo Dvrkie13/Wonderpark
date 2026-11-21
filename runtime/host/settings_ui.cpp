@@ -3582,8 +3582,8 @@ void draw_sheet(float t) {
 // ---- The other books: Journal, Jukebox, Gallery (bookmarks F3, F4, F5).
 
 // The Journal (hle_journal.c): what the save says, and what Wonderpark has
-// counted since it was installed. Not counted yet: jumps, Thunderbolts,
-// photos, distance, attraction scores and medals ("Coming soon").
+// counted since it was installed. Not counted yet: photos, distance,
+// attraction scores and medals ("Coming soon").
 JournalSlot g_journal;
 bool g_journalOk = false;
 void journal_read() {
@@ -3643,8 +3643,9 @@ void build_journal_rows() {
         Row wk;
         wk.kind = WEEK;
         c.rows.push_back(wk);
-        c.rows.push_back(note(L"Play time, berries and friends come from your save. Play time per day, attractions played and milestones are counted "
-                              L"since Wonderpark was installed. Photos, distance, Thunderbolts and jumps are coming soon."));
+        c.rows.push_back(note(L"Play time, berries and friends come from your save. Play time per day, attractions played, milestones, "
+                              L"jumps and Thunderbolts (the buttons you press in the park) are counted since Wonderpark was installed. "
+                              L"Photos and distance are coming soon."));
     } else if (U.jtab == 1) {
         for (int a = 0; a < 4; a++) {
             Row r;
@@ -3825,6 +3826,8 @@ void draw_book_row(int i, const Row& r, const Placed& p, float y0, float dy, boo
             case 0: v = hm_text(std::max(0, hle_journal_save_value(0))); break;
             case 1: v = thousands(std::max(0, hle_journal_save_value(1))); break;
             case 2: v = std::to_wstring(friends_made()); break;
+            case 5: v = thousands(g_journal.thunderbolts); break;
+            case 6: v = thousands(g_journal.jumps); break;
             case 7: v = std::to_wstring(attractions); break;
             default: v = L"—", soon = true; break;
             }

@@ -38,6 +38,10 @@ typedef struct {
     int area_count;
     JournalMilestone milestones[JOURNAL_MILESTONES];
     int milestone_count;
+    /* From the Wii Remote buttons the game gets, in the park outside story
+     * scenes and talks: jumps (a press of 2) and Thunderbolts (1 held half
+     * a second or more, then let go: the charged move). */
+    int jumps, thunderbolts;
 } JournalSlot;
 
 void hle_journal_init(void);   /* main.c, before the game runs: reads journal.json */
