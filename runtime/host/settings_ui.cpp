@@ -78,6 +78,8 @@ int hle_game_text_speed(void);           /* hle_options.c: 0 Normal, 1 Fast, -1 
 void hle_set_game_text_speed(int fast);
 int dvd_voices_ready(void);              /* dvd.c: the Japanese voices are set up */
 int dvd_enough_ram(void);                /* dvd.c: 8 GB, for Fast loading */
+void gl_request_picture(int x, int y, int w, int h, const wchar_t* name); /* gl_backend.c: Save a picture */
+extern volatile int g_picture_saved;     /* 1 saved, 2 failed */
 void* win_handle(void);
 int win_screen_count(void);              /* window_win32.c: the screens */
 int win_refresh_rates(int w, int h, int* out, int max); /* and the chosen one's refresh rates */
@@ -1789,11 +1791,26 @@ struct Hits {
     D2D1_RECT_F bg[3]{};     // the Gallery viewer's backgrounds
     D2D1_RECT_F anim[4]{};   // ... its animations (G3_ANIMS)
     D2D1_RECT_F stage{};     // ... and its stage (drag to turn the 3D view)
+    D2D1_RECT_F save{};      // ... and Save a picture
     float tabX = 0, k = 1;  // window = (tab coordinates + (tabX, 10)) * k
 } H;
 
 void draw_sheet(float t);   // the hint card (below, with the friends list)
 void draw_viewer(float t);  // the Gallery's viewer (below)
+
+// Gallery > Save a picture: the stage in window pixels and whose it is, as
+// last drawn; the renderer reads it back and a thread writes the PNG.
+float g_stageWin[4];
+std::wstring g_stageName;
+double g_pictureAt;  // when "Saved" was first shown (0: not showing)
+void save_picture() {
+    // The file name: the Pokémon's name without characters Windows refuses.
+    std::wstring n;
+    for (wchar_t ch : g_stageName)
+        if (!wcschr(L"\\/:*?\"<>|", ch)) n += ch;
+    gl_request_picture((int)g_stageWin[0], (int)g_stageWin[1], (int)g_stageWin[2], (int)g_stageWin[3],
+                       n.empty() ? L"Pokemon" : n.c_str());
+}
 int friends_made();
 int friends_total();
 
@@ -2495,6 +2512,7 @@ Hit hit_test(int px, int py) {
                 if (in(H.bg[b])) return {10, -1, b};
             for (int b = 0; b < G3_ANIMS; b++)
                 if (in(H.anim[b])) return {11, -1, b};
+            if (in(H.save)) return {13};
             if (gallery3d_state() == 2 && in(H.stage)) return {12};
         }
         if (in(H.sheet)) return {8};
@@ -4082,6 +4100,8 @@ void draw_viewer(float t) {
         float x0w = v.left * m._11 + v.top * m._21 + m._31, y0w = v.left * m._12 + v.top * m._22 + m._32;
         float x1w = v.right * m._11 + v.bottom * m._21 + m._31, y1w = v.right * m._12 + v.bottom * m._22 + m._32;
         gallery3d_show(f.character.c_str(), U.ganim, x0w, y0w, x1w - x0w, y1w - y0w);
+        g_stageWin[0] = x0w, g_stageWin[1] = y0w, g_stageWin[2] = x1w - x0w, g_stageWin[3] = y1w - y0w;
+        g_stageName = f.name;
         H.stage = RectF(PANEL_X + v.left, PANEL_Y + v.top, PANEL_X + v.right, PANEL_Y + v.bottom);
     }
     int g3 = gallery3d_state();
@@ -4135,12 +4155,20 @@ void draw_viewer(float t) {
     }
     y += 50;
     {
-        Fade fd(.55f);
-        float sw2 = pill_w(L"Save a picture", false, true);
+        // Save a picture: the stage as shown, a PNG in Pictures\Wonderpark
+        // (gl_backend.c gl_request_picture). "Saved ✓" for 3 s after.
+        if (g_picture_saved && g_pictureAt == 0) g_pictureAt = now_s();
+        if (g_pictureAt && now_s() - g_pictureAt > 3) g_pictureAt = 0, g_picture_saved = 0;
+        const wchar_t* label = g_picture_saved == 1 ? L"Saved ✓" : g_picture_saved == 2 ? L"Couldn't save" : L"Save a picture";
+        bool ready = gallery3d_state() == 2;
+        Fade fd(ready ? 1.f : .45f);
+        float sw2 = pill_w(L"Save a picture");
         float sx2 = x0 + w - sw2;
-        sticker(RectF(sx2, y, sx2 + sw2, y + 36), 11, ColorF(1, 1, 1), 0, 2.5f, rgb(INK), true);
-        text_c(L"Save a picture", pill_font(false), sx2 + 14, y + 18, sw2, rgb(INK));
-        text_c(L"SOON", fmt(L"Nunito", 800, 10), sx2 + 14 + text_w(L"Save a picture", pill_font(false)) + 6, y + 19, 40, rgb(0xc9346c));
+        D2D1_RECT_F pb = RectF(sx2, y, sx2 + sw2, y + 36);
+        sticker(pb, 11, ready && U.hoverBtn == 13 ? rgb(0xfff3cf) : ColorF(1, 1, 1), 2);
+        text_c(label, pill_font(false), pb.left, y + 18, sw2, rgb(INK), CENTER);
+        H.save = ready ? RectF(PANEL_X + pb.left, PANEL_Y + pb.top, PANEL_X + pb.right, PANEL_Y + pb.bottom) : RectF(0, 0, 0, 0);
+        if (g_pictureAt) changed();  // (to put the label back)
     }
 }
 
@@ -4615,6 +4643,15 @@ static void run_key_script() {
             changed();
             continue;
         }
+        if (k == "pic") {  // the Gallery viewer's Save a picture
+            save_picture();
+            continue;
+        }
+        if (k.rfind("zoom=", 0) == 0) {  // the viewer's zoom, wheel steps (+ closer)
+            gallery3d_zoom((float)atof(k.c_str() + 5));
+            changed();
+            continue;
+        }
         static const std::map<std::string, int> kKeys = {
             {"f1", VK_F1}, {"f2", VK_F2}, {"f3", VK_F3}, {"f4", VK_F4}, {"f5", VK_F5}, {"f7", VK_F7},
             {"esc", VK_ESCAPE}, {"up", VK_UP}, {"down", VK_DOWN}, {"left", VK_LEFT},
@@ -4870,6 +4907,7 @@ extern "C" int settings_ui_message(void* hwnd, unsigned msg, uintptr_t wp, intpt
         else if (h.what == 6) U.revealed = true;
         else if (h.what == 10) U.gbg = h.part;
         else if (h.what == 11) U.ganim = h.part;
+        else if (h.what == 13) save_picture();
         else if (h.what == 12) {  // the 3D view's stage: drag to turn it
             U.dragStage = true;
             U.dragX = GET_X_LPARAM(lp);
@@ -4900,6 +4938,12 @@ extern "C" int settings_ui_message(void* hwnd, unsigned msg, uintptr_t wp, intpt
         U.dragStage = false;
         return 1;
     case WM_MOUSEWHEEL:
+        if (U.view == BK_GALLERY && U.sheet >= 0) {
+            // The Gallery viewer: the wheel zooms the 3D view.
+            gallery3d_zoom(GET_WHEEL_DELTA_WPARAM(wp) / 120.f);
+            changed();
+            return 1;
+        }
         U.scroll -= GET_WHEEL_DELTA_WPARAM(wp) / 120.f * 60;
         clamp_scroll();
         changed();

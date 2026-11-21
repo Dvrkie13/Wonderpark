@@ -664,6 +664,7 @@ int g_anim = 0;
 float g_rect[4];                    // window pixels: x, y (from the top), w, h
 double g_t0;
 float g_yaw = 0, g_dragYaw = 0;
+float g_zoom = 1;  // scroll to zoom (gallery3d_zoom)
 unsigned g_texGen = 0;
 
 const char* const kAnims[G3_ANIMS] = {"NorIdle0", "Joy0", "Walk0", "Random00"};
@@ -725,7 +726,7 @@ extern "C" void gallery3d_show(const char* character, int anim, float x, float y
     std::lock_guard<std::mutex> lk(g_m);
     g_rect[0] = x, g_rect[1] = y, g_rect[2] = w, g_rect[3] = h;
     if (anim != g_anim) g_anim = anim, g_t0 = now();
-    if (!g_visible) g_t0 = now(), g_dragYaw = 0;
+    if (!g_visible) g_t0 = now(), g_dragYaw = 0, g_zoom = 1;
     g_visible = true;
     std::string c = character ? character : "";
     {
@@ -749,6 +750,7 @@ extern "C" void gallery3d_show(const char* character, int anim, float x, float y
         g_want = c;
         g_model.reset();
         g_dragYaw = 0;
+        g_zoom = 1;
         if (c.empty()) g_state = 3;
         else start_load(c);
     }
@@ -764,6 +766,13 @@ extern "C" int gallery3d_has_anim(int anim) {
 }
 
 extern "C" void gallery3d_drag(float dx) { g_dragYaw += dx * 0.6f; }
+
+// Scroll to zoom: closer (up) or further (down), 0.6x to 1.8x the fitted
+// size; back to 1 when another Pokémon is shown.
+extern "C" void gallery3d_zoom(float steps) {
+    g_zoom *= powf(1.15f, steps);
+    g_zoom = std::min(1.8f, std::max(0.6f, g_zoom));
+}
 
 extern "C" const uint8_t* gallery3d_texture(const G3Frame* f, int i, int* w, int* h, int* wrapS, int* wrapT) {
     if (!f || i < 0 || i >= f->ntextures) return nullptr;
@@ -802,7 +811,7 @@ extern "C" int gallery3d_frame(G3Frame* out, int winW, int winH) {
     // Far enough back that the whole Pokémon fits (its height at most 76%
     // of the stage, its width 70%), standing on the pedestal: its feet at
     // the ring, 82% of the way down the stage (settings_ui.cpp draw_viewer).
-    float dist = std::max({m->height * f / 1.52f, r * 2 * f / (1.4f * aspect), r * 2.2f}) + r;
+    float dist = (std::max({m->height * f / 1.52f, r * 2 * f / (1.4f * aspect), r * 2.2f}) + r) / g_zoom;
     float feet = (m->floor - m->center[1]) * f / dist;  // where the feet would be (clip y), centred
     float lift = -0.64f - feet;
     float pitch = 0.18f, cp = cosf(pitch), sp = sinf(pitch);

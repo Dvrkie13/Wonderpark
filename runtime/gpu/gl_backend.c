@@ -29,6 +29,7 @@
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include <shlobj.h> /* the Pictures folder (Gallery > Save a picture) */
 #include <GL/gl.h>
 #define COBJMACROS
 #include <d3d11.h>
@@ -2688,6 +2689,151 @@ static void dump_bmp(const char* path, int w, int h) {
     free(px);
 }
 
+/* ---- Gallery > Save a picture: the viewer's stage as shown, into a PNG in
+ * Pictures\Wonderpark. The renderer reads the square back after drawing a
+ * frame (gl_picture_capture); a thread of its own writes the file (never
+ * the game's or the renderer's: the drive may be a spinning disk). */
+static volatile LONG sPicWant;
+static int sPicRect[4];
+static wchar_t sPicName[80];
+volatile int g_picture_saved; /* 1 saved, 2 failed (settings_ui.cpp shows it) */
+
+void gl_request_picture(int x, int y, int w, int h, const wchar_t* name) {
+    sPicRect[0] = x, sPicRect[1] = y, sPicRect[2] = w, sPicRect[3] = h;
+    _snwprintf(sPicName, 79, L"%ls", name ? name : L"Pokemon");
+    sPicName[79] = 0;
+    g_picture_saved = 0;
+    InterlockedExchange(&sPicWant, 1);
+}
+
+typedef struct {
+    uint8_t* rgb; /* top row first */
+    int w, h;
+    wchar_t name[80];
+} PicJob;
+
+static uint32_t png_crc(uint32_t c, const uint8_t* p, size_t n) {
+    static uint32_t table[256];
+    size_t i;
+    if (!table[1]) {
+        uint32_t k, b, v;
+        for (k = 0; k < 256; k++) {
+            for (v = k, b = 0; b < 8; b++) v = v & 1 ? 0xEDB88320u ^ (v >> 1) : v >> 1;
+            table[k] = v;
+        }
+    }
+    for (i = 0; i < n; i++) c = table[(c ^ p[i]) & 255] ^ (c >> 8);
+    return c;
+}
+
+static void png_chunk(FILE* f, const char* type, const uint8_t* data, uint32_t n) {
+    uint8_t be[4] = {(uint8_t)(n >> 24), (uint8_t)(n >> 16), (uint8_t)(n >> 8), (uint8_t)n};
+    uint32_t c = png_crc(0xFFFFFFFFu, (const uint8_t*)type, 4);
+    fwrite(be, 1, 4, f);
+    fwrite(type, 1, 4, f);
+    if (n) fwrite(data, 1, n, f);
+    c = ~png_crc(c, data, n);
+    be[0] = (uint8_t)(c >> 24), be[1] = (uint8_t)(c >> 16), be[2] = (uint8_t)(c >> 8), be[3] = (uint8_t)c;
+    fwrite(be, 1, 4, f);
+}
+
+/* A PNG with the image stored (zlib's "stored" blocks): no compressor needed. */
+static int write_png(const wchar_t* path, const uint8_t* rgb, int w, int h) {
+    size_t row = (size_t)w * 3 + 1, raw = row * h, blocks = (raw + 65534) / 65535, i, at = 0;
+    size_t zn = 2 + raw + blocks * 5 + 4;
+    uint8_t *z = (uint8_t*)malloc(zn), ihdr[13];
+    uint32_t a = 1, b = 0;
+    FILE* f;
+    size_t zi = 0, k;
+    if (!z) return 0;
+    z[zi++] = 0x78, z[zi++] = 0x01;
+    for (i = 0; i < blocks; i++) {
+        size_t n = raw - at < 65535 ? raw - at : 65535;
+        z[zi++] = (uint8_t)(i + 1 == blocks);
+        z[zi++] = (uint8_t)n, z[zi++] = (uint8_t)(n >> 8), z[zi++] = (uint8_t)~n, z[zi++] = (uint8_t)(~n >> 8);
+        for (k = 0; k < n; k++, at++) {
+            size_t y = at / row, x = at % row;
+            uint8_t v = x == 0 ? 0 : rgb[y * w * 3 + x - 1]; /* each row: filter 0, then its pixels */
+            z[zi++] = v;
+            a = (a + v) % 65521, b = (b + a) % 65521;
+        }
+    }
+    z[zi++] = (uint8_t)(b >> 8), z[zi++] = (uint8_t)b, z[zi++] = (uint8_t)(a >> 8), z[zi++] = (uint8_t)a;
+    ihdr[0] = (uint8_t)(w >> 24), ihdr[1] = (uint8_t)(w >> 16), ihdr[2] = (uint8_t)(w >> 8), ihdr[3] = (uint8_t)w;
+    ihdr[4] = (uint8_t)(h >> 24), ihdr[5] = (uint8_t)(h >> 16), ihdr[6] = (uint8_t)(h >> 8), ihdr[7] = (uint8_t)h;
+    ihdr[8] = 8, ihdr[9] = 2, ihdr[10] = ihdr[11] = ihdr[12] = 0;
+    f = _wfopen(path, L"wb");
+    if (!f) {
+        free(z);
+        return 0;
+    }
+    fwrite("\x89PNG\r\n\x1a\n", 1, 8, f);
+    png_chunk(f, "IHDR", ihdr, 13);
+    png_chunk(f, "IDAT", z, (uint32_t)zi);
+    png_chunk(f, "IEND", NULL, 0);
+    free(z);
+    return fclose(f) == 0;
+}
+
+static DWORD WINAPI picture_thread(LPVOID arg) {
+    PicJob* j = (PicJob*)arg;
+    wchar_t dir[MAX_PATH], path[MAX_PATH + 160];
+    SYSTEMTIME t;
+    int ok = 0;
+    if (SUCCEEDED(SHGetFolderPathW(NULL, CSIDL_MYPICTURES, NULL, 0, dir))) {
+        wcscat(dir, L"\\Wonderpark");
+        CreateDirectoryW(dir, NULL);
+        GetLocalTime(&t);
+        _snwprintf(path, MAX_PATH + 159, L"%ls\\%ls %04d-%02d-%02d %02d-%02d-%02d.png", dir, j->name, t.wYear, t.wMonth,
+                   t.wDay, t.wHour, t.wMinute, t.wSecond);
+        path[MAX_PATH + 159] = 0;
+        ok = write_png(path, j->rgb, j->w, j->h);
+    }
+    g_picture_saved = ok ? 1 : 2;
+    free(j->rgb);
+    free(j);
+    return 0;
+}
+
+/* After a frame is drawn, before it's shown: the stage asked for, read back
+ * from the window's framebuffer (bottom row first) and handed to a thread. */
+static void gl_picture_capture(GLuint fbo, int winW, int winH) {
+    int x, y, w, h, r;
+    uint8_t* px;
+    PicJob* j;
+    HANDLE t;
+    if (!sPicWant || !InterlockedExchange(&sPicWant, 0)) return;
+    x = sPicRect[0], w = sPicRect[2], h = sPicRect[3];
+    y = winH - (sPicRect[1] + h); /* GL's rows start at the bottom */
+    if (x < 0) w += x, x = 0;
+    if (y < 0) h += y, y = 0;
+    if (x + w > winW) w = winW - x;
+    if (y + h > winH) h = winH - y;
+    j = (PicJob*)calloc(1, sizeof(*j));
+    px = (uint8_t*)malloc((size_t)(w > 0 ? w : 1) * (h > 0 ? h : 1) * 3);
+    if (w <= 0 || h <= 0 || !j || !px) {
+        free(j), free(px);
+        g_picture_saved = 2;
+        return;
+    }
+    p_glBindFramebuffer(GL_READ_FRAMEBUFFER, fbo);
+    glPixelStorei(GL_PACK_ALIGNMENT, 1);
+    glReadPixels(x, y, w, h, GL_RGB, GL_UNSIGNED_BYTE, px);
+    j->rgb = (uint8_t*)malloc((size_t)w * h * 3);
+    if (!j->rgb) {
+        free(j), free(px);
+        g_picture_saved = 2;
+        return;
+    }
+    for (r = 0; r < h; r++) memcpy(j->rgb + (size_t)r * w * 3, px + (size_t)(h - 1 - r) * w * 3, (size_t)w * 3); /* top first */
+    free(px);
+    j->w = w, j->h = h;
+    memcpy(j->name, sPicName, sizeof(j->name));
+    t = CreateThread(NULL, 0, picture_thread, j, 0, NULL);
+    if (t) CloseHandle(t);
+    else free(j->rgb), free(j), g_picture_saved = 2;
+}
+
 /* Where the game's picture is in the window: x, y, width, height. */
 int g_picture_rect[4];
 
@@ -3182,6 +3328,7 @@ static int finish_present(int w, int h, int may_drop) {
         }
     }
     draw_gallery3d(w, h);
+    gl_picture_capture(sWinFbo, w, h); /* (the window's framebuffer, as the look pass draws into) */
     if (sDumpDir && sPresented >= sDumpFrom && sPresented % (unsigned)sDumpEvery == 0 && !sChain) {
         char path[512];
         p_glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);

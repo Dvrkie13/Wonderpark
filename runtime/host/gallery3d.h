@@ -45,6 +45,8 @@ int gallery3d_state(void);
 int gallery3d_has_anim(int anim);
 /* The mouse dragged across the stage by dx window pixels: turn it. */
 void gallery3d_drag(float dx);
+/* Scroll to zoom: steps up (positive) come closer, 0.6x to 1.8x. */
+void gallery3d_zoom(float steps);
 /* The renderer: this frame's model, posed and projected; 0 if none. */
 int gallery3d_frame(G3Frame* out, int winW, int winH);
 /* A texture's size, wrap modes and RGBA8 pixels (top row first). */
