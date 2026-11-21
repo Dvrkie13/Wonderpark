@@ -678,3 +678,9 @@ fixed 1-4 stages (the loop's length a constant): 4.97 at native, 8.44 at
 3x, no gain. The cost is the per-stage selection of inputs and operations,
 which only the fully specialised programs fold away. So the weak-PC
 presets (Potato, Low) use Fast.
+
+Compiling for the PC's CPU level (2026-11-21): the profile-guided `-O2`
+build again with `-march=x86-64-v3` (AVX2, FMA, BMI), Wish Park, 60 fps,
+2x, two runs each: game 7.1-7.3 ms plain vs 7.8-7.9 with it (all cores),
+8.7-8.8 vs 9.2-9.3 (two cores). Slower, not faster (as /arch:AVX2 with
+clang-cl showed no gain, 2026-11-10); players' builds stay generic x86-64.
