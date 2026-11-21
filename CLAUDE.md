@@ -73,7 +73,7 @@ Fill these in during Phase 1, once the scripts exist, and keep them current:
 - Japanese voices (optional, the player's own S2LJ01 disc): `python tools/extract_voices.py <iso>` (into git-ignored `game/voices/ja/`; the launcher does it when that disc is dropped)
 - Recompile: `python tools/recomp.py` (DolRecomp, into `generated/`)
 - Build (dev): `python tools/build_game.py` (clang-cl + Ninja + ThinLTO, into `build/game/`; `--no-lto` faster to build, `--msvc` to use MSVC)
-- PGO profile: `python tools/pgo_train.py --save <nand dir> ...` (into git-ignored `build/pgo/`; `build_game.py` then uses it, `--no-pgo` to skip)
+- PGO profile: `python tools/pgo_train.py [--mingw] [--save <nand dir> ...]` (a fresh game plus your save, into git-ignored `build/pgo/`; `build_game.py` then uses it, `--no-pgo` to skip). The pipeline's `--optimise` does this itself (`WONDERPARK_NO_PGO=1` skips it)
 - Build (release): not yet separate from the dev build
 - Run: `.\build\game\Wonderpark.exe` from the repo root (`RECOMP_FPS=1` prints frame rates; debug logs via `WONDERPARK_LOG=...`, listed in `docs/recomp-status.md`)
 - Full pipeline: `python builder/pipeline.py <iso>` (verify, extract, recompile, build); `--rebuild` from game/, `--status`

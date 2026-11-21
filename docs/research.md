@@ -591,3 +591,22 @@ turning GX into OpenGL (same thread), GPU = timer queries, per frame.
   so the attractions themselves aren't measured yet. The lobby: 41-43%
   busy, game 6 ms, GPU 5.4 ms at 3x.
 - Not measurable on this PC: an Intel integrated GPU.
+
+Profile-guided optimisation for players' builds (2026-11-20). With no
+save, a fresh game trains well enough: pressing 2 every 2 s takes it
+through the opening story (Zekrom) into the first area (a cave, Piplup)
+in about 130 s, where it then walks and jumps. The profile (a fresh game
+200 s plus the save's slot 1 150 s, training copy at `-O1`) applied to the
+pipeline's `-O2` build, same Wish Park spot, 3x:
+
+| | plain `-O2` | profile-guided |
+| --- | --- | --- |
+| Two cores, 30 fps | game 18.5 ms, 71% busy | game 12.9 ms, 53% busy |
+| Two cores, 60 fps | falls back to 30 (worst second 15) | 59.9 fps, game 10.3 ms, 92% busy |
+
+The background build takes 24.8 min instead of 10.5. Boot checks: 10 of 10
+hidden boots and 6 of 6 windowed runs into the park, profile-guided; 10 of
+10 plain. One windowed run (profile-guided) hung at the start while "Skip
+startup logos" had the game clock at 10x: retraces went on at 600 a second,
+7 game frames in 61 s, the game thread 100% busy. Not seen in about 35
+other runs of either build with the same option on; not explained yet.

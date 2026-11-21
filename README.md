@@ -93,10 +93,8 @@ Download the launcher from [Releases](../../releases) (beta versions for now), u
 
    *From source instead:* see [Building from source](#building-from-source).
 3. **Click the logo**, then the one button: **Place ISO** (pick your disc image; Wonderpark verifies it).
-4. **Build**: checks your disc, gets the build tools (the first time only), reads the game, recompiles it and compiles it (about 5-6 minutes on a recent 8-core PC, plus the download the first time). The build screen ticks off each stage and shows the time left. You can close the launcher meanwhile: the build carries on, and the launcher shows it again when you open it. That first build is a quick one; while the launcher stays open and you're not playing, it then makes a fully optimised build in the background (about 11 minutes more, stopped whenever you play and picked up again later) and uses it from then on.
+4. **Build**: checks your disc, gets the build tools (the first time only), reads the game, recompiles it and compiles it (about 5-6 minutes on a recent 8-core PC, plus the download the first time). The build screen ticks off each stage and shows the time left. You can close the launcher meanwhile: the build carries on, and the launcher shows it again when you open it. That first build is a quick one; while the launcher stays open and you're not playing, it then makes a fully optimised build in the background (about 25 minutes more, stopped whenever you play and picked up again later) and uses it from then on. For that one it first plays a few minutes of the game by itself, hidden and silent, to learn which code runs most (profile-guided optimisation): the game then needs about a third less CPU time. Your saves and settings aren't touched.
 5. **Play**. Next time the launcher goes straight to Play, or offers Rebuild after an update.
-
-Optional, for about a third less CPU time per frame: once you have a save in a busy area, `python tools/pgo_train.py`, then build again.
 
 **Don't share your built game folder** (`game\`, `generated\`, `build\`): it contains the game's code and files from your disc.
 
