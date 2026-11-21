@@ -33,8 +33,15 @@ last `GD<n>` the game opened (a save written is certain; `ios/nand.c`).
 Friends and areas a save already had when Wonderpark first saw it are taken
 as they are (no milestones for them).
 
-Not found yet ("Coming soon" on their stickers): jumps, Thunderbolts,
-photos taken, distance. The game's Pad has no records screen, so there are
+Jumps and Thunderbolts (2026-11-21) are counted from the Wii Remote
+buttons the game gets (`g_wpad_held`), in the park outside story scenes and
+talks: a press of 2 is a jump, 1 held half a second or more and let go is a
+Thunderbolt (a quick press is a dash attack). Counted as pressed: a press
+the game refused (mid-air) still counts. Saved as `"moves": [jumps,
+thunderbolts]` per save file; `WONDERPARK_LOG=journal` logs button 1.
+Checked: a 1.5 s hold counted one, a 0.1 s press none.
+
+Not found yet ("Coming soon" on their stickers): photos taken, distance. The game's Pad has no records screen, so there are
 no names for the counters at `+0x1194`..`+0x11B8` (they grow as one plays,
 even before any attraction: likely game stats, unidentified). Ways in: the
 player's state machine for jumps and Thunderbolts (not found), or the CRI
