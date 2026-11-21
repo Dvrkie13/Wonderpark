@@ -419,7 +419,7 @@ has one), the Journal (`11-journal`, `11b-journal-attractions`,
 `11c-journal-milestones`), `12-jukebox`, the Gallery (`13-gallery`,
 `13b-gallery-viewer`), then closes it. `WONDERPARK_F1_SCRIPT="<seconds>:<key>,..."` presses
 keys (f1-f5 esc up down left right enter q e backspace, a letter or digit),
-`shot=<file.bmp>` or `anim=<0-3>` (the Gallery viewer's animation), through
+`shot=<file.bmp>`, `anim=<0-3>` (the Gallery viewer's animation), `zoom=<steps>` (its zoom, as wheel steps) or `pic` (its Save a picture), through
 the tab's own key handling (headless too). The Gallery's 3D view:
 `WONDERPARK_G3_CHARACTER=<name>,<name>,...` shows those models instead of
 the friend's, a new one every 1.5 s (when the viewer is drawn again);

@@ -81,8 +81,15 @@ A grid of every befriendable Pokémon per area; one not befriended is a
 black circle with "???" (no name, can't be focused or clicked). A friend
 opens the viewer: backgrounds Park / Studio / Night drawn by us, and the
 Pokémon's own 3D model on a pedestal, turning slowly (drag on the stage
-to turn it), playing Idle, Happy, Walk or Random (those it has).
-"Save a picture" is "Coming soon".
+to turn it; the mouse wheel zooms, 0.6x to 1.8x), playing Idle, Happy,
+Walk or Random (those it has). "Save a picture" writes the stage as shown
+to `Pictures\Wonderpark\<Pokémon> <date> <time>.png`: the renderer reads
+that square back after drawing a frame (`gl_backend.c`
+gl_picture_capture) and a thread of its own writes the PNG (stored, no
+compressor; never on the game's or the renderer's thread). The button
+says "Saved ✓" (or "Couldn't save") for 3 s. The picture is the player's
+own and stays on their PC; it shows the game's model, so it isn't for
+the repo.
 
 The 3D view (`runtime/host/gallery3d.cpp`, drawn by `gl_backend.c`
 draw_gallery3d) doesn't use the game's renderer (paused with the game):
