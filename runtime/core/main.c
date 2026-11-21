@@ -213,8 +213,11 @@ int main(int argc, char** argv) {
     }
     if (prepare_shaders) {
         /* The build's "Preparing shaders" step (builder/pipeline.py): the
-         * game's own boot, hidden and silent, at x10 for 8 s (through the
-         * title). The graphics driver compiles each new shader and draw
+         * game's own boot, hidden and silent, through the title (the
+         * logos' screen sped up as Skip startup logos does; the whole boot
+         * at x10, as before, didn't get past that screen on two cores in
+         * 40 s, and its frames are no measure of speed). The graphics
+         * driver compiles each new shader and draw
          * state the first time it sees one (on AMD ~0.4 s each, three times
          * by the title) and keeps them in its own cache, so the player's
          * first start doesn't pause. A data folder of its own (in the cache
@@ -227,15 +230,17 @@ int main(int argc, char** argv) {
 #define WP_SETENV(k, v) setenv(k, v, 1)
 #endif
         WP_SETENV("WONDERPARK_DATA_DIR", data);
-        WP_SETENV("WONDERPARK_GAME_SPEED", "10");
+        WP_SETENV("WONDERPARK_SKIP_LOGOS", "1");
         WP_SETENV("WONDERPARK_NO_MODS", "1");
         WP_SETENV("WONDERPARK_FAST_LOADING", "0");
-        /* And the build's speed test: the time per frame from the third
-         * second on, printed at exit (gx_frames.c gxb_perf_summary), which
-         * the pipeline turns into a suggested graphics preset. */
+        /* And the build's speed test: the time per frame on the title
+         * screen, 5 s of it from a second after it shows, printed at exit
+         * (gx_frames.c perf_test_add, gxb_perf_summary), which the pipeline
+         * turns into a suggested graphics preset. The run ends when that's
+         * done (about 11 s here); 40 s at most, for a slow PC. */
         WP_SETENV("WONDERPARK_PERF_TEST", "1");
         WP_SETENV("WONDERPARK_SCALE", "2"); /* the same internal resolution on every PC */
-        if (g_wp_exit_after <= 0) g_wp_exit_after = 10;
+        if (g_wp_exit_after <= 0) g_wp_exit_after = 40;
     }
     if ((env = getenv("WONDERPARK_MAX_SLICES")) != NULL) max_slices = strtoull(env, NULL, 10);
     /* As --exit-after, for a game started by the launcher's Play (tests). */

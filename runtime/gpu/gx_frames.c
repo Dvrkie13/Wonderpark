@@ -112,14 +112,36 @@ unsigned gxb_game_frames(void) { return sGameFrames; }
  * builder/pipeline.py turns into a suggested graphics preset. */
 double wp_wall_seconds(void); /* cpu_host.c */
 static double sPerfBusy, sPerfFrames, sPerfGpu, sPerfPresents;
+/* The build's speed test (--prepare-shaders): the title screen only, from
+ * a second after it shows, for PERF_SECONDS seconds, then the program
+ * ends. (Averaging everything from the third second on mixed in the boot
+ * screens, hundreds of cheap frames a second at 10x speed: how many fell
+ * in the window decided the result, 0.5 to 4.4 ms on the same PC.) */
+#define PERF_SECONDS 5
 static void perf_test_add(double busyms, double frames, double gpums, unsigned presents) {
-    static int on = -1;
+    extern int hle_scene(void);   /* hle_scene.c: 6 the title's start menu */
+    extern double g_wp_exit_after; /* main.c */
+    static int on = -1, seconds;
+    static double titleAt;
     if (on < 0) on = getenv("WONDERPARK_PERF_TEST") != NULL;
-    if (!on || wp_wall_seconds() < 3) return;
+    if (!on) return;
+    if (hle_scene() != 6) {
+        /* (The title went on to its movie and came back: start over.) */
+        titleAt = 0;
+        seconds = 0;
+        sPerfBusy = sPerfFrames = sPerfGpu = 0;
+        sPerfPresents = 0;
+        return;
+    }
+    if (!titleAt) {
+        titleAt = wp_wall_seconds();
+    }
+    if (wp_wall_seconds() - titleAt < 1) return;
     sPerfBusy += busyms;
     sPerfFrames += frames;
     sPerfGpu += gpums;
     sPerfPresents += presents;
+    if (++seconds >= PERF_SECONDS) g_wp_exit_after = wp_wall_seconds(); /* done: end now */
 }
 void gxb_perf_summary(void) {
     if (!getenv("WONDERPARK_PERF_TEST")) return;
