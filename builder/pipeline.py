@@ -337,14 +337,25 @@ def done_stage(i: int) -> None:
 
 
 # The speed test (the same run as "Testing this PC's speed": Wonderpark.exe
-# prints "@perf cpu_ms=.. gpu_ms=.." for the boot and title screen, at 2x the
-# Wii's resolution on every PC). The park costs more per frame than the
-# title; these factors scale the title's figures to the park's. Measured
-# 2026-11-20 on the developer's PC (16 threads, a recent GPU): title 7.96 ms
-# CPU, 0.61 ms GPU at 2x; the park walk 10.57 ms CPU, 10.53 ms GPU at 3x
-# (4.68 at 2x). First figures: Part 6 (the potato PC) checks them on weak PCs.
-PARK_CPU_FACTOR = 1.33
-PARK_GPU_FACTOR = 7.7
+# prints "@perf cpu_ms=.. gpu_ms=.." for 5 s of the title screen at the
+# game's own speed, at 2x the Wii's resolution on every PC; gx_frames.c
+# perf_test_add). It runs the quick first build; the player then plays the
+# profile-guided optimised one. These factors turn the title's figures into
+# the park's in that build. Measured 2026-11-21 (16 threads, RX 9060 XT;
+# docs/research.md "Speed test"): title 16.0 ms CPU a frame (two cores
+# 17.6), 1.65 ms GPU; the Wish Park hub, game + GX per frame, 12.9 ms at 30
+# fps and 10.5 at 60 (two cores 14.9 and 13.2), GPU 6.2 ms at 2x and 8.5 at
+# 3x. The two-core ratios (the larger) are used.
+PARK_CPU_FACTOR_30 = 0.85
+PARK_CPU_FACTOR_60 = 0.75
+PARK_GPU_FACTOR = 3.8
+
+
+def gpu_scale(res: int) -> float:
+    """The GPU's time at res x the Wii's resolution, over its time at 2x:
+    between the measured (8.5 / 6.2 = 1.37 for 3x: the fixed cost counts)
+    and the pixel count (2.25), as a weak GPU's time follows its pixels more."""
+    return 0.5 + 0.125 * res * res
 PERF = REPO / "build" / "perf-test.json"
 # The graphics presets (F1 > Graphics, Part 5 of the plan): the frame rate
 # each aims for and its internal resolution (times the Wii's).
@@ -356,13 +367,15 @@ def suggest_preset(cpu_ms: float, gpu_ms: float) -> tuple[str, dict]:
     thread's time per frame in the park within the frame time, and the GPU's
     (scaled from 2x by the preset's pixel count) too. Potato when even Low
     doesn't."""
-    est_cpu = cpu_ms * PARK_CPU_FACTOR
     est_gpu = gpu_ms * PARK_GPU_FACTOR
+    est = {"park_cpu_ms_30": round(cpu_ms * PARK_CPU_FACTOR_30, 2), "park_cpu_ms_60": round(cpu_ms * PARK_CPU_FACTOR_60, 2),
+           "park_gpu_ms_2x": round(est_gpu, 2)}
     for name, fps, res in PRESETS:
         budget = 0.8 * 1000 / fps
-        if est_cpu <= budget and est_gpu * (res / 2) ** 2 <= budget:
-            return name, {"park_cpu_ms": round(est_cpu, 2), "park_gpu_ms_2x": round(est_gpu, 2)}
-    return "Potato", {"park_cpu_ms": round(est_cpu, 2), "park_gpu_ms_2x": round(est_gpu, 2)}
+        est_cpu = cpu_ms * (PARK_CPU_FACTOR_60 if fps >= 60 else PARK_CPU_FACTOR_30)
+        if est_cpu <= budget and est_gpu * gpu_scale(res) <= budget:
+            return name, est
+    return "Potato", est
 
 
 def speed_test(output: str) -> None:
