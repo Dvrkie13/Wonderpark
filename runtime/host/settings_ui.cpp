@@ -4456,7 +4456,10 @@ extern "C" const uint32_t* settings_ui_draw(int w, int h) {
                     set_tab(cat);
                     pending = std::to_string(cat + 1) + "-" + id;
                 } else if (g_listH > view_h()) {
-                    U.scroll = 1e6f;  // the same category, scrolled to the end
+                    // The same category, scrolled to the end, or the part of
+                    // the way WONDERPARK_F1_SHOT_SCROLL says (0-1).
+                    const char* f = getenv("WONDERPARK_F1_SHOT_SCROLL");
+                    U.scroll = f && *f ? (float)atof(f) * (g_listH - view_h()) : 1e6f;
                     clamp_scroll();
                     changed();
                     pending = std::to_string(cat + 1) + "b-" + id;

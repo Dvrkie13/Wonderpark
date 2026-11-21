@@ -410,7 +410,7 @@ addresses in `docs/research.md, Settings`). Values the game can't show yet
 Test hooks: `WONDERPARK_F1_SHOT=<prefix>` opens the tab
 `WONDERPARK_F1_SHOT_AT` seconds after the first frame (default 1) and saves
 `<prefix>-<n>[b]-<category>.bmp` (the frame as shown; `b`: scrolled to the
-end) for the six tabs, then the Friend Book (`8-friendbook`, `9-cove`,
+end, or that part of the way with `WONDERPARK_F1_SHOT_SCROLL=<0-1>`) for the six tabs, then the Friend Book (`8-friendbook`, `9-cove`,
 `10-hint` with a hint card open, `10b-hint` after its "show more" when it
 has one), the Journal (`11-journal`, `11b-journal-attractions`,
 `11c-journal-milestones`), `12-jukebox`, the Gallery (`13-gallery`,
