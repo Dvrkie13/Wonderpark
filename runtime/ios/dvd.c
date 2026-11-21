@@ -404,10 +404,24 @@ static DWORD WINAPI preload_thread(LPVOID arg) {
     return 0;
 }
 
-/* Starts fast loading (main.c, once the settings are read). */
+/* Whether the PC has the 8 GB fast loading wants (its 284 MB beside the
+ * game, Windows and the rest; a 4-6 GB laptop would page instead). */
+int dvd_enough_ram(void) {
+    MEMORYSTATUSEX m;
+    m.dwLength = sizeof(m);
+    /* (8 GB sticks show as a little under: 7.4 GB and up counts.) */
+    return !GlobalMemoryStatusEx(&m) || m.ullTotalPhys >= 7400ull * 1024 * 1024;
+}
+
+/* Starts fast loading (main.c, once the settings are read): only with 8 GB
+ * of RAM or more. */
 void hle_dvd_preload_start(void) {
     HANDLE t;
     if (sImageRead || !sRegionCount || !g_x[X_FAST_LOADING]) return;
+    if (!dvd_enough_ram()) {
+        fprintf(stderr, "disc: fast loading left off: under 8 GB of RAM\n");
+        return;
+    }
     t = CreateThread(NULL, 0, preload_thread, NULL, 0, NULL);
     if (!t) return;
     SetThreadPriority(t, THREAD_PRIORITY_BELOW_NORMAL);
@@ -415,6 +429,7 @@ void hle_dvd_preload_start(void) {
 }
 #else
 void hle_dvd_preload_start(void) {}
+int dvd_enough_ram(void) { return 1; }
 #endif
 
 /* Copies len bytes at a data-partition offset to guest memory. */

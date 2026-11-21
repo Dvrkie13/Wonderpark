@@ -77,6 +77,7 @@ void settings_apply_frame_rate(void);    /* settings.c */
 int hle_game_text_speed(void);           /* hle_options.c: 0 Normal, 1 Fast, -1 no save loaded */
 void hle_set_game_text_speed(int fast);
 int dvd_voices_ready(void);              /* dvd.c: the Japanese voices are set up */
+int dvd_enough_ram(void);                /* dvd.c: 8 GB, for Fast loading */
 void* win_handle(void);
 int win_screen_count(void);              /* window_win32.c: the screens */
 int win_refresh_rates(int w, int h, int* out, int max); /* and the chosen one's refresh rates */
@@ -429,8 +430,14 @@ void build_rows() {
             sm.get = [] { return std::min(g_x[X_SHADER_MODE], 1); };
             c.rows.push_back(sm);
         }
-        c.rows.push_back(xrow(TOGGLE, X_FAST_LOADING, L"Fast loading",
-                              L"Reads the game's files into RAM at start (about 280 MB), so areas load without waiting for the drive. From the next start."));
+        {
+            // Only with 8 GB of RAM (dvd.c): greyed below that.
+            Row fl = xrow(TOGGLE, X_FAST_LOADING, L"Fast loading",
+                          L"Reads the game's files into RAM at start (about 280 MB), so areas load without waiting for the drive. Needs 8 GB of RAM. From the next start.");
+            fl.off = [] { return !dvd_enough_ram(); };
+            fl.tag = L"Needs 8 GB of RAM";
+            c.rows.push_back(fl);
+        }
         c.rows.push_back(xrow(CHOICE, X_EFFECT_COPIES, L"Effect copies",
                               L"The game copies the picture for some effects. Fast keeps the copies on the graphics card; Accurate also hands each to the game, as a Wii does, which waits for the card. If an effect looks wrong on Fast, try Accurate.",
                               {L"Fast", L"Accurate"}));
