@@ -611,3 +611,27 @@ hidden boots and 6 of 6 windowed runs into the park, profile-guided; 10 of
 startup logos" had the game clock at 10x: retraces went on at 600 a second,
 7 game frames in 61 s, the game thread 100% busy. Not seen in about 35
 other runs of either build with the same option on; not explained yet.
+
+Render thread, third look (2026-11-21; `WONDERPARK_RENDER_THREAD=1`).
+- The crashes are late EFB copy write-backs. With Effect copies Fast (no
+  write-backs) 3 of 3 runs were clean for 170 s; with Accurate 3 of 3
+  crashed (twice at boot, "no recompiled code at 80000000"; once in the
+  park, "at FFFFFFFF").
+- Why: the render thread can be seconds behind (at boot it sets up GL and
+  compiles while the game goes on). A full-screen copy made in the first
+  frames (to 008B0D00, 1.2 MB) was written back long after the game had
+  reused that memory (disc data loaded there); the "has the game written
+  there since" check took its snapshot when the render thread got to the
+  copy, already after. In the park a copy chain decoded from display lists
+  the game had since rewritten ended in a copy "to 00000000" (320x228,
+  white): written over the OS globals and exception vectors.
+- Done: the render thread may lag at most 20 ms (`gx_thread.c`
+  bound_lag; `WONDERPARK_RT_LAG_MS`), and no copy is written below 0x4000.
+  With them, 4 of 4 runs of a `-O1` build were clean (the stray chain and
+  the copy to 0 gone), but the profile-guided `-O2` build still crashed at
+  boot in 2 of 2 runs ("at 80000000").
+- Measured anyway (profile-guided, Wish Park, 60 fps, 3x): two cores,
+  single-threaded 60 fps 80% busy; with the render thread 30 fps (GX to
+  OpenGL 4.7 -> 10.7 ms, readbacks 187 ms a second). On the weak PCs it was
+  meant for it halves the frame rate, and single-threaded already holds 60
+  on two cores with the profile-guided build. Left off; not worth finishing.

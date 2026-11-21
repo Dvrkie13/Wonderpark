@@ -441,6 +441,7 @@ animation reaches that frame (`runtime/host/gallery3d.cpp`).
 | `WONDERPARK_PEEK=addr,len` | with `WONDERPARK_MAX_SLICES`: dump guest memory at the stop |
 | `WONDERPARK_NO_IDLE_SLEEP` | don't sleep in the game's idle loop |
 | `WONDERPARK_RENDER_THREAD=1` | decode GX and draw on a render thread beside the game (`runtime/gpu/gx_thread.c`; off by default until measured) |
+| `WONDERPARK_RT_LAG_MS` | with the render thread: how far behind it may fall before the game waits (default 20; `docs/research.md`, "Render thread, third look") |
 | `WONDERPARK_RT_DEBUG=1` | with the render thread: print its state and the GPU interrupt state at exit |
 | `WONDERPARK_SYNC_IOS=1` | handle IOS requests (disc, NAND) on the game thread at once, not on the IOS thread (for comparisons) |
 | `WONDERPARK_DIRECT_LOG=1` | write log lines straight to stderr instead of through the log thread |
