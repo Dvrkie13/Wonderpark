@@ -110,6 +110,22 @@ executable can ship in a release.
   the top-right corner as that pad's own icons (`runtime/host/pad_icons_core.cpp`,
   shared with the game; the icons are built in from `runtime/host/pad_icons.rc`).
   `WONDERPARK_TEST_PAD=1` (tests) shows them without a pad.
+- **Controller everywhere:** the left stick works as the d-pad (a held
+  direction repeats). Main screen: A the main button, Y or right Extras,
+  down to the music's line (left / right between mute and next song, A
+  presses), X the next song. Extras: up / down / left / right through
+  everything on the page, A chooses, B closes, LB / RB the pages. The
+  keyboard does the same (arrows, Enter, Esc, Tab).
+- **Couch mode** (`launcher.ini` `[launcher] couch_mode`: 0 auto, 1 on, 2
+  off; F11 switches it and remembers; `WONDERPARK_COUCH=1`/`0` for tests):
+  the launcher borderless over the whole screen, the controller's hints
+  always shown and bigger (A Choose, Y Extras, X Next song; over Extras A
+  Choose, B Back, LB / RB Pages). Auto turns it on when Steam started the
+  launcher from Big Picture or on a Steam Deck (`SteamTenfoot`,
+  `SteamGamepadUI` or `SteamDeck` set to 1). The game started from couch
+  mode gets `WONDERPARK_WINDOW_MODE=1` (borderless fullscreen) and
+  `WONDERPARK_BUTTON_ICONS` set to the pad's type for that run only (the
+  settings file isn't changed).
 - **Music** (`builder/launcher/music.cpp`), only in the Play state: the
   pipeline says the build from the verified disc is current, or a build
   just finished. In every other state (no disc, verifying, building, a

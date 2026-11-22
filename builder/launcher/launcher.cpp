@@ -176,6 +176,49 @@ struct Shared {
 static Shared g;
 static HWND g_wnd;
 static std::wstring g_root, g_python, g_python_args;
+
+// Couch mode (launcher.ini [launcher] couch_mode: 0 auto, 1 on, 2 off; F11
+// switches it and remembers): the launcher fullscreen, the controller's
+// button hints always shown and bigger, the focus ring always on; the game
+// started from it starts fullscreen with the pad's button prompts. Auto: on
+// when started from Steam Big Picture or on a Steam Deck (Steam sets
+// SteamTenfoot / SteamGamepadUI / SteamDeck to 1 for games it starts).
+static bool g_couch;
+static WINDOWPLACEMENT g_windowedAt = {sizeof(WINDOWPLACEMENT)};
+std::wstring mods_data_dir();  // mods.cpp
+static bool couch_auto() {
+    for (const wchar_t* v : {L"SteamTenfoot", L"SteamGamepadUI", L"SteamDeck"}) {
+        wchar_t b[8] = {};
+        if (GetEnvironmentVariableW(v, b, 8) && b[0] == L'1') return true;
+    }
+    return false;
+}
+static void set_couch(bool on, bool remember) {
+    if (remember)
+        WritePrivateProfileStringW(L"launcher", L"couch_mode", on ? L"1" : L"2", (mods_data_dir() + L"\\launcher.ini").c_str());
+    if (on == g_couch && remember) return;
+    g_couch = on;
+    if (!g_wnd) return;
+    if (on) {
+        // Borderless over the whole screen it's on.
+        GetWindowPlacement(g_wnd, &g_windowedAt);
+        MONITORINFO mi = {sizeof(mi)};
+        GetMonitorInfoW(MonitorFromWindow(g_wnd, MONITOR_DEFAULTTONEAREST), &mi);
+        SetWindowLongPtrW(g_wnd, GWL_STYLE, WS_POPUP | WS_VISIBLE);
+        SetWindowPos(g_wnd, HWND_TOP, mi.rcMonitor.left, mi.rcMonitor.top, mi.rcMonitor.right - mi.rcMonitor.left,
+                     mi.rcMonitor.bottom - mi.rcMonitor.top, SWP_FRAMECHANGED | SWP_SHOWWINDOW);
+    } else {
+        SetWindowLongPtrW(g_wnd, GWL_STYLE, WS_OVERLAPPEDWINDOW | WS_VISIBLE);
+        SetWindowPlacement(g_wnd, &g_windowedAt);
+        SetWindowPos(g_wnd, nullptr, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED);
+    }
+}
+static bool couch_wanted() {
+    int m = GetPrivateProfileIntW(L"launcher", L"couch_mode", 0, (mods_data_dir() + L"\\launcher.ini").c_str());
+    wchar_t e[8] = {};
+    if (GetEnvironmentVariableW(L"WONDERPARK_COUCH", e, 8)) m = e[0] == L'1' ? 1 : 2;  // (tests)
+    return m == 1 || (m == 0 && couch_auto());
+}
 static HANDLE g_job;             // the build's processes, ended together
 static std::atomic<bool> g_cancel{false};
 static std::thread g_worker;
@@ -2887,34 +2930,46 @@ static void render(double t, const Shared& s) {
     // ---- The controller's buttons, top right, while a pad is connected: its
     // own icons (pad_icons_core.cpp: Xbox, PlayStation or Nintendo, from the
     // pad's maker). Fades with the Mods page, like the logo hint.
+    // In couch mode they always show, bigger; over Extras they show at the
+    // bottom left: A Choose, B Back, LB / RB the pages.
     {
-        float op = (1 - mk) * (1 - fade(.5f));
-        if (g_padOn && op > 0) {
-            int set = pad_sdl_type(0) ? pad_sdl_type(0) : pad_icons_detected();  // the pad's own type from SDL
-            struct Item { uint32_t b; const wchar_t* label; } items[] = {{0x1000, L"Choose"}, {0x8000, L"Mods"}};
-            float ih = 30, gap = 8, sep = 22, x = 0, total = 0;
-            std::vector<float> iw;
+        int set = pad_sdl_type(0) ? pad_sdl_type(0) : pad_icons_detected();  // the pad's own type from SDL
+        struct Item { uint32_t b, b2; const wchar_t* label; };
+        float ih = g_couch ? 40.f : 30.f, gap = 8, sep = g_couch ? 30.f : 22.f;
+        // A row of hints from x (right-aligned to it when right), centred on cy.
+        auto row = [&](const std::vector<Item>& items, float x, float cy, bool right, float op) {
+            float total = 0;
+            std::vector<float> iw, iw2, tws;
             for (auto& it : items) {
                 float tw = 0;
                 text_height(it.label, G.tfPill.Get(), 1000, &tw);
                 float w = pad_icon(pad_icons_name(it.b, set), 0, 0, ih, 0, false);
-                iw.push_back(w);
-                total += w + gap + tw + sep;
+                float w2 = it.b2 ? pad_icon(pad_icons_name(it.b2, set), 0, 0, ih, 0, false) + 4 : 0;
+                iw.push_back(w), iw2.push_back(w2), tws.push_back(tw);
+                total += w + w2 + gap + tw + sep;
             }
             total -= sep;
-            if (iw[0] > 0) {
-                dc->SetTransform(R);
-                x = W - 32 - total;
-                float cy = 28 + 21;
-                for (size_t i = 0; i < 2; i++) {
-                    pad_icon(pad_icons_name(items[i].b, set), x, cy - ih / 2, ih, op, true);
-                    x += iw[i] + gap;
-                    float tw = 0, th = text_height(items[i].label, G.tfPill.Get(), 1000, &tw);
-                    draw_text(items[i].label, G.tfPill.Get(), x, cy - th / 2, tw + 4, th, rgb(0xffe7a3, op));
-                    x += tw + sep;
-                }
+            if (iw.empty() || iw[0] <= 0) return;
+            dc->SetTransform(R);
+            if (right) x -= total;
+            for (size_t i = 0; i < items.size(); i++) {
+                pad_icon(pad_icons_name(items[i].b, set), x, cy - ih / 2, ih, op, true);
+                x += iw[i];
+                if (items[i].b2) pad_icon(pad_icons_name(items[i].b2, set), x + 4, cy - ih / 2, ih, op, true), x += iw2[i];
+                x += gap;
+                float th = text_height(items[i].label, G.tfPill.Get(), 1000);
+                draw_text(items[i].label, G.tfPill.Get(), x, cy - th / 2, tws[i] + 4, th, rgb(0xffe7a3, op));
+                x += tws[i] + sep;
             }
+        };
+        float op = (1 - mk) * (1 - fade(.5f));
+        if ((g_padOn || g_couch) && op > 0) {
+            std::vector<Item> items = {{0x1000, 0, L"Choose"}, {0x8000, 0, L"Extras"}};
+            if (!music_now_playing().empty()) items.push_back({0x4000, 0, L"Next song"});
+            row(items, W - 32, 28 + 21, true, op);
         }
+        if ((g_padOn || g_couch) && mk > .5f)
+            row({{0x1000, 0, L"Choose"}, {0x2000, 0, L"Back"}, {0x0100, 0x0200, L"Pages"}}, 32, H - 40, false, (mk - .5f) * 2);
     }
 
     // Status and the legal line fade out with the Mods page open.
@@ -3474,8 +3529,20 @@ static void launch_game(const std::wstring& exe) {
             si.hStdError = log;
         }
     }
+    // Couch mode: the game starts fullscreen (borderless) with the pad's own
+    // button prompts, for this run only (the settings file isn't changed:
+    // WONDERPARK_<KEY> overrides, docs/DEVELOPMENT.md).
+    if (g_couch) {
+        int set = pad_sdl_type(0) ? pad_sdl_type(0) : pad_icons_detected();
+        SetEnvironmentVariableW(L"WONDERPARK_WINDOW_MODE", L"1");
+        SetEnvironmentVariableW(L"WONDERPARK_BUTTON_ICONS", std::to_wstring(set >= 1 && set <= 3 ? set : 1).c_str());
+    }
     BOOL started = CreateProcessW(exe.c_str(), buf.data(), nullptr, nullptr, log != INVALID_HANDLE_VALUE, 0, nullptr,
                                   g_root.c_str(), &si, &pi);
+    if (g_couch) {
+        SetEnvironmentVariableW(L"WONDERPARK_WINDOW_MODE", nullptr);
+        SetEnvironmentVariableW(L"WONDERPARK_BUTTON_ICONS", nullptr);
+    }
     if (log != INVALID_HANDLE_VALUE) CloseHandle(log);
     if (started) {
         CloseHandle(pi.hThread);
@@ -3757,6 +3824,24 @@ static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
                 V.focus = V.focus == -2 ? -1 : -2;
                 return 0;
             }
+            if (wp == VK_F11) {  // couch mode on and off (remembered)
+                set_couch(!g_couch, true);
+                return 0;
+            }
+            {
+                // The music's line: Down to it, Left / Right along it, Up back.
+                bool music = V.mute_b.right > V.mute_b.left, used = true;
+                if (wp == VK_DOWN && music) V.focus = -3;
+                else if (wp == VK_UP && V.focus < -2) V.focus = -1;
+                else if (wp == VK_LEFT && V.focus == -4) V.focus = -3;
+                else if (wp == VK_RIGHT && V.focus == -3) V.focus = -4;
+                else if ((wp == VK_RETURN || wp == VK_SPACE) && V.focus < -2 && music) click(V.focus == -3 ? 12 : 13);
+                else used = false;
+                if (used) {
+                    fast(.5);
+                    return 0;
+                }
+            }
             if ((wp == VK_RETURN || wp == VK_SPACE) && V.focus == -2) {
                 open_mods();
                 return 0;
@@ -3801,21 +3886,51 @@ static void poll_controller() {
             continue;
         }
         connected |= 1 << i;
-        uint32_t down = st.buttons & ~prev[i];
-        prev[i] = st.buttons;
+        // The left stick works as the d-pad (past half way), and a held
+        // direction repeats (after 0.4 s, every 0.15 s).
+        uint32_t btn = st.buttons;
+        if (st.ly > 16000) btn |= 0x0001;
+        if (st.ly < -16000) btn |= 0x0002;
+        if (st.lx < -16000) btn |= 0x0004;
+        if (st.lx > 16000) btn |= 0x0008;
+        uint32_t down = btn & ~prev[i];
+        static double heldSince[4], lastRepeat[4];
+        double now = now_s();
+        if (down & 0xF) heldSince[i] = now, lastRepeat[i] = now;
+        else if ((btn & 0xF) && now - heldSince[i] > .4 && now - lastRepeat[i] > .15) down |= btn & 0xF, lastRepeat[i] = now;
+        prev[i] = btn;
         if (down) V.keys = true;
-        if (V.mods) {  // the Mods page: d-pad moves, A chooses, B closes
-            if (down & 0x0001) move_focus(-1);       // up
-            if (down & 0x0002) move_focus(1);        // down
+        if (V.mods) {  // Extras: d-pad moves, A chooses, B closes, LB / RB the pages
+            if (down & 0x0005) move_focus(-1);       // up, left
+            if (down & 0x000A) move_focus(1);        // down, right
             if (down & 0x1000) activate_focus();     // A
             if (down & 0x2000) close_mods();         // B
+            if (down & 0x0300) {                     // LB, RB
+                int p = (V.page + (down & 0x0200 ? 1 : 2)) % 3;
+                click(200 + p);
+                V.fcode = 200 + p;
+            }
             continue;
         }
-        if (down & 0x8000 || down & 0x0008) {        // Y or d-pad right: the Mods page
+        // The main screen: the main button (-1); down to the music's line
+        // (-3 mute, -4 next song), left and right along it; right from the
+        // main button, or Y, opens Extras; X the next song.
+        bool music = V.mute_b.right > V.mute_b.left;
+        if (V.focus < -2 && !music) V.focus = -1;
+        if (down & 0x8000 || (down & 0x0008 && V.focus >= -2)) {  // Y, or right from the main button
             open_mods();
             continue;
         }
-        if (down & 0x1000) press_main();  // A
+        if (down & 0x4000 && music) click(13);  // X
+        if (down & 0x0002 && music) V.focus = -3, fast(.5);
+        if (down & 0x0001 && V.focus < -2) V.focus = -1, fast(.5);
+        if (down & 0x0004 && V.focus == -4) V.focus = -3, fast(.5);
+        if (down & 0x0008 && V.focus == -3) V.focus = -4, fast(.5);
+        if (down & 0x1000) {  // A
+            if (V.focus == -3) click(12);
+            else if (V.focus == -4) click(13);
+            else press_main();
+        }
     }
     if (connected != wasConnected) {
         // A pad came or went: its buttons shown (top right), its type looked at again.
@@ -3929,6 +4044,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show) {
         optimiser_start();
     }
     ShowWindow(g_wnd, show);
+    if (couch_wanted()) set_couch(true, false), V.keys = true;
 
     State shown = S_CHECKING;
     int shownLit = 0;
