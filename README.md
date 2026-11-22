@@ -77,7 +77,7 @@ Wonderpark is a work in progress (a development preview): it has been played fro
 | Skipping movies | In progress (not working yet) |
 | A full playthrough | Not done yet |
 | Vulkan renderer, HDR, aim assist | Planned |
-| Release downloads | Beta: v0.1.1-beta |
+| Release downloads | First release: v0.2.0-beta |
 | Linux / macOS / Steam Deck | Not planned yet |
 
 Found a bug? [Open an issue](../../issues/new/choose). The template asks for what we need.
@@ -243,4 +243,4 @@ python tools/build_game.py --mingw                    # into build/game/ (llvm-m
 
 Wonderpark is released under the GNU General Public License, version 3 or (at your option) any later version, the same terms as DolRecomp, whose CPU code is compiled into every `Wonderpark.exe` (see [LICENSE](LICENSE)). Third-party components keep their own licenses ([THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)). The license covers Wonderpark's own code only: it gives no rights to the game, which each player builds from their own disc.
 
-**Source of each release:** every release is made from the commit its tag names (`v0.1.1-beta` is tag [v0.1.1-beta](../../tree/v0.1.1-beta)), and its `RELEASE.txt` names that commit too. The release zip itself also holds the source of everything in it (`runtime/`, `builder/`, `tools/`, with DolRecomp and SDL3 as pinned). If you pass a release zip on, pass that source with it.
+**Source of each release:** every release is made from the commit its tag names (`v0.2.0-beta` is tag [v0.2.0-beta](../../tree/v0.2.0-beta)), and its `RELEASE.txt` names that commit too. The release zip itself also holds the source of everything in it (`runtime/`, `builder/`, `tools/`, with DolRecomp and SDL3 as pinned). If you pass a release zip on, pass that source with it.
