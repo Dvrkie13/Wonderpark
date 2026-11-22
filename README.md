@@ -43,7 +43,10 @@ Wonderpark is a work in progress (a development preview): it has been played fro
 | **Mod manager** | Install texture and file mods from a .zip in the launcher, and turn each on or off with a switch. |
 | **HD Pack** | Upscale the game's textures 4x on your own PC, from your own disc, with one button in the launcher. |
 | **Saves** | Back up, restore, export and import your saves in the launcher (Dolphin's folder or a .zip), with a backup before every Play. |
-| **Journal, Jukebox, Gallery** | In F1: your play time, friends, jumps, Thunderbolts and milestones; the game's music, played from your disc; your friends on display, each as its own 3D model, animated (drag to turn it, scroll to zoom, save a picture). |
+| **Journal, Jukebox, Gallery** | In F1: your play time, friends, jumps, Thunderbolts and milestones; the game's music, played from your disc; your friends on display, each as its own 3D model, animated (drag to turn it, scroll to zoom, save a picture, play its cry). |
+| **Stickers** | 33 achievement stickers in the Journal (places, friends, berries, Thunderbolts, songs, a few secrets); a sticker slides in when you earn one. Local only. |
+| **The park's light** | Time of day can follow your PC's clock (golden evenings, blue nights), and seasonal touches: snow in December, falling leaves in late October, petals in spring. |
+| **Launcher** | Plays the songs you've unlocked in the game (only once your build is done; ♥ your favourites in the Jukebox), works fully with a controller, and has a couch mode for TVs (fullscreen, big button hints; automatic in Steam Big Picture and on Steam Deck). |
 | **Japanese voices** | Switch the Pokémon's voices to Japanese with your own Japanese disc. |
 | **Smooth play** | A shader setup that never stutters, fast loading (the game's files read into RAM, on PCs with 8 GB), save backups. |
 | **Runs on modest PCs** | Graphics presets from Potato to Ultra, suggested by a speed test after the build; the optimised build learns which code runs most (about a third less CPU time); dynamic resolution; Battery saver (30 FPS on battery). |
@@ -65,6 +68,9 @@ Wonderpark is a work in progress (a development preview): it has been played fro
 | Japanese voices (needs your own Japanese disc) | Working, from the next start |
 | Mod manager, HD Pack, save manager | Working (the online mod list isn't up yet) |
 | Journal, Jukebox, Gallery (F1) | Working (the Gallery shows each friend's own 3D model, animated); photos taken and distance in the Journal are "Coming soon" |
+| Stickers (Journal), cries in the Gallery | Working; the attraction gold, photo and marathon stickers are "Coming soon" |
+| Time of day, seasonal touches | Working (park only) |
+| Launcher music, controller and couch mode | Working (music: only after a finished build, songs you've heard) |
 | Graphics presets, speed test, dynamic resolution, Battery saver | Working |
 | Silly: partner colours, Shiny park, Big heads, Moon jump, Rainbow dash | "Coming soon" |
 | The game's own photos (− button) | Not checked yet (likely wrong: see docs/research.md) |
